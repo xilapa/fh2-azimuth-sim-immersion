@@ -157,16 +157,6 @@ How the game was analysed, and every address and offset used, is documented in
 [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md) and `src/dll/game_layout.h`.
 This repository contains no game code or data. Code is matched by hash and by an opcode skeleton.
 
-## Releases
-
-Releases are built by GitHub Actions. Run **Actions → Release → Run workflow**. Leave
-*version* empty to use the version from `CMakeLists.txt`. The workflow then:
-
-1. builds the plugin and launcher with mingw-w64,
-2. runs the unit tests,
-3. packages `FH2HeadTracking-<version>.zip`,
-4. creates the `v<version>` tag and a GitHub release.
-
 ## License
 
 Public domain, under [The Unlicense](LICENSE). Anyone may use, copy, modify and
