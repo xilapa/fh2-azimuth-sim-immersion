@@ -153,6 +153,12 @@ ULONG   rd_Release(void* self) {
     return (ULONG)n;
 }
 
+uint8_t shifterGears() {
+    uint8_t n = 0;
+    for (int g : g_wc.gearButtons) if (g >= 0) ++n;
+    return n;
+}
+
 template <int N> HRESULT rdByte(void* self, uint8_t* out) {
     noteR(N);
     if (!out) return S_OK;
@@ -167,7 +173,7 @@ template <int N> HRESULT rdByte(void* self, uint8_t* out) {
         case 26: v = g_wc.clutchAxis != WheelAxis::None; break;
         case 27: v = 0; break;
         case 28: v = r->in.lb; break; case 29: v = r->in.rb; break;
-        case 31: v = 0; break;
+        case 31: v = g_wc.hShifter ? shifterGears() : 0; break;   // gear count (game caps.RX)
         case 32: v = r->gear; break;
         default: break;
     }
@@ -191,7 +197,8 @@ template <int N> HRESULT rdFloat(void* self, float* out) {
 }
 template <int N> HRESULT rdU32(void* self, uint32_t* out) {
     noteR(N);
-    if (out) *out = (N == 17) ? reinterpret_cast<Reading*>(self)->rot : 0;
+    // 17 rotation; 30 shifter type (nonzero = shifter present, game then asks slot 31 for the gear count)
+    if (out) *out = (N == 17) ? reinterpret_cast<Reading*>(self)->rot : (N == 30 && g_wc.hShifter) ? 1u : 0u;
     return S_OK;
 }
 HRESULT rd33(void* self, uint64_t* out) {
