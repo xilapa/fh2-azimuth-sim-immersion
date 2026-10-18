@@ -15,6 +15,7 @@
 #include <vector>
 #include <algorithm>
 #include "../src/dll/wheel_ffb.h"
+#include "../src/common/car_db.h"
 
 #ifdef _MSC_VER
 #define MSABI
@@ -235,6 +236,28 @@ static void wheelTests(uint8_t* base, const uint8_t origFrame[5], FnWCS createSt
     CHECK(g_unexpectedClass == 0, "no unexpected activation requests (%d)", g_unexpectedClass);
 }
 
+// Calls fn(a, b) with rsi = rsiValue (the game's FFB call site has the car vector element in rsi).
+// rsi is callee-saved in the Windows x64 ABI, so the helper saves and restores it.
+extern "C" void callWithRsiAsm(void* fn, void* a, void* b, void* rsiValue);
+asm(R"(
+.text
+.globl callWithRsiAsm
+callWithRsiAsm:
+    push %rsi
+    sub $32, %rsp
+    mov %r9, %rsi
+    mov %rcx, %rax
+    mov %rdx, %rcx
+    mov %r8, %rdx
+    call *%rax
+    add $32, %rsp
+    pop %rsi
+    ret
+)");
+static void callWithRsi(void* fn, uint8_t* slot, const float* in, void* rsiValue) {
+    callWithRsiAsm(fn, slot, (void*)in, rsiValue);
+}
+
 typedef bool (*FnLastFfb)(fh2::GameFfbInput*);
 typedef void (MSABI *FnUpdateFfb)(uint8_t*, const float*);
 typedef float (MSABI *FnGetFov)(void*);
@@ -262,7 +285,7 @@ static void ffbTests(uint8_t* base, HMODULE plugin) {
     driver[0x64 / 4] = 2.0f; driver[0x68 / 4] = 15.0f; driver[0x6c / 4] = 0.15f; driver[0x70 / 4] = 1.0f;
     const float in[3] = {0.5f, 20.0f, 0.1f};
     float inCopy[3] = {in[0], in[1], in[2]};
-    ((FnUpdateFfb)target)(slot, inCopy);
+    callWithRsi((void*)target, slot, inCopy, (void*)(uintptr_t)1);   // garbage rsi must be tolerated
     CHECK(std::fabs(driver[1] - 0.21f) < 1e-4f, "original UpdateFFB ran: torque output %f", driver[1]);
     CHECK(memcmp(in, inCopy, sizeof(in)) == 0, "hook left the input untouched");
     fh2::GameFfbInput g;
@@ -272,6 +295,93 @@ static void ffbTests(uint8_t* base, HMODULE plugin) {
           std::fabs(g.gain - 1.0f) < 1e-6f, "captured raw %f speed %f slip %f gain %f", g.rawTorque, g.speed, g.slip, g.gain);
     CHECK(std::fabs(g.dynScale - 0.42f) < 1e-6f && std::fabs(g.springParam - 0.5f) < 1e-6f && std::fabs(g.slip1 - 0.55f) < 1e-6f &&
           std::fabs(g.speed0 - 2.0f) < 1e-6f && std::fabs(g.speedScale1 - 1.0f) < 1e-6f, "captured driver parameters");
+}
+
+typedef uint8_t (MSABI *FnGetter)(void*);
+
+static const fh2::CarInfo* findCarBy(char abs, char tc, int skip) {
+    for (size_t i = 0; i < fh2::kCarCount; ++i)
+        if (fh2::kCars[i].abs == abs && fh2::kCars[i].tc == tc && skip-- == 0) return &fh2::kCars[i];
+    return nullptr;
+}
+
+static void assistTests(uint8_t* base, uint64_t absOrig, uint64_t stmOrig, uint64_t tcOrig) {
+    printf("realistic assists:\n");
+    const uintptr_t kVt[2] = {0x2c5bfc8, 0x2cf39c0};
+    bool patched = false;
+    for (int i = 0; i < 150 && !patched; ++i) {
+        patched = *(uint64_t*)(base + kVt[0] + 0xd8) != absOrig && *(uint64_t*)(base + kVt[1] + 0xf0) != tcOrig;
+        if (!patched) Sleep(100);
+    }
+    for (int v = 0; v < 2; ++v) {
+        CHECK(*(uint64_t*)(base + kVt[v] + 0xd8) != absOrig && *(uint64_t*)(base + kVt[v] + 0xd8) != 0, "vtable %d ABS slot re-pointed", v);
+        CHECK(*(uint64_t*)(base + kVt[v] + 0xf0) != tcOrig && *(uint64_t*)(base + kVt[v] + 0xf0) != 0, "vtable %d TC slot re-pointed", v);
+        CHECK(*(uint64_t*)(base + kVt[v] + 0xe8) == stmOrig, "vtable %d stability slot unchanged", v);
+    }
+    if (!patched) return;
+
+    // fake LocalPlayerChoices: ABS off and TC off in the game settings
+    alignas(16) static uint8_t choices[0x300];
+    memset(choices, 0, sizeof(choices));
+    *(uint64_t*)choices = (uint64_t)(base + kVt[0]);
+    choices[0x2b1] = 2;
+    choices[0x2b4] = 1;
+    FnGetter absG = (FnGetter)*(uint64_t*)(base + kVt[0] + 0xd8);
+    FnGetter tcG  = (FnGetter)*(uint64_t*)(base + kVt[0] + 0xf0);
+    CHECK(absG(choices) == 2 && tcG(choices) == 1, "no car seen yet: game values pass through (abs %u tc %u)", absG(choices), tcG(choices));
+
+    // call the patched UpdateFFB call-site target with rsi = &elem
+    const uintptr_t kSite = 0x2fe134;
+    int32_t rel; memcpy(&rel, base + kSite + 1, 4);
+    void* target = base + kSite + 5 + rel;
+    alignas(16) static uint8_t slot[0x1400];
+    alignas(16) static float driver[32];
+    memset(slot, 0, sizeof(slot)); memset(driver, 0, sizeof(driver));
+    *(float**)(slot + 0x10c0) = driver;
+    driver[0] = 1.0f;
+    const float in[3] = {0.5f, 20.0f, 0.1f};
+    alignas(16) static uint8_t carObj[0x200];
+    void* elem = carObj;
+
+    const fh2::CarInfo* yy = findCarBy('y', 'y', 0);
+    const fh2::CarInfo* yy2 = findCarBy('y', 'y', 1);
+    const fh2::CarInfo* nn = findCarBy('n', 'n', 0);
+    CHECK(yy && yy2 && nn, "test cars found: ABS+TC car %u (%s), second %u, neither car %u (%s)", yy ? yy->id : 0,
+          yy ? yy->name : "-", yy2 ? yy2->id : 0, nn ? nn->id : 0, nn ? nn->name : "-");
+    if (!yy || !yy2 || !nn) return;
+
+    memset(carObj, 0, sizeof(carObj));
+    *(uint32_t*)(carObj + 0x118) = yy->id;
+    callWithRsi(target, slot, in, &elem);
+    CHECK(absG(choices) == 1 && tcG(choices) == 0, "car %u (ABS yes, TC yes): ABS on, TC on (abs %u tc %u)", yy->id, absG(choices), tcG(choices));
+    CHECK(((FnGetter)*(uint64_t*)(base + kVt[1] + 0xd8))(choices) == 1 && ((FnGetter)*(uint64_t*)(base + kVt[1] + 0xf0))(choices) == 0,
+          "second vtable behaves the same");
+    choices[0x2b1] = 0;
+    CHECK(absG(choices) == 0, "assisted braking (mode 0) is left alone (got %u)", absG(choices));
+    choices[0x2b1] = 2;
+
+    *(uint32_t*)(carObj + 0x118) = nn->id;
+    callWithRsi(target, slot, in, &elem);
+    choices[0x2b1] = 1; choices[0x2b4] = 0;       // user has both on
+    CHECK(absG(choices) == 2 && tcG(choices) == 1, "car %u (ABS no, TC no): ABS off, TC off (abs %u tc %u)", nn->id, absG(choices), tcG(choices));
+    choices[0x2b1] = 2; choices[0x2b4] = 1;
+
+    *(uint32_t*)(carObj + 0x118) = yy2->id;       // per-car override file says <id>=off,on
+    callWithRsi(target, slot, in, &elem);
+    choices[0x2b1] = 1; choices[0x2b4] = 1;
+    CHECK(absG(choices) == 2 && tcG(choices) == 0, "car %u override off,on: ABS off, TC on (abs %u tc %u)", yy2->id, absG(choices), tcG(choices));
+    choices[0x2b1] = 2;
+
+    *(uint32_t*)(carObj + 0x118) = 999999;        // not in the table
+    callWithRsi(target, slot, in, &elem);
+    choices[0x2b1] = 1; choices[0x2b4] = 0;
+    CHECK(absG(choices) == 1 && tcG(choices) == 0, "unknown car: game values (abs %u tc %u)", absG(choices), tcG(choices));
+
+    callWithRsi(target, slot, in, nullptr);       // unreadable car vector element: no crash, car unchanged
+    callWithRsi(target, slot, in, (void*)(uintptr_t)8);
+    void* badElem = (void*)(uintptr_t)16;
+    callWithRsi(target, slot, in, &badElem);
+    CHECK(true, "garbage rsi values tolerated");
 }
 
 static void fovTests(uint8_t* base) {
@@ -314,20 +424,35 @@ int wmain(int argc, wchar_t** argv) {
 
     // No real wheel here: run the virtual wheel on synthetic input (TestMode) for this run.
     std::wstring iniPath = argv[2];
+    std::wstring carsPath;
     {
         size_t dot = iniPath.find_last_of(L'.');
         iniPath = (dot == std::wstring::npos ? iniPath : iniPath.substr(0, dot)) + L".ini";
+        size_t sep = iniPath.find_last_of(L"\\/");
+        carsPath = (sep == std::wstring::npos ? std::wstring() : iniPath.substr(0, sep + 1)) + L"FH2SimImmersion_cars.ini";
         WritePrivateProfileStringW(L"Input", L"ConfigVersion", L"4", iniPath.c_str());
         WritePrivateProfileStringW(L"Wheel", L"TestMode", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"FovCockpit", L"10", iniPath.c_str());
+        WritePrivateProfileStringW(L"Simulation", L"RealisticABS", L"1", iniPath.c_str());
+        WritePrivateProfileStringW(L"Simulation", L"RealisticTC", L"1", iniPath.c_str());
+        // per-car override: the second ABS+TC car gets ABS off, TC on
+        const fh2::CarInfo* ov = findCarBy('y', 'y', 1);
+        if (ov) WritePrivateProfileStringW(L"Cars", std::to_wstring(ov->id).c_str(), L"off,on", carsPath.c_str());
     }
     struct RestoreIni {
-        std::wstring p;
+        std::wstring p, cars;
         ~RestoreIni() {
             WritePrivateProfileStringW(L"Wheel", L"TestMode", L"0", p.c_str());
             WritePrivateProfileStringW(L"Simulation", L"FovCockpit", L"0", p.c_str());
+            WritePrivateProfileStringW(L"Simulation", L"RealisticABS", L"0", p.c_str());
+            WritePrivateProfileStringW(L"Simulation", L"RealisticTC", L"0", p.c_str());
+            DeleteFileW(cars.c_str());
         }
-    } restoreIni{iniPath};
+    } restoreIni{iniPath, carsPath};
+
+    const uintptr_t kVt0 = 0x2c5bfc8;
+    const uint64_t absOrig = *(uint64_t*)(base + kVt0 + 0xd8), stmOrig = *(uint64_t*)(base + kVt0 + 0xe8),
+                   tcOrig = *(uint64_t*)(base + kVt0 + 0xf0);
 
     HMODULE plugin = LoadLibraryW(argv[2]);
     if (!plugin) { printf("LoadLibrary failed %lu\n", GetLastError()); return 2; }
@@ -411,6 +536,7 @@ int wmain(int argc, wchar_t** argv) {
 
     wheelTests(base, origFrame, createString);
     ffbTests(base, plugin);
+    assistTests(base, absOrig, stmOrig, tcOrig);
     fovTests(base);
 
     printf(failures ? "\n%d check(s) FAILED\n" : "\nall integration checks passed\n", failures);

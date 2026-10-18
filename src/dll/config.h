@@ -1,6 +1,7 @@
 #pragma once
 #include <windows.h>
 #include <string>
+#include <vector>
 #include "pose.h"
 #include "wheel_ffb.h"
 
@@ -36,8 +37,20 @@ struct WheelConfig {
     FfbTuning   ffbTuning;
 };
 
+enum class AssistMode { Game, On, Off };     // Game = keep the player's game setting
+
+struct CarAssistOverride {                   // from FH2SimImmersion_cars.ini
+    unsigned id = 0;
+    bool     absSet = false, tcSet = false;  // false = auto (use the research data)
+    AssistMode abs = AssistMode::Game, tc = AssistMode::Game;
+};
+
 struct SimConfig {
     float fovCockpit = 0, fovDriver = 0, fovHood = 0, fovBumper = 0;   // extra degrees, 0 = game default
+    bool       realisticAbs = false, realisticTc = false;
+    AssistMode optionalAssists = AssistMode::Game;   // cars where the real car had it as an option
+    bool       tieStabilityToTc = false;
+    std::vector<CarAssistOverride> carOverrides;
 };
 
 struct Config {

@@ -146,7 +146,15 @@ static const char kDefaultIni[] =
 "FovCockpit=0\n"
 "FovDriver=0\n"
 "FovHood=0\n"
-"FovBumper=0\n";
+"FovBumper=0\n"
+"; Realistic assists: force ABS / traction control on or off per car, as on the real car.\n"
+"; 0 = use the game setting for every car.\n"
+"RealisticABS=0\n"
+"RealisticTC=0\n"
+"; Cars where the real car had it as an option: game = keep your game setting, on, off.\n"
+"OptionalAssists=game\n"
+"; 1 = stability control follows the traction control decision.\n"
+"TieStabilityToTC=0\n";
 
 constexpr int kConfigVersion = 4;
 
@@ -334,6 +342,37 @@ static void readWheel(const wchar_t* ini, WheelConfig& w) {
         w.configFlag14, w.testMode, w.ffbEnabled, w.ffbGain, w.ffbInvert);
 }
 
+// "on" / "off" / anything else (auto).
+static AssistMode parseAssistWord(const std::string& tok, bool& set) {
+    std::string t;
+    for (char ch : tok) if (ch != ' ' && ch != '\t') t += (char)tolower((unsigned char)ch);
+    set = (t == "on" || t == "off");
+    return t == "on" ? AssistMode::On : t == "off" ? AssistMode::Off : AssistMode::Game;
+}
+
+// [Cars] section: key = car Id, value = "ABS,TC", each on|off|auto.
+static void loadCarOverrides(const std::wstring& path, std::vector<CarAssistOverride>& out) {
+    if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) return;
+    std::vector<wchar_t> buf(32768);
+    DWORD n = GetPrivateProfileSectionW(L"Cars", buf.data(), (DWORD)buf.size(), path.c_str());
+    for (const wchar_t* p = buf.data(); n && *p; p += wcslen(p) + 1) {
+        std::wstring line = p;
+        size_t eq = line.find(L'=');
+        if (eq == std::wstring::npos) continue;
+        wchar_t* end = nullptr;
+        unsigned long id = wcstoul(line.c_str(), &end, 10);
+        if (end == line.c_str() || id == 0) { LOG("config: bad car id in %ls", line.c_str()); continue; }
+        std::string val;
+        for (wchar_t wc : line.substr(eq + 1)) val += wc < 128 ? (char)wc : '?';
+        size_t comma = val.find(',');
+        CarAssistOverride o;
+        o.id = (unsigned)id;
+        o.abs = parseAssistWord(val.substr(0, comma), o.absSet);
+        if (comma != std::string::npos) o.tc = parseAssistWord(val.substr(comma + 1), o.tcSet);
+        if (o.absSet || o.tcSet) out.push_back(o);
+    }
+}
+
 Config loadConfig(const std::wstring& iniPath) {
     if (GetFileAttributesW(iniPath.c_str()) != INVALID_FILE_ATTRIBUTES &&
         GetPrivateProfileIntW(L"Input", L"ConfigVersion", 0, iniPath.c_str()) < kConfigVersion) {
@@ -401,6 +440,22 @@ Config loadConfig(const std::wstring& iniPath) {
     c.sim.fovBumper  = clampCfg(ini, "FovBumper", (float)readF(ini, "Simulation", "FovBumper", 0.0), -30.0f, 60.0f);
     LOG("config: fov cockpit %.1f driver %.1f hood %.1f bumper %.1f", c.sim.fovCockpit, c.sim.fovDriver,
         c.sim.fovHood, c.sim.fovBumper);
+    c.sim.realisticAbs     = readI(ini, "Simulation", "RealisticABS", 0) != 0;
+    c.sim.realisticTc      = readI(ini, "Simulation", "RealisticTC", 0) != 0;
+    std::string opt        = readStr(ini, "Simulation", "OptionalAssists", "game");
+    for (char& ch : opt) ch = (char)tolower((unsigned char)ch);
+    c.sim.optionalAssists  = opt == "on" ? AssistMode::On : opt == "off" ? AssistMode::Off : AssistMode::Game;
+    c.sim.tieStabilityToTc = readI(ini, "Simulation", "TieStabilityToTC", 0) != 0;
+    LOG("config: realistic abs %d tc %d optional %s tie-stm %d", c.sim.realisticAbs, c.sim.realisticTc,
+        c.sim.optionalAssists == AssistMode::On ? "on" : c.sim.optionalAssists == AssistMode::Off ? "off" : "game",
+        c.sim.tieStabilityToTc);
+    {
+        std::wstring cars = iniPath;
+        size_t sep = cars.find_last_of(L"\\/");
+        cars = (sep == std::wstring::npos ? std::wstring() : cars.substr(0, sep + 1)) + L"FH2SimImmersion_cars.ini";
+        loadCarOverrides(cars, c.sim.carOverrides);
+        LOG("config: %d per-car assist overrides", (int)c.sim.carOverrides.size());
+    }
     return c;
 }
 

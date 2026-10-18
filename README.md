@@ -1,6 +1,6 @@
 # FH2 Sim Immersion for Azimuth
 
-**Status: 0.7.0. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
+**Status: 0.8.0. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
 Steering wheel support is experimental.**
 
 Realism and immersion add-ons for Forza Horizon 2 running in Azimuth:
@@ -132,12 +132,44 @@ number of degrees added to the game's own field of view; `0` leaves the game def
 For example `FovCockpit=10`. The log shows the game's value once per camera as
 `fov: ... base`.
 
+## Realistic assists (experimental)
+
+Forza lets you switch ABS and traction control on or off for every car. With this option each car
+gets what its real counterpart had: a 1960s Ferrari drives without ABS or traction control, a
+modern supercar with both. The plugin overrides the game's assist settings for the car you are
+driving, so your menu choices stay untouched for everything it does not decide.
+
+The `[Simulation]` section has the keys:
+
+- `RealisticABS=1` and `RealisticTC=1` turn the feature on for ABS and traction control (default `0`:
+  the game setting is used for every car).
+- `OptionalAssists=game|on|off` is what to do for cars where the real car had the aid only as an
+  option: `game` keeps your game setting (default), `on` or `off` forces it.
+- `TieStabilityToTC=1` makes the stability control setting follow the traction control decision.
+
+Per-car overrides go in an optional file `FH2SimImmersion_cars.ini` next to the DLL:
+
+```
+[Cars]
+; car Id = ABS,TC    each on, off or auto (auto = use the research data)
+1105=on,auto
+```
+
+The data comes from research of each real car and is in `data/car_assists.csv` (Id, name, year, ABS,
+TC, confidence and notes for every car). It can contain mistakes: corrections are welcome. Cars
+marked unknown, and cars that are not in the list, keep your game setting.
+
+To check that it works, look in `FH2SimImmersion.log` for `car: <id> <name> (ABS ..., TC ...)` when
+a race starts, and `assists: ABS forced ... for <name>` when the plugin changes a setting. With
+`Diagnostics=1` the log also shows `assists diag:` lines with how often the game asked for the
+settings.
+
 ## Checking that it works
 
 `FH2SimImmersion.log` is written next to the DLL. A good run looks like this:
 
 ```
-FH2 Sim Immersion 0.7.0 loaded into pid ... (...\azimuth.exe)
+FH2 Sim Immersion 0.8.0 loaded into pid ... (...\azimuth.exe)
 waiting for the Forza Horizon 2 image to be mapped...
 game image found at 0000...
 patch: 5 head-tracking inputs redirected (thunks at ...)
