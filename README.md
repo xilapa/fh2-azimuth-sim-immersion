@@ -1,6 +1,6 @@
 # FH2 Sim Immersion for Azimuth
 
-**Status: 0.6.0. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
+**Status: 0.6.1. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
 Steering wheel support is experimental.**
 
 Realism and immersion add-ons for Forza Horizon 2 running in Azimuth:
@@ -74,6 +74,8 @@ which is what injectors do. If it does, allow it, or use the ASI loader option b
 Both clicks also reach the game, as usual. You can also recenter in your tracker
 (Beam / OpenTrack). All of these are remappable in `FH2SimImmersion.ini`:
 * `RecenterButtons`, e.g. `BACK+START`.
+* `WheelRecenterButtons`: steering wheel buttons held together to recenter (default `4+5`,
+  both G29 shift paddles).
 * `RecenterKey` / `ChordRecenterKey` to add a keyboard key. That file is created next to the DLL on the
 first run. Edit it, then restart the game.
 
@@ -121,7 +123,7 @@ To find axis and button numbers, set `Diagnostics=1` (under `[Input]`). Every 2 
 `FH2SimImmersion.log` is written next to the DLL. A good run looks like this:
 
 ```
-FH2 Sim Immersion 0.6.0 loaded into pid ... (...\azimuth.exe)
+FH2 Sim Immersion 0.6.1 loaded into pid ... (...\azimuth.exe)
 waiting for the Forza Horizon 2 image to be mapped...
 game image found at 0000...
 patch: 5 head-tracking inputs redirected (thunks at ...)

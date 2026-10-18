@@ -28,9 +28,11 @@ struct FfbStatus {             // latest force feedback state, for diagnostics
 };
 
 // Enumerates, logs, starts the poll thread; false if no device (unless TestMode).
-bool WheelDevice_Start(const WheelConfig& cfg);
+bool WheelDevice_Start(const WheelConfig& cfg, bool diagnostics = false);
 // Copy of the latest snapshot; returns out.valid.
 bool WheelDevice_Read(WheelInput& out);
+// True when n > 0, the snapshot is fresh and every listed DirectInput button (0-based) is down.
+bool WheelDevice_ButtonsHeld(const int* idx, int n);
 // Copy of the latest force feedback state; returns out.active.
 bool WheelDevice_FfbStatus(FfbStatus& out);
 

@@ -197,6 +197,41 @@ HRESULT viewGetAt(void* v, uint32_t i, void** out) {
     return reinterpret_cast<HRESULT (*)(void*, uint32_t, void**)>(vtblOf(v)[6])(v, i, out);
 }
 
+constexpr GUID kIidUserStatics = mkGuid(0xb4f23a93, 0x7fc6, 0x4a50, 0xb1, 0x53, 0x95, 0x00, 0x16, 0x38, 0x9e, 0x50);
+
+// The signed-in system user (Windows.Xbox.System.User statics, get_Users[0]); AddRef'd, or nullptr.
+void* systemUser() {
+    static std::atomic<bool> failLogged{false};
+    HRESULT hr = (HRESULT)0x80004005L;
+    void* statics = nullptr;
+    void* view = nullptr;
+    void* user = nullptr;
+    if (g_origGetActivation) {
+        hr = g_origGetActivation(L"Windows.Xbox.System.User", &kIidUserStatics, &statics);
+        if (SUCCEEDED(hr) && !statics) hr = (HRESULT)0x80004003L;
+    }
+    if (SUCCEEDED(hr)) {
+        hr = reinterpret_cast<HRESULT (*)(void*, void**)>(vtblOf(statics)[9])(statics, &view);
+        if (SUCCEEDED(hr) && !view) hr = (HRESULT)0x80004003L;
+    }
+    if (SUCCEEDED(hr)) {
+        uint32_t n = 0;
+        hr = viewSize(view, &n);
+        if (SUCCEEDED(hr) && n == 0) hr = kEBounds;
+        if (SUCCEEDED(hr)) {
+            hr = viewGetAt(view, 0, &user);
+            if (SUCCEEDED(hr) && !user) hr = (HRESULT)0x80004003L;
+        }
+    }
+    if (view) comRelease(view);
+    if (statics) comRelease(statics);
+    if (FAILED(hr)) {
+        if (!failLogged.exchange(true)) LOG("wheel: no system user available (0x%08lx)", (unsigned long)hr);
+        return nullptr;
+    }
+    return user;
+}
+
 struct SeenLog {
     GUID g[16];
     int n = 0;
@@ -331,14 +366,23 @@ HRESULT sp_GetControllers(void* self, void** out) {
         }
     }
 
-    if (g_wc.userMode == WheelUserMode::Auto && n >= 1) {
-        void* c = nullptr;
-        if (SUCCEEDED(viewGetAt(view, 0, &c)) && c) {
-            void* user = nullptr;
-            HRESULT uh = reinterpret_cast<HRESULT (*)(void*, void**)>(vtblOf(c)[8])(c, &user);
-            if (SUCCEEDED(uh)) VirtualWheel_SetUser(user);
-            comRelease(c);
+    if (g_wc.userMode == WheelUserMode::Auto) {
+        void* user = nullptr;
+        if (n >= 1) {
+            void* c = nullptr;
+            if (SUCCEEDED(viewGetAt(view, 0, &c)) && c) {
+                HRESULT uh = reinterpret_cast<HRESULT (*)(void*, void**)>(vtblOf(c)[8])(c, &user);
+                if (FAILED(uh)) user = nullptr;
+                comRelease(c);
+            }
         }
+        if (!user) {
+            user = systemUser();
+            static std::atomic<bool> fallbackLogged{false};
+            if (user && !fallbackLogged.exchange(true))
+                LOG("wheel: no Xbox controller user, using the signed-in system user");
+        }
+        if (user) VirtualWheel_SetUser(user);
     }
     static std::atomic<bool> userLogged{false};
     if (!userLogged.exchange(true)) {
@@ -452,7 +496,7 @@ void WheelHook_Install(uintptr_t base, const Config& cfg) {
     InitializeCriticalSection(&g_proxyCs);
     VirtualWheel_Configure(cfg);
     VirtualWheel_SetGameBase(base);
-    if (!WheelDevice_Start(cfg.wheel)) { LOG("wheel: no usable device; wheel hooks not installed"); return; }
+    if (!WheelDevice_Start(cfg.wheel, cfg.diagnostics)) { LOG("wheel: no usable device; wheel hooks not installed"); return; }
 
     // IAT hook: wait until Azimuth has bound the slot (file value is an unbound RVA hint).
     void** slot = reinterpret_cast<void**>(base + kIatGetActivation);

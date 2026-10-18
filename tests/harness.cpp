@@ -122,14 +122,16 @@ static HRESULT MSABI h_GetControllers(void*, void** out) { *out = &g_hView; retu
 static void* g_hStaticsVtbl[16];
 static HObj g_hStatics = {g_hStaticsVtbl};
 static int g_unexpectedClass = 0;
+static int g_userClassRequests = 0;
 static HRESULT MSABI fakeGetActivationFactory(const wchar_t* name, const GUID* iid, void** out) {
     if (wcscmp(name, L"Windows.Xbox.Input.Controller") == 0 && IsEqualGUID(*iid, kIidStaticsH)) {
         *out = &g_hStatics;
         return S_OK;
     }
-    ++g_unexpectedClass;
+    if (wcscmp(name, L"Windows.Xbox.System.User") == 0) ++g_userClassRequests;   // system user fallback probe
+    else ++g_unexpectedClass;
     if (out) *out = nullptr;
-    return (HRESULT)0x80004001L;   // E_NOTIMPL
+    return (HRESULT)0x80040154L;   // REGDB_E_CLASSNOTREG
 }
 
 typedef HRESULT (MSABI *Fn0)(void*);
@@ -228,6 +230,7 @@ static void wheelTests(uint8_t* base, const uint8_t origFrame[5], FnWCS createSt
         CHECK(maxRot == 900, "StaticConfig max rotation 900 (got %u)", maxRot);
         ((Fn0)slotOf(cfg, 2))(cfg);
     }
+    CHECK(g_userClassRequests > 0, "empty controller list: plugin asked for the system user and survived its failure (%d)", g_userClassRequests);
     CHECK(g_unexpectedClass == 0, "no unexpected activation requests (%d)", g_unexpectedClass);
 }
 

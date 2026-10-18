@@ -20,6 +20,7 @@ WheelInput         g_snap;
 IDirectInputDevice8W* g_dev = nullptr;
 IDirectInput8W*       g_di = nullptr;
 bool               g_started = false;
+bool               g_diag = false;
 bool               g_ffbCapable = false;
 FfbStatus          g_ffbStatus;
 
@@ -240,6 +241,29 @@ DWORD WINAPI pollThread(void*) {
             in.valid = true;
             publish(in);
 
+            if (g_diag) {
+                static bool havePrev = false;
+                static uint32_t prevBtn[4] = {};
+                static DWORD prevPov = 0xFFFFFFFF;
+                bool changed = !havePrev;
+                for (int w = 0; w < 4; ++w) if (in.rawButtons[w] != prevBtn[w]) changed = true;
+                if (changed && havePrev) {
+                    std::string dn, up;
+                    for (int b = 0; b < 128; ++b) {
+                        bool now = (in.rawButtons[b / 32] >> (b % 32)) & 1, was = (prevBtn[b / 32] >> (b % 32)) & 1;
+                        if (now && !was) dn += (dn.empty() ? "" : ",") + std::to_string(b);
+                        if (!now && was) up += (up.empty() ? "" : ",") + std::to_string(b);
+                    }
+                    LOG("wheel buttons: down %s up %s", dn.empty() ? "-" : dn.c_str(), up.empty() ? "-" : up.c_str());
+                }
+                for (int w = 0; w < 4; ++w) prevBtn[w] = in.rawButtons[w];
+                if (!havePrev || st.rgdwPOV[0] != prevPov) {
+                    if (havePrev) LOG("wheel pov: %lu", (unsigned long)st.rgdwPOV[0]);
+                    prevPov = st.rgdwPOV[0];
+                }
+                havePrev = true;
+            }
+
             if (ffbOn && !effectTried) {
                 effectTried = true;
                 axes[0] = axisOffset(g_cfg.steeringAxis);
@@ -323,9 +347,10 @@ DWORD WINAPI pollThread(void*) {
 
 } // namespace
 
-bool WheelDevice_Start(const WheelConfig& cfg) {
+bool WheelDevice_Start(const WheelConfig& cfg, bool diagnostics) {
     if (g_started) return true;
     g_cfg = cfg;
+    g_diag = diagnostics;
     if (cfg.testMode) {
         LOG("wheel: TestMode, synthetic input");
         if (HANDLE t = CreateThread(nullptr, 0, testThread, nullptr, 0, nullptr)) CloseHandle(t);
@@ -375,6 +400,15 @@ bool WheelDevice_Start(const WheelConfig& cfg) {
     }
     if (HANDLE t = CreateThread(nullptr, 0, pollThread, nullptr, 0, nullptr)) CloseHandle(t);
     g_started = true;
+    return true;
+}
+
+bool WheelDevice_ButtonsHeld(const int* idx, int n) {
+    if (!idx || n <= 0) return false;
+    WheelInput in;
+    if (!WheelDevice_Read(in)) return false;
+    for (int i = 0; i < n; ++i)
+        if (idx[i] < 0 || idx[i] > 127 || !((in.rawButtons[idx[i] / 32] >> (idx[i] % 32)) & 1)) return false;
     return true;
 }
 

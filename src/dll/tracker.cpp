@@ -7,6 +7,7 @@
 #include "tracker.h"
 #include "freetrack.h"
 #include "log.h"
+#include "wheel_device.h"
 
 namespace fh2 {
 
@@ -186,7 +187,8 @@ DWORD WINAPI monitorThread(void*) {
         bool chord = pressed(VK_CONTROL) && pressed(VK_SHIFT);
         bool toggle   = pressed(g_cfg.toggleKey)   || (chord && pressed(g_cfg.chordToggleKey));
         bool recenter = pressed(g_cfg.recenterKey) || (chord && pressed(g_cfg.chordRecenterKey)) ||
-                        padCombo(xinput, g_cfg.recenterButtons);
+                        padCombo(xinput, g_cfg.recenterButtons) ||
+                        WheelDevice_ButtonsHeld(g_cfg.wheelRecenterButtons, g_cfg.wheelRecenterCount);
         if (toggle && !prevToggle) {
             bool e = !g_enabled.load();
             g_enabled = e;

@@ -458,6 +458,10 @@ void VirtualWheel_FfbSnapshot(FfbParams& out) {
     uint64_t now = qpcNow(), f = qpcFreq();
     out.race  = g_ffb.lastHeartbeatQpc != 0 && (double)(now - g_ffb.lastHeartbeatQpc) < 2.5 * (double)f;
     out.stale = g_ffb.lastWriteQpc == 0 || (double)(now - g_ffb.lastWriteQpc) > 1.0 * (double)f;
+    static std::atomic<int> prevRace{-1};
+    int r = out.race ? 1 : 0;
+    if (prevRace.exchange(r) != r)
+        LOG("wheel: game %s", r ? "racing (force feedback heartbeat on)" : "paused or in menus (heartbeat stopped)");
 }
 
 float VirtualWheel_GameAngle(float steering) {

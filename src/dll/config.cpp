@@ -45,6 +45,8 @@ static const char kDefaultIni[] =
 "; Xbox controller buttons that recenter when pressed together, joined with +.\n"
 "; A B X Y LB RB L3 R3 BACK START UP DOWN LEFT RIGHT. Empty = off.\n"
 "RecenterButtons=L3+R3\n"
+"; Wheel buttons (DirectInput numbers) that recenter head tracking when held together. none = off.\n"
+"WheelRecenterButtons=4+5\n"
 "\n"
 "; Gain multiplies your head movement. Invert flips an axis. Limit caps the\n"
 "; camera offset (degrees for rotation, metres for position); Limit=0 turns\n"
@@ -144,6 +146,28 @@ static unsigned parseButtons(const std::string& spec) {
         i = j + 1;
     }
     return mask;
+}
+
+// "4+5" -> {4,5}; empty or "none" -> 0 entries.
+static int parseWheelButtons(const std::string& spec, int* out) {
+    int n = 0;
+    size_t i = 0;
+    while (i < spec.size()) {
+        size_t j = spec.find('+', i);
+        if (j == std::string::npos) j = spec.size();
+        std::string tok;
+        for (size_t k = i; k < j; ++k) if (spec[k] != ' ' && spec[k] != '\t') tok += spec[k];
+        i = j + 1;
+        if (tok.empty()) continue;
+        std::string low;
+        for (char ch : tok) low += (char)tolower((unsigned char)ch);
+        if (low == "none") continue;
+        char* end = nullptr;
+        long v = strtol(tok.c_str(), &end, 10);
+        if (!end || *end != 0 || v < 0 || v > 127) { LOG("config: bad button '%s' in WheelRecenterButtons", tok.c_str()); continue; }
+        if (n < 4) out[n++] = (int)v;
+    }
+    return n;
 }
 
 static std::string readStr(const wchar_t* ini, const char* sec, const char* key, const char* def) {
@@ -298,6 +322,7 @@ Config loadConfig(const std::wstring& iniPath) {
     c.chordToggleKey   = readI(ini, "Hotkeys", "ChordToggleKey", 'Y');
     c.chordRecenterKey = readI(ini, "Hotkeys", "ChordRecenterKey", 0);
     c.recenterButtons  = parseButtons(readStr(ini, "Hotkeys", "RecenterButtons", "L3+R3"));
+    c.wheelRecenterCount = parseWheelButtons(readStr(ini, "Hotkeys", "WheelRecenterButtons", "4+5"), c.wheelRecenterButtons);
     c.map.yaw   = readAxis(ini, "Rotation", "Yaw", 90.0f);
     c.map.pitch = readAxis(ini, "Rotation", "Pitch", 40.0f);
     c.map.roll  = readAxis(ini, "Rotation", "Roll", 20.0f);
@@ -308,6 +333,11 @@ Config loadConfig(const std::wstring& iniPath) {
     readOrder(ini, "RotOrder", c.map.rotOrder);
     readOrder(ini, "PosOrder", c.map.posOrder);
     LOG("config: source %s diagnostics %d recenter buttons 0x%04x", src.c_str(), c.diagnostics, c.recenterButtons);
+    {
+        std::string wb;
+        for (int k = 0; k < c.wheelRecenterCount; ++k) wb += (k ? "+" : "") + std::to_string(c.wheelRecenterButtons[k]);
+        LOG("config: wheel recenter buttons %s", wb.empty() ? "none" : wb.c_str());
+    }
     LOG("config: port %d bind %s enabled %d cockpitOnly %d smoothing %.2f",
         c.udpPort, c.bindAddress.c_str(), c.enableOnStartup, c.cockpitOnly, c.smoothing);
     LOG("config: yaw g%.2f i%d l%.0f  pitch g%.2f i%d l%.0f  roll g%.2f i%d l%.0f",
