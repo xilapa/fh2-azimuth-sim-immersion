@@ -10,7 +10,7 @@ static const char kDefaultIni[] =
 "; FH2 Head Tracking for Azimuth - settings. Edit, then restart the game.\n"
 "\n"
 "[Input]\n"
-"ConfigVersion=3\n"
+"ConfigVersion=4\n"
 "; auto      = FreeTrack/TrackIR shared memory when present (Beam \"Head Tracking Device\n"
 ";             Emulation\", OpenTrack \"freetrack 2.0 Enhanced\"), otherwise UDP\n"
 "; freetrack = shared memory only\n"
@@ -76,9 +76,47 @@ static const char kDefaultIni[] =
 "; Which component of the game's rotation Param receives yaw, pitch, roll (0,1,2).\n"
 "RotOrder=0,1,2\n"
 "; Which car-space component receives head X, Y, Z (0,1,2).\n"
-"PosOrder=0,1,2\n";
+"PosOrder=0,1,2\n"
+"\n"
+"[Wheel]\n"
+"; Steering wheel support (DirectInput). 0 = off.\n"
+"Enabled=1\n"
+"; Part of the device name to look for; empty = first steering wheel found.\n"
+"DeviceMatch=G29\n"
+"; Rotation range set in Logitech G HUB, in degrees.\n"
+"WheelRange=900\n"
+"SteeringAxis=X\n"
+"SteeringInvert=0\n"
+"ThrottleAxis=Y\n"
+"BrakeAxis=RZ\n"
+"ClutchAxis=SLIDER0\n"
+"; 1 = the pedal axes read maximum when released (G29 default).\n"
+"PedalsInverted=1\n"
+"PedalDeadzone=0.02\n"
+"; DirectInput button numbers (0-based) for the game's buttons; -1 = none.\n"
+"ButtonA=0\n"
+"ButtonB=2\n"
+"ButtonX=1\n"
+"ButtonY=3\n"
+"ButtonView=8\n"
+"ButtonMenu=9\n"
+"ButtonLB=5\n"
+"ButtonRB=4\n"
+"; 1 = Logitech Driving Force Shifter connected.\n"
+"HShifter=0\n"
+"GearButtons=12,13,14,15,16,17,-1\n"
+"ReverseButton=18\n"
+"; Who the wheel belongs to: auto = same player as the first Xbox controller (if any), none = no player.\n"
+"UserMode=auto\n"
+"; Re-scan controllers once if the game started before the plugin was ready.\n"
+"ForceRescan=1\n"
+"; Identity reported to the game (Logitech G920).\n"
+"VendorId=0x046D\n"
+"ProductId=0xC261\n"
+"ConfigFlag14=1\n"
+"TestMode=0\n";
 
-constexpr int kConfigVersion = 3;
+constexpr int kConfigVersion = 4;
 
 // "L3+R3" -> XINPUT_GAMEPAD_* mask
 static unsigned parseButtons(const std::string& spec) {
@@ -138,6 +176,84 @@ static AxisCfg readAxis(const wchar_t* ini, const char* sec, const char* name, f
     return a;
 }
 
+static WheelAxis readWheelAxis(const wchar_t* ini, const char* key, WheelAxis def, const char* defName) {
+    std::string s = readStr(ini, "Wheel", key, defName), t;
+    for (char ch : s) if (ch != ' ') t += (char)toupper((unsigned char)ch);
+    static const struct { const char* n; WheelAxis a; } kAx[] = {
+        {"X", WheelAxis::X}, {"Y", WheelAxis::Y}, {"Z", WheelAxis::Z}, {"RX", WheelAxis::RX},
+        {"RY", WheelAxis::RY}, {"RZ", WheelAxis::RZ}, {"SLIDER0", WheelAxis::Slider0},
+        {"SLIDER1", WheelAxis::Slider1}, {"NONE", WheelAxis::None}};
+    for (auto& a : kAx) if (t == a.n) return a.a;
+    LOG("config: unknown axis '%s' for %s; using %s", s.c_str(), key, defName);
+    return def;
+}
+static const char* wheelAxisName(WheelAxis a) {
+    static const char* n[] = {"X", "Y", "Z", "RX", "RY", "RZ", "SLIDER0", "SLIDER1", "NONE"};
+    return n[(int)a];
+}
+static void readWheel(const wchar_t* ini, WheelConfig& w) {
+    w.enabled        = readI(ini, "Wheel", "Enabled", 1) != 0;
+    w.deviceMatch    = readStr(ini, "Wheel", "DeviceMatch", "G29");
+    w.wheelRange     = readI(ini, "Wheel", "WheelRange", 900);
+    if (w.wheelRange < 40 || w.wheelRange > 65535) {
+        LOG("config: WheelRange=%d out of range 40..65535; using 900", w.wheelRange);
+        w.wheelRange = 900;
+    }
+    w.steeringAxis   = readWheelAxis(ini, "SteeringAxis", WheelAxis::X, "X");
+    w.steeringInvert = readI(ini, "Wheel", "SteeringInvert", 0) != 0;
+    w.throttleAxis   = readWheelAxis(ini, "ThrottleAxis", WheelAxis::Y, "Y");
+    w.brakeAxis      = readWheelAxis(ini, "BrakeAxis", WheelAxis::RZ, "RZ");
+    w.clutchAxis     = readWheelAxis(ini, "ClutchAxis", WheelAxis::Slider0, "SLIDER0");
+    w.pedalsInverted = readI(ini, "Wheel", "PedalsInverted", 1) != 0;
+    w.pedalDeadzone  = (float)readF(ini, "Wheel", "PedalDeadzone", 0.02);
+    if (!(w.pedalDeadzone >= 0.0f)) w.pedalDeadzone = 0.0f;
+    if (w.pedalDeadzone > 0.9f) w.pedalDeadzone = 0.9f;
+    w.buttonA    = readI(ini, "Wheel", "ButtonA", 0);
+    w.buttonB    = readI(ini, "Wheel", "ButtonB", 2);
+    w.buttonX    = readI(ini, "Wheel", "ButtonX", 1);
+    w.buttonY    = readI(ini, "Wheel", "ButtonY", 3);
+    w.buttonView = readI(ini, "Wheel", "ButtonView", 8);
+    w.buttonMenu = readI(ini, "Wheel", "ButtonMenu", 9);
+    w.buttonLB   = readI(ini, "Wheel", "ButtonLB", 5);
+    w.buttonRB   = readI(ini, "Wheel", "ButtonRB", 4);
+    w.hShifter   = readI(ini, "Wheel", "HShifter", 0) != 0;
+    {
+        static const int defGears[7] = {12, 13, 14, 15, 16, 17, -1};
+        for (int i = 0; i < 7; ++i) w.gearButtons[i] = defGears[i];
+        std::string g = readStr(ini, "Wheel", "GearButtons", "12,13,14,15,16,17,-1");
+        const char* p = g.c_str();
+        for (int i = 0; i < 7; ++i) {
+            char* e = nullptr;
+            long v = strtol(p, &e, 0);
+            if (e == p) { LOG("config: GearButtons='%s' has fewer than 7 entries; rest use defaults", g.c_str()); break; }
+            w.gearButtons[i] = (int)v;
+            p = e;
+            while (*p == ' ') ++p;
+            if (*p == ',') ++p; else break;
+        }
+    }
+    w.reverseButton = readI(ini, "Wheel", "ReverseButton", 18);
+    std::string um = readStr(ini, "Wheel", "UserMode", "auto"), umt;
+    for (char ch : um) if (ch != ' ') umt += (char)tolower((unsigned char)ch);
+    if (umt == "none") w.userMode = WheelUserMode::None;
+    else {
+        if (umt != "auto") LOG("config: unknown UserMode '%s'; using auto", um.c_str());
+        w.userMode = WheelUserMode::Auto;
+    }
+    w.forceRescan  = readI(ini, "Wheel", "ForceRescan", 1) != 0;
+    w.vendorId     = readI(ini, "Wheel", "VendorId", 0x046D) & 0xFFFF;
+    w.productId    = readI(ini, "Wheel", "ProductId", 0xC261) & 0xFFFF;
+    w.configFlag14 = readI(ini, "Wheel", "ConfigFlag14", 1);
+    w.testMode     = readI(ini, "Wheel", "TestMode", 0) != 0;
+    LOG("config: wheel enabled %d match '%s' range %d axes steer %s%s thr %s brk %s clu %s pedalsInv %d dz %.2f "
+        "hshifter %d user %s rescan %d id %04x:%04x flag14 %d test %d",
+        w.enabled, w.deviceMatch.c_str(), w.wheelRange, wheelAxisName(w.steeringAxis),
+        w.steeringInvert ? "(inv)" : "", wheelAxisName(w.throttleAxis), wheelAxisName(w.brakeAxis),
+        wheelAxisName(w.clutchAxis), w.pedalsInverted, w.pedalDeadzone, w.hShifter,
+        w.userMode == WheelUserMode::Auto ? "auto" : "none", w.forceRescan, w.vendorId, w.productId,
+        w.configFlag14, w.testMode);
+}
+
 Config loadConfig(const std::wstring& iniPath) {
     if (GetFileAttributesW(iniPath.c_str()) != INVALID_FILE_ATTRIBUTES &&
         GetPrivateProfileIntW(L"Input", L"ConfigVersion", 0, iniPath.c_str()) < kConfigVersion) {
@@ -187,6 +303,7 @@ Config loadConfig(const std::wstring& iniPath) {
     LOG("config: pos %d  x g%.2f i%d l%.2f  y g%.2f i%d l%.2f  z g%.2f i%d l%.2f",
         c.map.positionEnabled, c.map.x.gain, c.map.x.invert, c.map.x.limit, c.map.y.gain,
         c.map.y.invert, c.map.y.limit, c.map.z.gain, c.map.z.invert, c.map.z.limit);
+    readWheel(ini, c.wheel);
     return c;
 }
 

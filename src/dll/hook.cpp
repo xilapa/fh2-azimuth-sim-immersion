@@ -1,5 +1,4 @@
 #include <windows.h>
-#include <tlhelp32.h>
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -7,6 +6,8 @@
 #include <cstring>
 #include <vector>
 #include "hook.h"
+#include "patch_util.h"
+#include "wheel_hook.h"
 #include "game_layout.h"
 #include "tracker.h"
 #include "log.h"
@@ -276,20 +277,6 @@ bool verify(uintptr_t base) {
     return true;
 }
 
-void* allocNear(uintptr_t base, size_t size) {
-    SYSTEM_INFO si; GetSystemInfo(&si);
-    const uintptr_t gran = si.dwAllocationGranularity;
-    const uintptr_t range = 0x70000000;
-    uintptr_t lo = base > range ? base - range : gran;
-    for (uintptr_t a = (base - gran) & ~(gran - 1); a > lo; a -= gran) {
-        if (void* p = VirtualAlloc(reinterpret_cast<void*>(a), size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE)) return p;
-    }
-    for (uintptr_t a = (base + 0x4000000) & ~(gran - 1); a < base + range; a += gran) {
-        if (void* p = VirtualAlloc(reinterpret_cast<void*>(a), size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE)) return p;
-    }
-    return nullptr;
-}
-
 uint8_t* emitThunk(uint8_t* p, int axis, void* fn) {
     // mov r8d, imm32
     *p++ = 0x41; *p++ = 0xB8; std::memcpy(p, &axis, 4); p += 4;
@@ -303,35 +290,6 @@ uint8_t* emitThunk(uint8_t* p, int axis, void* fn) {
     while (reinterpret_cast<uintptr_t>(p) & 31) *p++ = 0xCC;
     return p;
 }
-
-struct Suspended {
-    std::vector<HANDLE> handles;
-    void suspendOthers() {
-        handles.reserve(4096);
-        DWORD self = GetCurrentThreadId(), pid = GetCurrentProcessId();
-        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-        if (snap == INVALID_HANDLE_VALUE) return;
-        THREADENTRY32 te; te.dwSize = sizeof(te);
-        std::vector<DWORD> ids; ids.reserve(4096);
-        if (Thread32First(snap, &te)) do {
-            if (te.th32OwnerProcessID == pid && te.th32ThreadID != self) ids.push_back(te.th32ThreadID);
-            te.dwSize = sizeof(te);
-        } while (Thread32Next(snap, &te));
-        CloseHandle(snap);
-        // From here on no heap allocation until resume (a suspended thread may hold the heap lock).
-        for (DWORD id : ids) {
-            if (handles.size() == handles.capacity()) break;
-            HANDLE h = OpenThread(THREAD_SUSPEND_RESUME, FALSE, id);
-            if (!h) continue;
-            if (SuspendThread(h) == (DWORD)-1) { CloseHandle(h); continue; }
-            handles.push_back(h);
-        }
-    }
-    void resumeAll() {
-        for (HANDLE h : handles) { ResumeThread(h); CloseHandle(h); }
-        handles.clear();
-    }
-};
 
 bool patch(uintptr_t base) {
     uint8_t* thunks = static_cast<uint8_t*>(allocNear(base + kCaseBlockRva, 4096));
@@ -374,17 +332,19 @@ bool installWhenReady(const Config& cfg) {
     g_cockpitOnly = cfg.cockpitOnly;
     LOG("waiting for the Forza Horizon 2 image to be mapped...");
     for (int attempt = 0;; ++attempt) {
-        bool deep = (attempt % 10) == 9;          // full scan every ~5 s
+        bool deep = (attempt % 250) == 249;       // full scan every ~5 s
         if (uintptr_t base = findGameBase(deep)) {
             LOG("game image found at %p", (void*)base);
             Sleep(250);   // let Azimuth finish its own fix-ups of the image
             if (!verify(base)) {
-                LOG("this game build is not recognised; staying dormant, the game runs unmodified");
+                LOG("this game build is not recognised; head tracking and wheel support stay dormant, the game runs unmodified");
                 return false;
             }
-            return patch(base);
+            bool patched = patch(base);
+            WheelHook_Install(base, cfg);
+            return patched;
         }
-        Sleep(500);
+        Sleep(20);
     }
 }
 

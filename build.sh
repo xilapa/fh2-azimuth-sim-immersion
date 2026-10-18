@@ -15,7 +15,8 @@ g++ -std=c++17 -O1 -Wall tests/test_pose.cpp -o build/test_pose && ./build/test_
 
 $CXX $FLAGS -DFH2HT_VERSION="\"$VERSION\"" -shared -o build/FH2HeadTracking.dll \
     src/dll/dllmain.cpp src/dll/config.cpp src/dll/tracker.cpp src/dll/hook.cpp \
-    -lws2_32 -Wl,--subsystem,windows
+    src/dll/patch_util.cpp src/dll/wheel_device.cpp src/dll/wheel_com.cpp src/dll/wheel_hook.cpp \
+    -lws2_32 -ldinput8 -ldxguid -lole32 -Wl,--subsystem,windows
 $CXX $FLAGS -municode -o build/FH2HeadTracking.exe src/injector/injector.cpp -lpsapi
 # integration harness (needs your own copy of the game executable to run)
 $CXX $FLAGS -municode -mavx -o build/harness.exe tests/harness.cpp -lws2_32

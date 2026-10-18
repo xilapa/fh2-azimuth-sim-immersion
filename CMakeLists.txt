@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(fh2_azimuth_headtracking VERSION 0.3.0 LANGUAGES CXX)
+project(fh2_azimuth_headtracking VERSION 0.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,8 +21,12 @@ add_library(FH2HeadTracking SHARED
   src/dll/dllmain.cpp
   src/dll/config.cpp
   src/dll/tracker.cpp
-  src/dll/hook.cpp)
-target_link_libraries(FH2HeadTracking PRIVATE ws2_32)
+  src/dll/hook.cpp
+  src/dll/patch_util.cpp
+  src/dll/wheel_device.cpp
+  src/dll/wheel_com.cpp
+  src/dll/wheel_hook.cpp)
+target_link_libraries(FH2HeadTracking PRIVATE ws2_32 dinput8 dxguid ole32)
 target_compile_definitions(FH2HeadTracking PRIVATE FH2HT_VERSION="${PROJECT_VERSION}")
 set_target_properties(FH2HeadTracking PROPERTIES PREFIX "")
 
