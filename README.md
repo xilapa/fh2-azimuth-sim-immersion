@@ -1,9 +1,15 @@
 # FH2 Sim Immersion for Azimuth
 
-**Status: 0.5.0. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).**
+**Status: 0.5.0. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
+Steering wheel support is experimental.**
 
-Realism and immersion add-ons for Forza Horizon 2 running in Azimuth. Currently: webcam
-head tracking. It drives the game's **own head-tracking camera layers**, the ones built
+Realism and immersion add-ons for Forza Horizon 2 running in Azimuth:
+
+* **Webcam head tracking** (see below).
+* **Steering wheel support, experimental.** Uses a DirectInput wheel such as the Logitech
+  G29 as the game's own Xbox wheel. See [Steering wheel (experimental)](#steering-wheel-experimental).
+
+Head tracking drives the game's **own head-tracking camera layers**, the ones built
 for Kinect, with your head pose from OpenTrack. You get yaw, pitch and roll, plus lean
 left/right, up/down and forward/back, in the cockpit view.
 
@@ -70,6 +76,41 @@ Both clicks also reach the game, as usual. You can also recenter in your tracker
 * `RecenterButtons`, e.g. `BACK+START`.
 * `RecenterKey` / `ChordRecenterKey` to add a keyboard key. That file is created next to the DLL on the
 first run. Edit it, then restart the game.
+
+## Steering wheel (experimental)
+
+The game supports the Logitech G920 on Xbox, but Azimuth only passes gamepads to it. The
+plugin adds a virtual Xbox wheel to the game's controller list and feeds it from your
+DirectInput wheel. The game then uses its own wheel controls and steering. Tested with a
+Logitech G29, with pedals and the Driving Force Shifter.
+
+What works:
+* steering, throttle, brake and clutch;
+* A/B/X/Y, View, Menu, D-pad and the shift paddles;
+* the H-shifter (set the game's transmission to **Manual with clutch**).
+
+Not yet:
+* **Force feedback.** The wheel has no force feedback for now.
+* Buttons the G920 does not have (G29 L2/R2, L3/R3, +/−, dial, Enter, PS) do nothing.
+
+Setup:
+1. Plug in the wheel before starting the game. Set the rotation in Logitech G HUB
+   (900° recommended) and disable any G HUB game profile that remaps the wheel.
+2. Start FH2SimImmersion.exe and the game as usual. The wheel is on by default; set
+   `Enabled=0` under `[Wheel]` in `FH2SimImmersion.ini` to turn it off.
+3. The log shows `wheel: using "..."` and `wheel: virtual wheel added to the controller list`.
+
+`[Wheel]` settings in `FH2SimImmersion.ini`:
+* `DeviceMatch`: part of the device name (default `G29`). Leave it empty to use the first wheel found.
+* `WheelRange`: the rotation set in G HUB, in degrees.
+* `SteeringAxis`, `ThrottleAxis`, `BrakeAxis`, `ClutchAxis`, `PedalsInverted`, `PedalDeadzone`:
+  axis mapping. The defaults fit the G29.
+* `ButtonA` … `ButtonRB`: DirectInput button numbers (0-based) for the game's buttons.
+* `HShifter=1` with `GearButtons` / `ReverseButton` for the shifter.
+* `UserMode=none` if the game ignores the wheel or acts oddly in menus.
+
+To find axis and button numbers, set `Diagnostics=1` (under `[Input]`). Every 2 seconds the log shows a
+`wheel diag raw:` line with every axis value and the pressed buttons.
 
 ## Checking that it works
 
