@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(fh2_azimuth_headtracking VERSION 0.4.1 LANGUAGES CXX)
+project(fh2_azimuth_sim_immersion VERSION 0.5.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -17,7 +17,7 @@ else()
 endif()
 
 # The plugin loaded into azimuth.exe
-add_library(FH2HeadTracking SHARED
+add_library(FH2SimImmersion SHARED
   src/dll/dllmain.cpp
   src/dll/config.cpp
   src/dll/tracker.cpp
@@ -26,18 +26,18 @@ add_library(FH2HeadTracking SHARED
   src/dll/wheel_device.cpp
   src/dll/wheel_com.cpp
   src/dll/wheel_hook.cpp)
-target_link_libraries(FH2HeadTracking PRIVATE ws2_32 dinput8 dxguid ole32)
-target_compile_definitions(FH2HeadTracking PRIVATE FH2HT_VERSION="${PROJECT_VERSION}")
-set_target_properties(FH2HeadTracking PROPERTIES PREFIX "")
+target_link_libraries(FH2SimImmersion PRIVATE ws2_32 dinput8 dxguid ole32)
+target_compile_definitions(FH2SimImmersion PRIVATE FH2SI_VERSION="${PROJECT_VERSION}")
+set_target_properties(FH2SimImmersion PROPERTIES PREFIX "")
 
 # The launcher / injector
-add_executable(FH2HeadTrackingLauncher src/injector/injector.cpp)
-set_target_properties(FH2HeadTrackingLauncher PROPERTIES OUTPUT_NAME FH2HeadTracking)
-target_link_libraries(FH2HeadTrackingLauncher PRIVATE psapi)
+add_executable(FH2SimImmersionLauncher src/injector/injector.cpp)
+set_target_properties(FH2SimImmersionLauncher PROPERTIES OUTPUT_NAME FH2SimImmersion)
+target_link_libraries(FH2SimImmersionLauncher PRIVATE psapi)
 if(MSVC)
-  target_link_options(FH2HeadTrackingLauncher PRIVATE /ENTRY:wmainCRTStartup)
+  target_link_options(FH2SimImmersionLauncher PRIVATE /ENTRY:wmainCRTStartup)
 else()
-  target_link_options(FH2HeadTrackingLauncher PRIVATE -municode)
+  target_link_options(FH2SimImmersionLauncher PRIVATE -municode)
 endif()
 
 # Integration test (needs your own copy of the game executable to run)

@@ -7,7 +7,7 @@
 namespace fh2 {
 
 static const char kDefaultIni[] =
-"; FH2 Head Tracking for Azimuth - settings. Edit, then restart the game.\n"
+"; FH2 Sim Immersion for Azimuth - settings. Edit, then restart the game.\n"
 "\n"
 "[Input]\n"
 "ConfigVersion=4\n"
@@ -260,7 +260,7 @@ Config loadConfig(const std::wstring& iniPath) {
         // Settings from an older version: keep a backup, start from the new defaults.
         std::wstring bak = iniPath + L".old.bak";
         MoveFileExW(iniPath.c_str(), bak.c_str(), MOVEFILE_REPLACE_EXISTING);
-        LOG("config: settings from an older version saved as FH2HeadTracking.ini.old.bak, writing new defaults");
+        LOG("config: settings from an older version saved as FH2SimImmersion.ini.old.bak, writing new defaults");
     }
     if (GetFileAttributesW(iniPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
         if (FILE* f = _wfopen(iniPath.c_str(), L"w")) {

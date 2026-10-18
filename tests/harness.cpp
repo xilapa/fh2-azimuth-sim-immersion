@@ -1,9 +1,9 @@
 // Integration test (runs under Windows or Wine):
 //   1. maps the real forza_durango_release_final.exe into memory the way a loader would,
-//   2. loads FH2HeadTracking.dll, which must find, verify and patch the image,
+//   2. loads FH2SimImmersion.dll, which must find, verify and patch the image,
 //   3. sends OpenTrack UDP packets,
 //   4. calls the game's own CameraLayer::EvaluateInput on fake layers and checks results.
-// usage: harness.exe <path-to-game-exe> <path-to-FH2HeadTracking.dll> [--deep]
+// usage: harness.exe <path-to-game-exe> <path-to-FH2SimImmersion.dll> [--deep]
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
@@ -232,7 +232,7 @@ static void wheelTests(uint8_t* base, const uint8_t origFrame[5], FnWCS createSt
 }
 
 int wmain(int argc, wchar_t** argv) {
-    if (argc < 3) { printf("usage: harness <game.exe> <FH2HeadTracking.dll> [--deep]\n"); return 2; }
+    if (argc < 3) { printf("usage: harness <game.exe> <FH2SimImmersion.dll> [--deep]\n"); return 2; }
     bool deep = argc > 3 && wcscmp(argv[3], L"--deep") == 0;
     uint8_t* base = mapImage(argv[1], deep ? 0x230000 : 0);
     if (!base) { printf("could not map game image\n"); return 2; }

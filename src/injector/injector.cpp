@@ -1,7 +1,7 @@
-// FH2HeadTracking.exe - loads FH2HeadTracking.dll into Azimuth.
+// FH2SimImmersion.exe - loads FH2SimImmersion.dll into Azimuth.
 //
-//   FH2HeadTracking.exe                       watch: inject into any azimuth.exe that starts
-//   FH2HeadTracking.exe "E:\...\azimuth.exe"  start Azimuth, inject, exit when it closes
+//   FH2SimImmersion.exe                       watch: inject into any azimuth.exe that starts
+//   FH2SimImmersion.exe "E:\...\azimuth.exe"  start Azimuth, inject, exit when it closes
 //
 // Nothing is written to the Azimuth or game folders.
 #include <windows.h>
@@ -45,7 +45,7 @@ static bool inject(DWORD pid, const std::wstring& dllPath) {
     HANDLE proc = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION |
                               PROCESS_VM_WRITE | PROCESS_VM_READ, FALSE, pid);
     if (!proc) { wprintf(L"  could not open azimuth.exe (pid %lu), error %lu\n", pid, GetLastError()); return false; }
-    if (hasModule(proc, dllPath)) { wprintf(L"  pid %lu already has head tracking\n", pid); CloseHandle(proc); return true; }
+    if (hasModule(proc, dllPath)) { wprintf(L"  pid %lu already has FH2 Sim Immersion\n", pid); CloseHandle(proc); return true; }
     size_t bytes = (dllPath.size() + 1) * sizeof(wchar_t);
     void* remote = VirtualAllocEx(proc, nullptr, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     bool ok = false;
@@ -62,22 +62,22 @@ static bool inject(DWORD pid, const std::wstring& dllPath) {
     }
     if (remote) VirtualFreeEx(proc, remote, 0, MEM_RELEASE);
     CloseHandle(proc);
-    wprintf(ok ? L"  head tracking loaded into azimuth.exe (pid %lu)\n"
+    wprintf(ok ? L"  FH2 Sim Immersion loaded into azimuth.exe (pid %lu)\n"
                : L"  FAILED to load into azimuth.exe (pid %lu) - antivirus? run as the same user as Azimuth\n", pid);
     return ok;
 }
 
 int wmain(int argc, wchar_t** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
-    std::wstring dll = selfDir() + L"\\FH2HeadTracking.dll";
+    std::wstring dll = selfDir() + L"\\FH2SimImmersion.dll";
     if (GetFileAttributesW(dll.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        wprintf(L"FH2HeadTracking.dll not found next to this program:\n  %ls\n", dll.c_str());
+        wprintf(L"FH2SimImmersion.dll not found next to this program:\n  %ls\n", dll.c_str());
         Sleep(5000);
         return 1;
     }
-    wprintf(L"FH2 Head Tracking for Azimuth\n");
+    wprintf(L"FH2 Sim Immersion for Azimuth\n");
     wprintf(L"  OpenTrack output: UDP over network, 127.0.0.1 port 4242\n");
-    wprintf(L"  In game: End = toggle, Home = recenter. Log: FH2HeadTracking.log\n\n");
+    wprintf(L"  In game: L3+R3 = recenter head tracking, End = toggle head tracking. Log: FH2SimImmersion.log\n\n");
 
     bool launched = false;
     if (argc > 1) {

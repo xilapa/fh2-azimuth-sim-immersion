@@ -50,6 +50,6 @@ jobs:
           VERSION: ${{ steps.ver.outputs.version }}
           PRERELEASE: ${{ inputs.prerelease }}
         run: |
-          flags=(--title "FH2 Head Tracking $VERSION" --target "$GITHUB_SHA" --generate-notes)
+          flags=(--title "FH2 Sim Immersion $VERSION" --target "$GITHUB_SHA" --generate-notes)
           [ "$PRERELEASE" = "true" ] && flags+=(--prerelease)
-          gh release create "v$VERSION" "dist/FH2HeadTracking-$VERSION.zip" "${flags[@]}"
+          gh release create "v$VERSION" "dist/FH2SimImmersion-$VERSION.zip" "${flags[@]}"
