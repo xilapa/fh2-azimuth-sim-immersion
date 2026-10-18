@@ -25,6 +25,9 @@ struct MapCfg {
     int     rotOrder[3] = {0, 1, 2};
     // Output component order for the translation Param vector (car space)
     int     posOrder[3] = {0, 1, 2};
+    // Extra yaw strength per side; yawLeftIsPositive says which sign of the yaw output is "left".
+    float   yawLeftGain = 1.0f, yawRightGain = 1.0f;
+    bool    yawLeftIsPositive = true;
 };
 
 struct CameraOffsets {
@@ -32,9 +35,11 @@ struct CameraOffsets {
     float posM[3]   = {0, 0, 0};
 };
 
-inline float applyAxis(double v, const AxisCfg& a) {
+// posSideGain / negSideGain scale the value (before the limit) when it is positive / negative.
+inline float applyAxis(double v, const AxisCfg& a, float posSideGain = 1.0f, float negSideGain = 1.0f) {
     if (a.limit <= 0.0f) return 0.0f;
     float out = static_cast<float>(v) * a.gain * (a.invert ? -1.0f : 1.0f);
+    out *= out > 0.0f ? posSideGain : negSideGain;
     if (out >  a.limit) out =  a.limit;
     if (out < -a.limit) out = -a.limit;
     return out;
@@ -44,7 +49,9 @@ inline CameraOffsets mapPose(const RawPose& p, const RawPose& center, const MapC
     CameraOffsets o;
     // The game's camera pitch is positive downwards, OpenTrack's is positive up.
     float rot[3] = {
-        applyAxis(p.yaw   - center.yaw,   c.yaw),
+        applyAxis(p.yaw   - center.yaw,   c.yaw,
+                  c.yawLeftIsPositive ? c.yawLeftGain : c.yawRightGain,
+                  c.yawLeftIsPositive ? c.yawRightGain : c.yawLeftGain),
         -applyAxis(p.pitch - center.pitch, c.pitch),
         applyAxis(p.roll  - center.roll,  c.roll),
     };

@@ -156,6 +156,10 @@ constexpr uintptr_t kRescanRva        = 0x1073120;
 constexpr uintptr_t kUpdateRva        = 0x1075490;
 constexpr uintptr_t kFrameSiteBytes   = 0x22688c;    // 12 bytes, call at +7 (rva 0x226893)
 constexpr uintptr_t kFrameCallSite    = 0x226893;
+constexpr uintptr_t kFfbUpdateRva     = 0x10743c0;   // UpdateFFB(slot, const float in[3])
+constexpr uintptr_t kFfbSiteBytes     = 0x2fe12d;    // 12 bytes, call at +7 (rva 0x2fe134)
+constexpr uintptr_t kFfbCallSite      = 0x2fe134;
+const uint8_t kFfbSiteExpected[12] = {0x48, 0x8D, 0x55, 0xA8, 0x48, 0x8B, 0xCF, 0xE8, 0x87, 0x62, 0xD7, 0x00};
 const uint8_t kFrameSiteExpected[12] = {0x48, 0x8B, 0x0D, 0x35, 0x6F, 0x43, 0x03, 0xE8, 0xF8, 0xEB, 0xE4, 0x00};
 
 constexpr GUID mkGuid(unsigned long a, unsigned short b, unsigned short c, unsigned char d0, unsigned char d1,
@@ -454,6 +458,24 @@ void hookControllerUpdate(void* mgr, float dt) {
     reinterpret_cast<void (*)(void*, float)>(g_base + kUpdateRva)(mgr, dt);
 }
 
+// ---- UpdateFFB hook (game thread, once per frame) --------------------------------------------------
+// Captures the inputs and the driver's parameters, then runs the original. in[] is never modified.
+extern "C" void hookFfbUpdate(uint8_t* slot, const float* in) {
+    if (slot && in) {
+        GameFfbInput g;
+        g.rawTorque = in[0]; g.speed = in[1]; g.slip = in[2];
+        const float* d = *reinterpret_cast<float* const*>(slot + 0x10c0);
+        if (d) {
+            g.gain = d[0];
+            g.dynScale = d[0x28 / 4]; g.dynMax = d[0x2c / 4]; g.springParam = d[0x48 / 4];
+            g.slip0 = d[0x54 / 4]; g.slip1 = d[0x58 / 4]; g.slipScale0 = d[0x5c / 4]; g.slipScale1 = d[0x60 / 4];
+            g.speed0 = d[0x64 / 4]; g.speed1 = d[0x68 / 4]; g.speedScale0 = d[0x6c / 4]; g.speedScale1 = d[0x70 / 4];
+            VirtualWheel_SetGameFfbInput(g);
+        }
+    }
+    reinterpret_cast<void (*)(uint8_t*, const float*)>(g_base + kFfbUpdateRva)(slot, in);
+}
+
 // ---- diagnostics ----------------------------------------------------------------------------------
 DWORD WINAPI diagThread(void*) {
     for (;;) {
@@ -480,9 +502,17 @@ DWORD WINAPI diagThread(void*) {
             (long)in.raw[5], (long)in.raw[6], (long)in.raw[7], pn ? pressed : "none");
         FfbStatus fs;
         if (WheelDevice_FfbStatus(fs))
-            LOG("wheel diag ffb: %s F %.3f (torque %.3f spring %.3f damp %.3f rumble %.3f menu %.3f) angle %.3f vel %.2f out %ld",
+        {
+            char game[96];
+            if (fs.haveGame)
+                snprintf(game, sizeof(game), " | game raw %.3f speed %.1f slip %.3f gain %.2f", fs.game.rawTorque,
+                         fs.game.speed, fs.game.slip, fs.game.gain);
+            else
+                snprintf(game, sizeof(game), " | game input none");
+            LOG("wheel diag ffb: %s F %.3f (torque %.3f spring %.3f damp %.3f rumble %.3f menu %.3f) angle %.3f vel %.2f out %ld slip %.3f%s",
                 fs.stale ? "stale" : fs.race ? "race" : "menu", fs.terms.total, fs.terms.torque, fs.terms.spring,
-                fs.terms.damping, fs.terms.rumble, fs.terms.menu, fs.angle, fs.velocity, fs.mag);
+                fs.terms.damping, fs.terms.rumble, fs.terms.menu, fs.angle, fs.velocity, fs.mag, fs.terms.slip, game);
+        }
     }
 }
 
@@ -538,6 +568,23 @@ void WheelHook_Install(uintptr_t base, const Config& cfg) {
             DWORD o;
             VirtualProtect(thunk, 4096, PAGE_EXECUTE_READ, &o);
             LOG("wheel: frame hook installed (thunk %p)", (void*)thunk);
+        }
+    }
+
+    // Game FFB input hook (UpdateFFB call site): the plugin sees what the car computes.
+    if (cfg.wheel.ffbEnabled) {
+        const uint8_t* fsite = reinterpret_cast<const uint8_t*>(base + kFfbSiteBytes);
+        if (std::memcmp(fsite, kFfbSiteExpected, sizeof(kFfbSiteExpected)) != 0) {
+            LOG("wheel ffb: FFB input hook site mismatch; using game variables only");
+        } else {
+            uint8_t* fthunk = static_cast<uint8_t*>(allocNear(base + kFfbCallSite, 4096));
+            if (!fthunk || !patchCallRel32(base + kFfbCallSite, reinterpret_cast<void*>(&hookFfbUpdate), fthunk)) {
+                LOG("wheel ffb: FFB input hook failed; using game variables only");
+            } else {
+                DWORD o;
+                VirtualProtect(fthunk, 4096, PAGE_EXECUTE_READ, &o);
+                LOG("wheel ffb: game FFB input hook installed");
+            }
         }
     }
 

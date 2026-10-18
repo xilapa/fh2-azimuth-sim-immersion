@@ -25,6 +25,8 @@ struct FfbStatus {             // latest force feedback state, for diagnostics
     long  mag = 0;             // last computed device magnitude (-10000..10000)
     bool  race = false, stale = true;
     bool  active = false;      // effect running
+    bool  haveGame = false;    // game UpdateFFB input was fresh
+    GameFfbInput game{};
 };
 
 // Enumerates, logs, starts the poll thread; false if no device (unless TestMode).

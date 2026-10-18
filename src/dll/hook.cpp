@@ -8,6 +8,7 @@
 #include "hook.h"
 #include "patch_util.h"
 #include "wheel_hook.h"
+#include "fov_hook.h"
 #include "game_layout.h"
 #include "tracker.h"
 #include "log.h"
@@ -342,6 +343,7 @@ bool installWhenReady(const Config& cfg) {
             }
             bool patched = patch(base);
             WheelHook_Install(base, cfg);
+            FovHook_Install(base, cfg);
             return patched;
         }
         Sleep(20);

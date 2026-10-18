@@ -10,17 +10,41 @@ float sq(float a, float wl, double t) {
     if (!(wl > 0) || a == 0) return 0;
     return std::fmod(t, (double)wl) < (double)wl / 2 ? a : -a;
 }
+// Piecewise linear between (x0 -> y0) and (x1 -> y1), clamped to the end values outside.
+float piecewise(float x, float x0, float y0, float x1, float y1) {
+    if (x0 > x1) { float tx = x0, ty = y0; x0 = x1; y0 = y1; x1 = tx; y1 = ty; }
+    if (x0 == x1) return y1;
+    if (x <= x0) return y0;
+    if (x >= x1) return y1;
+    return y0 + (y1 - y0) * (x - x0) / (x1 - x0);
+}
 } // namespace
 
-float FfbForce(const FfbParams& p, float angle, float velocity, double tMs, FfbTerms* terms) {
-    FfbTerms t{0, 0, 0, 0, 0, 0};
+float FfbForce(const FfbParams& p, const FfbTuning& tune, float angle, float velocity, double tMs, FfbTerms* terms) {
+    FfbTerms t{0, 0, 0, 0, 0, 0, 0};
     if (!p.stale) {
         if (p.race) {
-            t.torque  = p.torque;
-            t.spring  = limit(-p.raceSpringScale * angle, p.raceSpringMax);
+            t.torque  = p.torque * tune.torqueGain;
+            float scale;
+            if (p.haveGame) {
+                const GameFfbInput& g = p.game;
+                float speedF = piecewise(g.speed, g.speed0, g.speedScale0, g.speed1, g.speedScale1);
+                float slipF  = piecewise(std::fabs(g.slip), g.slip0, g.slipScale0, g.slip1, g.slipScale1);
+                scale = speedF * std::fmax(slipF, tune.slipSpringFloor) * g.springParam * g.gain * tune.springGain;
+            } else {
+                scale = p.raceSpringScale * tune.springGain;
+            }
+            t.spring  = limit(-scale * angle, p.raceSpringMax);
             t.damping = limit(-p.dampScale * velocity, p.dampMax);
             t.rumble  = sq(p.leftAmp, p.leftWl, tMs) + sq(p.rightAmp, p.rightWl, tMs);
-            t.total   = t.torque + t.spring + t.damping + t.rumble;
+            if (p.haveGame && tune.slipGain > 0.0f) {
+                float s = std::fabs(p.game.slip);
+                float k = tune.slipFull <= tune.slipStart ? 0.0f
+                                                          : clampf((s - tune.slipStart) / (tune.slipFull - tune.slipStart), 0.0f, 1.0f);
+                float sign = p.game.slip > 0.0f ? 1.0f : p.game.slip < 0.0f ? -1.0f : 0.0f;
+                t.slip = tune.slipGain * 0.5f * k * sign * (tune.slipInvert ? -1.0f : 1.0f);
+            }
+            t.total   = t.torque + t.spring + t.damping + t.slip + t.rumble;
         } else {
             t.menu  = -p.menuSpringScale * angle;
             t.total = t.menu;
@@ -29,6 +53,12 @@ float FfbForce(const FfbParams& p, float angle, float velocity, double tMs, FfbT
     }
     if (terms) *terms = t;
     return t.total;
+}
+
+float FfbForce(const FfbParams& p, float angle, float velocity, double tMs, FfbTerms* terms) {
+    FfbTuning neutral;
+    neutral.torqueGain = 1.0f; neutral.springGain = 1.0f; neutral.slipSpringFloor = 0.0f; neutral.slipGain = 0.0f;
+    return FfbForce(p, neutral, angle, velocity, tMs, terms);
 }
 
 long FfbDeviceMagnitude(float force, float gain, bool invert) {

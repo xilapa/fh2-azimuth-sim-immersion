@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include "../src/dll/wheel_ffb.h"
 
 #ifdef _MSC_VER
 #define MSABI
@@ -234,6 +235,62 @@ static void wheelTests(uint8_t* base, const uint8_t origFrame[5], FnWCS createSt
     CHECK(g_unexpectedClass == 0, "no unexpected activation requests (%d)", g_unexpectedClass);
 }
 
+typedef bool (*FnLastFfb)(fh2::GameFfbInput*);
+typedef void (MSABI *FnUpdateFfb)(uint8_t*, const float*);
+typedef float (MSABI *FnGetFov)(void*);
+
+static void ffbTests(uint8_t* base, HMODULE plugin) {
+    printf("game FFB input hook:\n");
+    const uintptr_t kSite = 0x2fe134, kOrigTarget = 0x10743c0;
+    bool hooked = false;
+    for (int i = 0; i < 150 && !hooked; ++i) { hooked = base[kSite + 1] != 0x87 || base[kSite + 2] != 0x62; if (!hooked) Sleep(100); }
+    int32_t rel; memcpy(&rel, base + kSite + 1, 4);
+    uint8_t* target = base + kSite + 5 + rel;
+    CHECK(base[kSite] == 0xE8, "call opcode preserved");
+    CHECK(target != base + kOrigTarget && hooked, "call site no longer points at UpdateFFB (%p)", (void*)target);
+    FnLastFfb last = (FnLastFfb)GetProcAddress(plugin, "FH2SI_TestLastGameFfbInput");
+    CHECK(last != nullptr, "plugin test accessor exported");
+    if (!hooked || !last) return;
+
+    alignas(16) static uint8_t slot[0x1400];
+    alignas(16) static float driver[32];
+    memset(slot, 0, sizeof(slot)); memset(driver, 0, sizeof(driver));
+    *(float**)(slot + 0x10c0) = driver;
+    driver[0] = 1.0f;
+    driver[0x28 / 4] = 0.42f; driver[0x2c / 4] = 1.0f; driver[0x48 / 4] = 0.5f;
+    driver[0x54 / 4] = 0.32f; driver[0x58 / 4] = 0.55f; driver[0x5c / 4] = 1.0f; driver[0x60 / 4] = 0.0f;
+    driver[0x64 / 4] = 2.0f; driver[0x68 / 4] = 15.0f; driver[0x6c / 4] = 0.15f; driver[0x70 / 4] = 1.0f;
+    const float in[3] = {0.5f, 20.0f, 0.1f};
+    float inCopy[3] = {in[0], in[1], in[2]};
+    ((FnUpdateFfb)target)(slot, inCopy);
+    CHECK(std::fabs(driver[1] - 0.21f) < 1e-4f, "original UpdateFFB ran: torque output %f", driver[1]);
+    CHECK(memcmp(in, inCopy, sizeof(in)) == 0, "hook left the input untouched");
+    fh2::GameFfbInput g;
+    bool got = last(&g);
+    CHECK(got, "plugin captured the input");
+    CHECK(std::fabs(g.rawTorque - 0.5f) < 1e-6f && std::fabs(g.speed - 20.0f) < 1e-6f && std::fabs(g.slip - 0.1f) < 1e-6f &&
+          std::fabs(g.gain - 1.0f) < 1e-6f, "captured raw %f speed %f slip %f gain %f", g.rawTorque, g.speed, g.slip, g.gain);
+    CHECK(std::fabs(g.dynScale - 0.42f) < 1e-6f && std::fabs(g.springParam - 0.5f) < 1e-6f && std::fabs(g.slip1 - 0.55f) < 1e-6f &&
+          std::fabs(g.speed0 - 2.0f) < 1e-6f && std::fabs(g.speedScale1 - 1.0f) < 1e-6f, "captured driver parameters");
+}
+
+static void fovTests(uint8_t* base) {
+    printf("field of view:\n");
+    const uintptr_t kGetFov = 0x10340f0;
+    uint64_t cockpit = *(uint64_t*)(base + 0x2e77c30 + 14 * 8);
+    uint64_t hood    = *(uint64_t*)(base + 0x2e77ea8 + 14 * 8);
+    CHECK(cockpit != (uint64_t)(base + kGetFov), "CCamCockpit GetFOV slot re-pointed");
+    CHECK(hood == (uint64_t)(base + kGetFov), "CCamHood GetFOV slot unchanged (FovHood=0)");
+    alignas(16) static uint8_t cam[0x400];
+    memset(cam, 0, sizeof(cam));
+    *(float*)(cam + 0x1d0) = 45.0f;
+    cam[0x218] = 0;
+    float v = ((FnGetFov)cockpit)(cam);
+    CHECK(std::fabs(v - 55.0f) < 1e-4f, "cockpit FOV 45 + 10 = %f", v);
+    v = ((FnGetFov)hood)(cam);
+    CHECK(std::fabs(v - 45.0f) < 1e-4f, "hood FOV unchanged = %f", v);
+}
+
 int wmain(int argc, wchar_t** argv) {
     if (argc < 3) { printf("usage: harness <game.exe> <FH2SimImmersion.dll> [--deep]\n"); return 2; }
     bool deep = argc > 3 && wcscmp(argv[3], L"--deep") == 0;
@@ -262,13 +319,18 @@ int wmain(int argc, wchar_t** argv) {
         iniPath = (dot == std::wstring::npos ? iniPath : iniPath.substr(0, dot)) + L".ini";
         WritePrivateProfileStringW(L"Input", L"ConfigVersion", L"4", iniPath.c_str());
         WritePrivateProfileStringW(L"Wheel", L"TestMode", L"1", iniPath.c_str());
+        WritePrivateProfileStringW(L"Simulation", L"FovCockpit", L"10", iniPath.c_str());
     }
     struct RestoreIni {
         std::wstring p;
-        ~RestoreIni() { WritePrivateProfileStringW(L"Wheel", L"TestMode", L"0", p.c_str()); }
+        ~RestoreIni() {
+            WritePrivateProfileStringW(L"Wheel", L"TestMode", L"0", p.c_str());
+            WritePrivateProfileStringW(L"Simulation", L"FovCockpit", L"0", p.c_str());
+        }
     } restoreIni{iniPath};
 
-    if (!LoadLibraryW(argv[2])) { printf("LoadLibrary failed %lu\n", GetLastError()); return 2; }
+    HMODULE plugin = LoadLibraryW(argv[2]);
+    if (!plugin) { printf("LoadLibrary failed %lu\n", GetLastError()); return 2; }
 
     WSADATA w; WSAStartup(MAKEWORD(2, 2), &w);
     SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -348,6 +410,8 @@ int wmain(int argc, wchar_t** argv) {
           "FreeTrack mm -> metres (%f %f %f)", f(pos, 0xE0), f(pos, 0xE4), f(pos, 0xE8));
 
     wheelTests(base, origFrame, createString);
+    ffbTests(base, plugin);
+    fovTests(base);
 
     printf(failures ? "\n%d check(s) FAILED\n" : "\nall integration checks passed\n", failures);
     return failures ? 1 : 0;

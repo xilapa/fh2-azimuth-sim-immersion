@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(fh2_azimuth_sim_immersion VERSION 0.6.1 LANGUAGES CXX)
+project(fh2_azimuth_sim_immersion VERSION 0.7.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,7 +25,9 @@ add_library(FH2SimImmersion SHARED
   src/dll/patch_util.cpp
   src/dll/wheel_device.cpp
   src/dll/wheel_com.cpp
-  src/dll/wheel_hook.cpp)
+  src/dll/wheel_hook.cpp
+  src/dll/fov_hook.cpp
+    src/dll/wheel_ffb.cpp)
 target_link_libraries(FH2SimImmersion PRIVATE ws2_32 dinput8 dxguid ole32)
 target_compile_definitions(FH2SimImmersion PRIVATE FH2SI_VERSION="${PROJECT_VERSION}")
 set_target_properties(FH2SimImmersion PROPERTIES PREFIX "")

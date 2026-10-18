@@ -53,6 +53,10 @@ static const char kDefaultIni[] =
 "; that axis off. Sensitivity curves belong in OpenTrack's Mapping window.\n"
 "[Rotation]\n"
 "YawGain=1.0\n"
+"; Extra yaw strength per side (e.g. YawLeftGain=1.3 if looking left feels shorter). If left/right are swapped, set YawLeftIsPositive=0.\n"
+"YawLeftGain=1.0\n"
+"YawRightGain=1.0\n"
+"YawLeftIsPositive=1\n"
 "YawInvert=0\n"
 "YawLimit=90\n"
 "PitchGain=1.0\n"
@@ -118,11 +122,31 @@ static const char kDefaultIni[] =
 "FFBGain=1.0\n"
 "; 1 = reverse the force direction (use if the wheel pushes away from the centre in menus).\n"
 "FFBInvert=0\n"
+"; Strength of the game's steering torque (self-aligning force). 1.0 = game default.\n"
+"FFBTorqueGain=2.0\n"
+"; Strength of the centring spring. 1.0 = game default.\n"
+"FFBSpringGain=1.0\n"
+"; The game removes the centring spring when the rear slides; keep at least this fraction of it (0 = game behaviour).\n"
+"FFBSlipSpringFloor=0.4\n"
+"; Counter-steer force when the rear slides: turns the wheel toward the direction of travel. 0 = off.\n"
+"FFBSlipGain=0.5\n"
+"; Rear slip where the counter-steer force starts and where it is full.\n"
+"FFBSlipStart=0.08\n"
+"FFBSlipFull=0.55\n"
+"; 1 = reverse the counter-steer direction (use if the wheel turns INTO the slide).\n"
+"FFBSlipInvert=0\n"
 "; Identity reported to the game (Logitech G920).\n"
 "VendorId=0x046D\n"
 "ProductId=0xC261\n"
 "ConfigFlag14=1\n"
-"TestMode=0\n";
+"TestMode=0\n"
+"\n"
+"[Simulation]\n"
+"; Extra field of view in degrees, per camera (0 = game default). Example: FovCockpit=10\n"
+"FovCockpit=0\n"
+"FovDriver=0\n"
+"FovHood=0\n"
+"FovBumper=0\n";
 
 constexpr int kConfigVersion = 4;
 
@@ -206,6 +230,13 @@ static AxisCfg readAxis(const wchar_t* ini, const char* sec, const char* name, f
     return a;
 }
 
+// NaN-safe clamp; logs when the value had to change.
+static float clampCfg(const wchar_t*, const char* key, float v, float lo, float hi) {
+    if (!(v >= lo)) { LOG("config: %s=%.2f below %.2f; clamping", key, v, lo); return lo; }
+    if (v > hi) { LOG("config: %s=%.2f above %.2f; clamping", key, v, hi); return hi; }
+    return v;
+}
+
 static WheelAxis readWheelAxis(const wchar_t* ini, const char* key, WheelAxis def, const char* defName) {
     std::string s = readStr(ini, "Wheel", key, defName), t;
     for (char ch : s) if (ch != ' ') t += (char)toupper((unsigned char)ch);
@@ -282,6 +313,18 @@ static void readWheel(const wchar_t* ini, WheelConfig& w) {
         w.ffbGain = w.ffbGain < 0.0f ? 0.0f : 4.0f;
     }
     w.ffbInvert    = readI(ini, "Wheel", "FFBInvert", 0) != 0;
+    {
+        FfbTuning& t = w.ffbTuning;
+        t.torqueGain      = clampCfg(ini, "FFBTorqueGain", (float)readF(ini, "Wheel", "FFBTorqueGain", 2.0), 0.0f, 5.0f);
+        t.springGain      = clampCfg(ini, "FFBSpringGain", (float)readF(ini, "Wheel", "FFBSpringGain", 1.0), 0.0f, 5.0f);
+        t.slipSpringFloor = clampCfg(ini, "FFBSlipSpringFloor", (float)readF(ini, "Wheel", "FFBSlipSpringFloor", 0.4), 0.0f, 1.0f);
+        t.slipGain        = clampCfg(ini, "FFBSlipGain", (float)readF(ini, "Wheel", "FFBSlipGain", 0.5), 0.0f, 5.0f);
+        t.slipStart       = clampCfg(ini, "FFBSlipStart", (float)readF(ini, "Wheel", "FFBSlipStart", 0.08), 0.0f, 2.0f);
+        t.slipFull        = clampCfg(ini, "FFBSlipFull", (float)readF(ini, "Wheel", "FFBSlipFull", 0.55), 0.0f, 2.0f);
+        t.slipInvert      = readI(ini, "Wheel", "FFBSlipInvert", 0) != 0;
+        LOG("config: ffb torque %.2f spring %.2f floor %.2f slip %.2f [%.2f..%.2f] inv %d", t.torqueGain,
+            t.springGain, t.slipSpringFloor, t.slipGain, t.slipStart, t.slipFull, t.slipInvert);
+    }
     LOG("config: wheel enabled %d match '%s' range %d axes steer %s%s thr %s brk %s clu %s pedalsInv %d dz %.2f "
         "hshifter %d user %s rescan %d id %04x:%04x flag14 %d test %d ffb %d gain %.2f inv %d",
         w.enabled, w.deviceMatch.c_str(), w.wheelRange, wheelAxisName(w.steeringAxis),
@@ -330,6 +373,9 @@ Config loadConfig(const std::wstring& iniPath) {
     c.map.x = readAxis(ini, "Position", "X", 0.10f);
     c.map.y = readAxis(ini, "Position", "Y", 0.06f);
     c.map.z = readAxis(ini, "Position", "Z", 0.08f);
+    c.map.yawLeftGain  = clampCfg(ini, "YawLeftGain", (float)readF(ini, "Rotation", "YawLeftGain", 1.0), 0.0f, 5.0f);
+    c.map.yawRightGain = clampCfg(ini, "YawRightGain", (float)readF(ini, "Rotation", "YawRightGain", 1.0), 0.0f, 5.0f);
+    c.map.yawLeftIsPositive = readI(ini, "Rotation", "YawLeftIsPositive", 1) != 0;
     readOrder(ini, "RotOrder", c.map.rotOrder);
     readOrder(ini, "PosOrder", c.map.posOrder);
     LOG("config: source %s diagnostics %d recenter buttons 0x%04x", src.c_str(), c.diagnostics, c.recenterButtons);
@@ -340,6 +386,8 @@ Config loadConfig(const std::wstring& iniPath) {
     }
     LOG("config: port %d bind %s enabled %d cockpitOnly %d smoothing %.2f",
         c.udpPort, c.bindAddress.c_str(), c.enableOnStartup, c.cockpitOnly, c.smoothing);
+    LOG("config: yaw side gains left %.2f right %.2f leftIsPositive %d", c.map.yawLeftGain, c.map.yawRightGain,
+        c.map.yawLeftIsPositive);
     LOG("config: yaw g%.2f i%d l%.0f  pitch g%.2f i%d l%.0f  roll g%.2f i%d l%.0f",
         c.map.yaw.gain, c.map.yaw.invert, c.map.yaw.limit, c.map.pitch.gain, c.map.pitch.invert,
         c.map.pitch.limit, c.map.roll.gain, c.map.roll.invert, c.map.roll.limit);
@@ -347,6 +395,12 @@ Config loadConfig(const std::wstring& iniPath) {
         c.map.positionEnabled, c.map.x.gain, c.map.x.invert, c.map.x.limit, c.map.y.gain,
         c.map.y.invert, c.map.y.limit, c.map.z.gain, c.map.z.invert, c.map.z.limit);
     readWheel(ini, c.wheel);
+    c.sim.fovCockpit = clampCfg(ini, "FovCockpit", (float)readF(ini, "Simulation", "FovCockpit", 0.0), -30.0f, 60.0f);
+    c.sim.fovDriver  = clampCfg(ini, "FovDriver", (float)readF(ini, "Simulation", "FovDriver", 0.0), -30.0f, 60.0f);
+    c.sim.fovHood    = clampCfg(ini, "FovHood", (float)readF(ini, "Simulation", "FovHood", 0.0), -30.0f, 60.0f);
+    c.sim.fovBumper  = clampCfg(ini, "FovBumper", (float)readF(ini, "Simulation", "FovBumper", 0.0), -30.0f, 60.0f);
+    LOG("config: fov cockpit %.1f driver %.1f hood %.1f bumper %.1f", c.sim.fovCockpit, c.sim.fovDriver,
+        c.sim.fovHood, c.sim.fovBumper);
     return c;
 }
 

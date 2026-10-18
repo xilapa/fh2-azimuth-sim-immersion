@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <string>
 #include "pose.h"
+#include "wheel_ffb.h"
 
 namespace fh2 {
 
@@ -32,6 +33,11 @@ struct WheelConfig {
     bool        ffbEnabled = true;
     float       ffbGain = 1.0f;
     bool        ffbInvert = false;
+    FfbTuning   ffbTuning;
+};
+
+struct SimConfig {
+    float fovCockpit = 0, fovDriver = 0, fovHood = 0, fovBumper = 0;   // extra degrees, 0 = game default
 };
 
 struct Config {
@@ -56,6 +62,8 @@ struct Config {
     MapCfg map;
     // [Wheel]
     WheelConfig wheel;
+    // [Simulation]
+    SimConfig sim;
 };
 
 // Loads the INI, writing a commented default file first if it does not exist.

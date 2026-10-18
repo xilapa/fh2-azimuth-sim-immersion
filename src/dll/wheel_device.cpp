@@ -313,7 +313,7 @@ DWORD WINAPI pollThread(void*) {
                 FfbParams p;
                 VirtualWheel_FfbSnapshot(p);
                 FfbTerms terms{};
-                float F = FfbForce(p, angle, velocity, nowMs, &terms);
+                float F = FfbForce(p, g_cfg.ffbTuning, angle, velocity, nowMs, &terms);
                 LONG mag = FfbDeviceMagnitude(F, g_cfg.ffbGain, g_cfg.ffbInvert);
                 bool send = forceSend || labs(mag - lastSent) >= 20 || (mag != lastSent && nowMs - lastSendMs >= 10.0) ||
                             (mag == 0 && lastSent != 0);
@@ -338,6 +338,7 @@ DWORD WINAPI pollThread(void*) {
                 g_ffbStatus.terms = terms; g_ffbStatus.angle = angle; g_ffbStatus.velocity = velocity;
                 g_ffbStatus.mag = mag; g_ffbStatus.race = p.race; g_ffbStatus.stale = p.stale;
                 g_ffbStatus.active = true;
+                g_ffbStatus.haveGame = p.haveGame; g_ffbStatus.game = p.game;
                 ReleaseSRWLockExclusive(&g_lock);
             }
         }

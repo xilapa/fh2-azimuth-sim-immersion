@@ -71,6 +71,31 @@ int main() {
         for (int i = 0; i < 1000; ++i) smoothPose(s, target, a2);   // 4 s at 250 Hz
         assert(std::fabs(s.yaw - 10) < 0.01);
     }
+    // per-side yaw gain
+    {
+        MapCfg c = defaults();
+        c.yawLeftGain = 2.0f;                        // left = positive by default
+        auto o = mapPose(RawPose{0, 0, 0, 20, 0, 0}, zero, c);
+        assert(near(o.rotDeg[0], 40));
+        o = mapPose(RawPose{0, 0, 0, -20, 0, 0}, zero, c);
+        assert(near(o.rotDeg[0], -20));              // right side untouched
+        o = mapPose(RawPose{0, 0, 0, 100, 0, 0}, zero, c);
+        assert(near(o.rotDeg[0], 150));              // limit still applies after the side gain
+        o = mapPose(RawPose{0, 0, 0, 0, 20, 10}, zero, c);
+        assert(near(o.rotDeg[1], -20) && near(o.rotDeg[2], 10));   // pitch/roll unchanged
+        c.yawLeftIsPositive = false;                 // swapped: positive yaw is "right"
+        o = mapPose(RawPose{0, 0, 0, 20, 0, 0}, zero, c);
+        assert(near(o.rotDeg[0], 20));
+        o = mapPose(RawPose{0, 0, 0, -20, 0, 0}, zero, c);
+        assert(near(o.rotDeg[0], -40));
+        c.yawRightGain = 0.5f;
+        o = mapPose(RawPose{0, 0, 0, 20, 0, 0}, zero, c);
+        assert(near(o.rotDeg[0], 10));
+        // gain/invert are applied before the side is decided
+        c = defaults(); c.yaw.invert = true; c.yawLeftGain = 2.0f;
+        o = mapPose(RawPose{0, 0, 0, -20, 0, 0}, zero, c);
+        assert(near(o.rotDeg[0], 40));
+    }
     // the game's rotation case multiplies by 180/pi: input 1 deg-radian must round-trip to 1.0
     {
         float r = 1.0f * 0.017453292519943295f;

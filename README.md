@@ -1,6 +1,6 @@
 # FH2 Sim Immersion for Azimuth
 
-**Status: 0.6.1. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
+**Status: 0.7.0. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
 Steering wheel support is experimental.**
 
 Realism and immersion add-ons for Forza Horizon 2 running in Azimuth:
@@ -114,16 +114,30 @@ Setup:
 * `FFB=0` turns force feedback off. `FFBGain` sets its strength (1.0 = the game's maximum
   force is the wheel's maximum). `FFBInvert=1` reverses it: use this if the wheel pushes
   away from the centre in menus instead of returning to it.
+* Force feedback feel: `FFBTorqueGain` (the game's steering torque, 1.0 = game default),
+  `FFBSpringGain` (centring spring), `FFBSlipSpringFloor` (share of the centring spring kept
+  when the rear slides), `FFBSlipGain` (counter-steer force in a slide, 0 = off),
+  `FFBSlipStart` / `FFBSlipFull` (rear slip range for that force) and `FFBSlipInvert`.
+  If it feels too light off-road, raise `FFBTorqueGain` or `FFBSlipSpringFloor`. If the wheel
+  turns into the slide instead of against it, set `FFBSlipInvert=1`.
 
 To find axis and button numbers, set `Diagnostics=1` (under `[Input]`). Every 2 seconds the log shows a
 `wheel diag raw:` line with every axis value and the pressed buttons.
+
+## Field of view
+
+The `[Simulation]` section widens (or narrows) the field of view of the cockpit, driver, hood
+and bumper cameras: `FovCockpit`, `FovDriver`, `FovHood` and `FovBumper`. Each value is the
+number of degrees added to the game's own field of view; `0` leaves the game default alone.
+For example `FovCockpit=10`. The log shows the game's value once per camera as
+`fov: ... base`.
 
 ## Checking that it works
 
 `FH2SimImmersion.log` is written next to the DLL. A good run looks like this:
 
 ```
-FH2 Sim Immersion 0.6.1 loaded into pid ... (...\azimuth.exe)
+FH2 Sim Immersion 0.7.0 loaded into pid ... (...\azimuth.exe)
 waiting for the Forza Horizon 2 image to be mapped...
 game image found at 0000...
 patch: 5 head-tracking inputs redirected (thunks at ...)
@@ -145,6 +159,9 @@ differently:
   `RotOrder=` / `PosOrder=`.
 * **Strength:** set the curves in your tracker (Beam's sensitivity, or OpenTrack's Mapping
   window), or use `YawGain`, `PitchGain` and so on here.
+* **Left/right balance:** `YawLeftGain` and `YawRightGain` add strength to one side only
+  (for example `YawLeftGain=1.3` if looking left feels shorter than looking right). If left
+  and right are swapped, set `YawLeftIsPositive=0`.
 * **Range:** `Limit` caps the camera movement. The defaults keep the view inside the
   cabin. `Limit=0` turns an axis off.
 

@@ -110,6 +110,7 @@ struct FfbCapture {
     uint64_t lastHeartbeatQpc = 0, lastWriteQpc = 0;
 };
 FfbCapture g_ffb;
+GameFfbInput g_gameFfb;   // qpc == 0 until the first UpdateFFB call (protected by the same lock)
 std::atomic<bool> g_ffbLogged{false};
 
 uint64_t qpcNow() { LARGE_INTEGER t; QueryPerformanceCounter(&t); return (uint64_t)t.QuadPart; }
@@ -456,12 +457,26 @@ void VirtualWheel_FfbSnapshot(FfbParams& out) {
     out.leftAmp = g_ffb.leftAmp; out.leftWl = g_ffb.leftWl;
     out.rightAmp = g_ffb.rightAmp; out.rightWl = g_ffb.rightWl;
     uint64_t now = qpcNow(), f = qpcFreq();
+    out.game = g_gameFfb;
+    out.haveGame = g_gameFfb.qpc != 0 && (double)(qpcNow() - g_gameFfb.qpc) < 0.5 * (double)qpcFreq();
     out.race  = g_ffb.lastHeartbeatQpc != 0 && (double)(now - g_ffb.lastHeartbeatQpc) < 2.5 * (double)f;
     out.stale = g_ffb.lastWriteQpc == 0 || (double)(now - g_ffb.lastWriteQpc) > 1.0 * (double)f;
     static std::atomic<int> prevRace{-1};
     int r = out.race ? 1 : 0;
     if (prevRace.exchange(r) != r)
         LOG("wheel: game %s", r ? "racing (force feedback heartbeat on)" : "paused or in menus (heartbeat stopped)");
+}
+
+void VirtualWheel_SetGameFfbInput(const GameFfbInput& in) {
+    Lock l;
+    g_gameFfb = in;
+    g_gameFfb.qpc = qpcNow();
+}
+
+bool VirtualWheel_LastGameFfbInput(GameFfbInput& out) {
+    Lock l;
+    out = g_gameFfb;
+    return g_gameFfb.qpc != 0;
 }
 
 float VirtualWheel_GameAngle(float steering) {
@@ -499,3 +514,8 @@ void VirtualWheel_FormatVars(char* buf, size_t cap) {
 }
 
 } // namespace fh2
+
+// Test hook for the integration harness (GetProcAddress); not used by the game or the plugin.
+extern "C" __declspec(dllexport) bool FH2SI_TestLastGameFfbInput(fh2::GameFfbInput* out) {
+    return out && fh2::VirtualWheel_LastGameFfbInput(*out);
+}

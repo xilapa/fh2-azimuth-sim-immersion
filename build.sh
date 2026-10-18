@@ -16,7 +16,7 @@ g++ -std=c++17 -O1 -Wall tests/test_ffb.cpp src/dll/wheel_ffb.cpp -o build/test_
 
 $CXX $FLAGS -DFH2SI_VERSION="\"$VERSION\"" -shared -o build/FH2SimImmersion.dll \
     src/dll/dllmain.cpp src/dll/config.cpp src/dll/tracker.cpp src/dll/hook.cpp \
-    src/dll/patch_util.cpp src/dll/wheel_device.cpp src/dll/wheel_com.cpp src/dll/wheel_hook.cpp src/dll/wheel_ffb.cpp \
+    src/dll/patch_util.cpp src/dll/wheel_device.cpp src/dll/wheel_com.cpp src/dll/wheel_hook.cpp src/dll/wheel_ffb.cpp src/dll/fov_hook.cpp \
     -lws2_32 -ldinput8 -ldxguid -lole32 -Wl,--subsystem,windows
 $CXX $FLAGS -municode -o build/FH2SimImmersion.exe src/injector/injector.cpp -lpsapi
 # integration harness (needs your own copy of the game executable to run)

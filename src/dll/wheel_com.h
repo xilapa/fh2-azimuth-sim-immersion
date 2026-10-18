@@ -20,6 +20,10 @@ void  VirtualWheel_SetUser(void* user);
 void  VirtualWheel_FfbSnapshot(FfbParams& out);
 // The steering value the game sees for a -1..1 physical steering input (rotation-scaled, clamped).
 float VirtualWheel_GameAngle(float steering);
+// Stores the game's per-frame UpdateFFB input (called from the game thread; stamps qpc itself).
+void  VirtualWheel_SetGameFfbInput(const GameFfbInput& in);
+// Latest captured UpdateFFB input regardless of age; false when none was captured yet (tests).
+bool  VirtualWheel_LastGameFfbInput(GameFfbInput& out);
 void  VirtualWheel_FormatVars(char* buf, size_t cap);
 
 } // namespace fh2

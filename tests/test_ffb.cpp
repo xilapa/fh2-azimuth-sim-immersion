@@ -56,6 +56,86 @@ int main() {
         FfbParams p = live(true); p.torque = 0.9f;
         assert(near(FfbForce(p, 0, 0, 0, nullptr), 0.5f));
     }
+    // 9. torque gain
+    {
+        FfbParams p = live(true); p.torque = 0.1f;
+        FfbTuning t; t.slipGain = 0;
+        assert(near(FfbForce(p, t, 0, 0, 0, nullptr), 0.2f));
+        t.torqueGain = 1.0f;
+        assert(near(FfbForce(p, t, 0, 0, 0, nullptr), 0.1f));
+    }
+    // 10. game-driven spring with slip floor
+    auto game = [] {
+        FfbParams p = live(true);
+        p.haveGame = true; p.raceSpringMax = 0.5f; p.raceSpringScale = 0.9f;
+        GameFfbInput& g = p.game;
+        g.speed = 20; g.slip = 0.6f; g.gain = 1; g.springParam = 0.5f;
+        g.slip0 = 0.32f; g.slip1 = 0.55f; g.slipScale0 = 1; g.slipScale1 = 0;
+        g.speed0 = 2; g.speed1 = 15; g.speedScale0 = 0.15f; g.speedScale1 = 1;
+        return p;
+    };
+    {
+        FfbParams p = game();
+        FfbTuning t; t.torqueGain = 1; t.slipGain = 0; t.slipSpringFloor = 0.4f;
+        FfbTerms tm{};
+        FfbForce(p, t, 0.5f, 0, 0, &tm);
+        assert(near(tm.spring, -0.1f));
+        t.slipSpringFloor = 0;                       // the game removes the spring in a slide
+        assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), 0.0f));
+        p.game.slip = 0.1f; p.game.speed = 1.0f;      // slow, no slip: speedF clamps to 0.15
+        assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), -(0.15f * 1.0f * 0.5f) * 0.5f));
+        t.springGain = 2.0f;
+        assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), -(0.15f * 0.5f) * 2.0f * 0.5f));
+        // swapped / equal points
+        p.game.speed = 8.5f; p.game.speed0 = 15; p.game.speed1 = 2; p.game.speedScale0 = 1; p.game.speedScale1 = 0.15f;
+        t.springGain = 1.0f;
+        assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), -(0.575f * 0.5f) * 0.5f));
+        p.game.speed0 = p.game.speed1 = 5; p.game.speedScale0 = 0.3f; p.game.speedScale1 = 0.8f;
+        assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), -(0.8f * 0.5f) * 0.5f));
+    }
+    // 11. counter-steer slip term
+    {
+        FfbParams p = game();
+        FfbTuning t; t.torqueGain = 1; t.slipSpringFloor = 0; t.slipGain = 0.5f;
+        p.game.slip = 0.315f;
+        FfbTerms tm{};
+        FfbForce(p, t, 0, 0, 0, &tm);
+        assert(near(tm.slip, 0.125f));
+        p.game.slip = -0.315f;
+        FfbForce(p, t, 0, 0, 0, &tm);
+        assert(near(tm.slip, -0.125f));
+        t.slipInvert = true;
+        FfbForce(p, t, 0, 0, 0, &tm);
+        assert(near(tm.slip, 0.125f));
+        t.slipInvert = false;
+        p.game.slip = 0.05f;                         // below start
+        FfbForce(p, t, 0, 0, 0, &tm);
+        assert(tm.slip == 0.0f);
+        p.game.slip = 2.0f;                          // saturates at gain*0.5
+        FfbForce(p, t, 0, 0, 0, &tm);
+        assert(near(tm.slip, 0.25f));
+        t.slipFull = t.slipStart;                    // degenerate range
+        FfbForce(p, t, 0, 0, 0, &tm);
+        assert(tm.slip == 0.0f);
+        t.slipFull = 0.55f; t.slipGain = 0;
+        FfbForce(p, t, 0, 0, 0, &tm);
+        assert(tm.slip == 0.0f);
+        // total includes the slip term
+        t.slipGain = 0.5f; p.game.slip = 0.315f;
+        assert(near(FfbForce(p, t, 0, 0, 0, nullptr), 0.125f));
+    }
+    // 12. no game input: fall back to the captured spring scale; no slip term
+    {
+        FfbParams p = game();
+        p.haveGame = false;
+        FfbTuning t; t.torqueGain = 1; t.slipSpringFloor = 0.4f; t.slipGain = 0.5f; t.springGain = 1.0f;
+        FfbTerms tm{};
+        FfbForce(p, t, 0.5f, 0, 0, &tm);
+        assert(near(tm.spring, -0.45f) && tm.slip == 0.0f);
+        t.springGain = 0.5f;
+        assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), -0.225f));
+    }
+
     // 8. device magnitude
     assert(FfbDeviceMagnitude(0.25f, 1.0f, false) == -5000);
     assert(FfbDeviceMagnitude(0.25f, 1.0f, true) == 5000);

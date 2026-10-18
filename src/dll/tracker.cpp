@@ -208,11 +208,14 @@ DWORD WINAPI monitorThread(void*) {
             lastDiag = t;
             const RawPose& r = g_lastRaw;
             const CameraOffsets& o = g_lastOffsets;
+            float camYaw = o.rotDeg[g_cfg.map.rotOrder[0]];
+            const char* yawSide = std::fabs(camYaw) < 1.0f ? "centre"
+                                  : ((camYaw > 0.0f) == g_cfg.map.yawLeftIsPositive ? "left" : "right");
             LOG("diag %s: in yaw %.1f pitch %.1f roll %.1f x %.1f y %.1f z %.1f cm | centre yaw %.1f pitch %.1f | "
-                "cam rot %.1f %.1f %.1f deg pos %.3f %.3f %.3f m%s",
+                "cam rot %.1f %.1f %.1f deg pos %.3f %.3f %.3f m%s (yaw %s)",
                 g_activeSource, r.yaw, r.pitch, r.roll, r.x, r.y, r.z, g_center.yaw, g_center.pitch,
                 o.rotDeg[0], o.rotDeg[1], o.rotDeg[2], o.posM[0], o.posM[1], o.posM[2],
-                g_enabled.load() ? "" : " (tracking OFF)");
+                g_enabled.load() ? "" : " (tracking OFF)", yawSide);
         }
         LeaveCriticalSection(&g_stateLock);
     }
