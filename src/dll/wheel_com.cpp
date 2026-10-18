@@ -8,6 +8,7 @@
 #include <new>
 #include "log.h"
 #include "wheel_device.h"
+#include "wheel_ffb.h"
 
 namespace fh2 {
 
@@ -102,6 +103,42 @@ Var* findOrAdd(const wchar_t* name) {   // caller holds the lock
     v->value = v->mn = v->mx = 0; v->touched = false;
     return v;
 }
+// Captured force feedback variables (protected by the same lock as g_vars).
+struct FfbCapture {
+    float torque = 0, menuSpring = 0, raceSpring = 0, raceSpringMax = 0, dampScale = 0, dampMax = 0,
+          leftAmp = 0, leftWl = 0, rightAmp = 0, rightWl = 0;
+    uint64_t lastHeartbeatQpc = 0, lastWriteQpc = 0;
+};
+FfbCapture g_ffb;
+std::atomic<bool> g_ffbLogged{false};
+
+uint64_t qpcNow() { LARGE_INTEGER t; QueryPerformanceCounter(&t); return (uint64_t)t.QuadPart; }
+uint64_t qpcFreq() {
+    static uint64_t f = [] { LARGE_INTEGER x; QueryPerformanceFrequency(&x); return (uint64_t)x.QuadPart; }();
+    return f;
+}
+
+void captureFfb(const wchar_t* n, float value) {   // caller holds the lock
+    uint64_t now = qpcNow();
+    g_ffb.lastWriteQpc = now;
+    if (wcscmp(n, L"PauseHeartbeat") == 0) {
+        if (value != 0) {
+            g_ffb.lastHeartbeatQpc = now;
+            if (!g_ffbLogged.exchange(true)) LOG("wheel ffb: game force feedback active");
+        }
+    }
+    else if (wcscmp(n, L"Torque") == 0) g_ffb.torque = value;
+    else if (wcscmp(n, L"InMenuSpringScale") == 0) g_ffb.menuSpring = value;
+    else if (wcscmp(n, L"InRaceSpringScale") == 0) g_ffb.raceSpring = value;
+    else if (wcscmp(n, L"InRaceSpringMaxForce") == 0) g_ffb.raceSpringMax = value;
+    else if (wcscmp(n, L"InRaceDampingScale") == 0) g_ffb.dampScale = value;
+    else if (wcscmp(n, L"InRaceDampingMaxForce") == 0) g_ffb.dampMax = value;
+    else if (wcscmp(n, L"LeftAmplitude") == 0) g_ffb.leftAmp = value;
+    else if (wcscmp(n, L"LeftWavelength") == 0) g_ffb.leftWl = value;
+    else if (wcscmp(n, L"RightAmplitude") == 0) g_ffb.rightAmp = value;
+    else if (wcscmp(n, L"RightWavelength") == 0) g_ffb.rightWl = value;
+}
+
 void setVar(void* hs, float value) {
     wchar_t n[48];
     hstrCopy(hs, n, 48);
@@ -111,6 +148,7 @@ void setVar(void* hs, float value) {
         if (!v->touched) { v->mn = v->mx = value; v->touched = true; }
         else { if (value < v->mn) v->mn = value; if (value > v->mx) v->mx = value; }
     }
+    captureFfb(n, value);
 }
 
 // ---- IInspectable stubs -----------------------------------------------------------------------
@@ -410,6 +448,23 @@ void VirtualWheel_Configure(const Config& cfg) {
 
 void* VirtualWheel_Controller() { return &g_fake; }
 void VirtualWheel_SetGameBase(uintptr_t base) { g_base = base; }
+void VirtualWheel_FfbSnapshot(FfbParams& out) {
+    Lock l;
+    out.torque = g_ffb.torque; out.menuSpringScale = g_ffb.menuSpring;
+    out.raceSpringScale = g_ffb.raceSpring; out.raceSpringMax = g_ffb.raceSpringMax;
+    out.dampScale = g_ffb.dampScale; out.dampMax = g_ffb.dampMax;
+    out.leftAmp = g_ffb.leftAmp; out.leftWl = g_ffb.leftWl;
+    out.rightAmp = g_ffb.rightAmp; out.rightWl = g_ffb.rightWl;
+    uint64_t now = qpcNow(), f = qpcFreq();
+    out.race  = g_ffb.lastHeartbeatQpc != 0 && (double)(now - g_ffb.lastHeartbeatQpc) < 2.5 * (double)f;
+    out.stale = g_ffb.lastWriteQpc == 0 || (double)(now - g_ffb.lastWriteQpc) > 1.0 * (double)f;
+}
+
+float VirtualWheel_GameAngle(float steering) {
+    float s = steering * (float)g_wc.wheelRange / (float)g_rotation.load();
+    return s > 1.0f ? 1.0f : s < -1.0f ? -1.0f : s;
+}
+
 float VirtualWheel_GameRotation() { return (float)g_rotation.load(); }
 
 void VirtualWheel_SetUser(void* user) {

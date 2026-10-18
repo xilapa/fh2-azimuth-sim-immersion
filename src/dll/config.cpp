@@ -110,6 +110,12 @@ static const char kDefaultIni[] =
 "UserMode=auto\n"
 "; Re-scan controllers once if the game started before the plugin was ready.\n"
 "ForceRescan=1\n"
+"; Force feedback. 0 = off.\n"
+"FFB=1\n"
+"; Strength. 1.0 = the game's maximum force is the wheel's maximum.\n"
+"FFBGain=1.0\n"
+"; 1 = reverse the force direction (use if the wheel pushes away from the centre in menus).\n"
+"FFBInvert=0\n"
 "; Identity reported to the game (Logitech G920).\n"
 "VendorId=0x046D\n"
 "ProductId=0xC261\n"
@@ -245,13 +251,20 @@ static void readWheel(const wchar_t* ini, WheelConfig& w) {
     w.productId    = readI(ini, "Wheel", "ProductId", 0xC261) & 0xFFFF;
     w.configFlag14 = readI(ini, "Wheel", "ConfigFlag14", 1);
     w.testMode     = readI(ini, "Wheel", "TestMode", 0) != 0;
+    w.ffbEnabled   = readI(ini, "Wheel", "FFB", 1) != 0;
+    w.ffbGain      = (float)readF(ini, "Wheel", "FFBGain", 1.0);
+    if (w.ffbGain < 0.0f || w.ffbGain > 4.0f) {
+        LOG("config: FFBGain=%.2f out of range 0..4; clamping", w.ffbGain);
+        w.ffbGain = w.ffbGain < 0.0f ? 0.0f : 4.0f;
+    }
+    w.ffbInvert    = readI(ini, "Wheel", "FFBInvert", 0) != 0;
     LOG("config: wheel enabled %d match '%s' range %d axes steer %s%s thr %s brk %s clu %s pedalsInv %d dz %.2f "
-        "hshifter %d user %s rescan %d id %04x:%04x flag14 %d test %d",
+        "hshifter %d user %s rescan %d id %04x:%04x flag14 %d test %d ffb %d gain %.2f inv %d",
         w.enabled, w.deviceMatch.c_str(), w.wheelRange, wheelAxisName(w.steeringAxis),
         w.steeringInvert ? "(inv)" : "", wheelAxisName(w.throttleAxis), wheelAxisName(w.brakeAxis),
         wheelAxisName(w.clutchAxis), w.pedalsInverted, w.pedalDeadzone, w.hShifter,
         w.userMode == WheelUserMode::Auto ? "auto" : "none", w.forceRescan, w.vendorId, w.productId,
-        w.configFlag14, w.testMode);
+        w.configFlag14, w.testMode, w.ffbEnabled, w.ffbGain, w.ffbInvert);
 }
 
 Config loadConfig(const std::wstring& iniPath) {

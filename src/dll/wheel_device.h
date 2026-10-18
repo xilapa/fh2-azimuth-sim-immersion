@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <cstdint>
 #include "config.h"
+#include "wheel_ffb.h"
 
 namespace fh2 {
 
@@ -18,9 +19,19 @@ struct WheelInput {            // already mapped to game conventions
     uint32_t rawButtons[4] = {};   // bit i of word i/32 set when DirectInput button i is down (0..127)
 };
 
+struct FfbStatus {             // latest force feedback state, for diagnostics
+    FfbTerms terms{};
+    float angle = 0, velocity = 0;
+    long  mag = 0;             // last computed device magnitude (-10000..10000)
+    bool  race = false, stale = true;
+    bool  active = false;      // effect running
+};
+
 // Enumerates, logs, starts the poll thread; false if no device (unless TestMode).
 bool WheelDevice_Start(const WheelConfig& cfg);
 // Copy of the latest snapshot; returns out.valid.
 bool WheelDevice_Read(WheelInput& out);
+// Copy of the latest force feedback state; returns out.active.
+bool WheelDevice_FfbStatus(FfbStatus& out);
 
 } // namespace fh2

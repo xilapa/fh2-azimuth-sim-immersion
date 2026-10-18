@@ -29,6 +29,9 @@ struct WheelConfig {
     int         vendorId = 0x046D, productId = 0xC261;
     int         configFlag14 = 1;
     bool        testMode = false;
+    bool        ffbEnabled = true;
+    float       ffbGain = 1.0f;
+    bool        ffbInvert = false;
 };
 
 struct Config {

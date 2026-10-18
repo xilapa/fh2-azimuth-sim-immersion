@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include "config.h"
+#include "wheel_ffb.h"
 
 namespace fh2 {
 
@@ -15,6 +16,10 @@ float VirtualWheel_GameRotation();        // last SetRotation value (degrees), d
 void  VirtualWheel_SetUser(void* user);
 // Formats the registered variables (current [min..max]) for the diagnostics line and
 // resets their min/max.
+// Snapshot of the captured force feedback variables plus the race/stale flags.
+void  VirtualWheel_FfbSnapshot(FfbParams& out);
+// The steering value the game sees for a -1..1 physical steering input (rotation-scaled, clamped).
+float VirtualWheel_GameAngle(float steering);
 void  VirtualWheel_FormatVars(char* buf, size_t cap);
 
 } // namespace fh2

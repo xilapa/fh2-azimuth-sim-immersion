@@ -434,6 +434,11 @@ DWORD WINAPI diagThread(void*) {
         LOG("wheel diag raw: X %ld Y %ld Z %ld RX %ld RY %ld RZ %ld S0 %ld S1 %ld buttons %s",
             (long)in.raw[0], (long)in.raw[1], (long)in.raw[2], (long)in.raw[3], (long)in.raw[4],
             (long)in.raw[5], (long)in.raw[6], (long)in.raw[7], pn ? pressed : "none");
+        FfbStatus fs;
+        if (WheelDevice_FfbStatus(fs))
+            LOG("wheel diag ffb: %s F %.3f (torque %.3f spring %.3f damp %.3f rumble %.3f menu %.3f) angle %.3f vel %.2f out %ld",
+                fs.stale ? "stale" : fs.race ? "race" : "menu", fs.terms.total, fs.terms.torque, fs.terms.spring,
+                fs.terms.damping, fs.terms.rumble, fs.terms.menu, fs.angle, fs.velocity, fs.mag);
     }
 }
 

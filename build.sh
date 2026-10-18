@@ -12,10 +12,11 @@ PKG=dist/FH2SimImmersion
 
 rm -rf build dist && mkdir -p build "$PKG"
 g++ -std=c++17 -O1 -Wall tests/test_pose.cpp -o build/test_pose && ./build/test_pose
+g++ -std=c++17 -O1 -Wall tests/test_ffb.cpp src/dll/wheel_ffb.cpp -o build/test_ffb && ./build/test_ffb
 
 $CXX $FLAGS -DFH2SI_VERSION="\"$VERSION\"" -shared -o build/FH2SimImmersion.dll \
     src/dll/dllmain.cpp src/dll/config.cpp src/dll/tracker.cpp src/dll/hook.cpp \
-    src/dll/patch_util.cpp src/dll/wheel_device.cpp src/dll/wheel_com.cpp src/dll/wheel_hook.cpp \
+    src/dll/patch_util.cpp src/dll/wheel_device.cpp src/dll/wheel_com.cpp src/dll/wheel_hook.cpp src/dll/wheel_ffb.cpp \
     -lws2_32 -ldinput8 -ldxguid -lole32 -Wl,--subsystem,windows
 $CXX $FLAGS -municode -o build/FH2SimImmersion.exe src/injector/injector.cpp -lpsapi
 # integration harness (needs your own copy of the game executable to run)

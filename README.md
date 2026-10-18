@@ -1,6 +1,6 @@
 # FH2 Sim Immersion for Azimuth
 
-**Status: 0.5.0. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
+**Status: 0.6.0. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
 Steering wheel support is experimental.**
 
 Realism and immersion add-ons for Forza Horizon 2 running in Azimuth:
@@ -87,10 +87,11 @@ Logitech G29, with pedals and the Driving Force Shifter.
 What works:
 * steering, throttle, brake and clutch;
 * A/B/X/Y, View, Menu, D-pad and the shift paddles;
-* the H-shifter (set the game's transmission to **Manual with clutch**).
+* the H-shifter (set the game's transmission to **Manual with clutch**);
+* force feedback (new, still being tuned): the game's steering torque, centring spring,
+  damping and rumble, played as one DirectInput force.
 
-Not yet:
-* **Force feedback.** The wheel has no force feedback for now.
+Not supported:
 * Buttons the G920 does not have (G29 L2/R2, L3/R3, +/−, dial, Enter, PS) do nothing.
 
 Setup:
@@ -108,6 +109,9 @@ Setup:
 * `ButtonA` … `ButtonRB`: DirectInput button numbers (0-based) for the game's buttons.
 * `HShifter=1` with `GearButtons` / `ReverseButton` for the shifter.
 * `UserMode=none` if the game ignores the wheel or acts oddly in menus.
+* `FFB=0` turns force feedback off. `FFBGain` sets its strength (1.0 = the game's maximum
+  force is the wheel's maximum). `FFBInvert=1` reverses it: use this if the wheel pushes
+  away from the centre in menus instead of returning to it.
 
 To find axis and button numbers, set `Diagnostics=1` (under `[Input]`). Every 2 seconds the log shows a
 `wheel diag raw:` line with every axis value and the pressed buttons.
@@ -117,7 +121,7 @@ To find axis and button numbers, set `Diagnostics=1` (under `[Input]`). Every 2 
 `FH2SimImmersion.log` is written next to the DLL. A good run looks like this:
 
 ```
-FH2 Sim Immersion 0.5.0 loaded into pid ... (...\azimuth.exe)
+FH2 Sim Immersion 0.6.0 loaded into pid ... (...\azimuth.exe)
 waiting for the Forza Horizon 2 image to be mapped...
 game image found at 0000...
 patch: 5 head-tracking inputs redirected (thunks at ...)

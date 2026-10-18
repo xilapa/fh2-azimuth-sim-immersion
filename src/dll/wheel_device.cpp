@@ -1,10 +1,14 @@
 #define DIRECTINPUT_VERSION 0x0800
 #include "wheel_device.h"
 #include <dinput.h>
+#include <cstdlib>
 #include <cwctype>
+#include <deque>
 #include <string>
 #include <vector>
 #include "log.h"
+#include "wheel_com.h"
+#include "wheel_ffb.h"
 
 namespace fh2 {
 
@@ -16,6 +20,8 @@ WheelInput         g_snap;
 IDirectInputDevice8W* g_dev = nullptr;
 IDirectInput8W*       g_di = nullptr;
 bool               g_started = false;
+bool               g_ffbCapable = false;
+FfbStatus          g_ffbStatus;
 
 std::string utf8(const wchar_t* w) {
     int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, nullptr, 0, nullptr, nullptr);
@@ -69,6 +75,20 @@ LONG axisValue(const DIJOYSTATE2& s, WheelAxis a, bool& present) {
         case WheelAxis::Slider0: return s.rglSlider[0];
         case WheelAxis::Slider1: return s.rglSlider[1];
         default: present = false; return 0;
+    }
+}
+
+DWORD axisOffset(WheelAxis a) {
+    switch (a) {
+        case WheelAxis::X: return DIJOFS_X;
+        case WheelAxis::Y: return DIJOFS_Y;
+        case WheelAxis::Z: return DIJOFS_Z;
+        case WheelAxis::RX: return DIJOFS_RX;
+        case WheelAxis::RY: return DIJOFS_RY;
+        case WheelAxis::RZ: return DIJOFS_RZ;
+        case WheelAxis::Slider0: return DIJOFS_SLIDER(0);
+        case WheelAxis::Slider1: return DIJOFS_SLIDER(1);
+        default: return DIJOFS_X;
     }
 }
 
@@ -145,12 +165,28 @@ DWORD WINAPI testThread(void*) {
     }
 }
 
+double qpcMs() {
+    static double freq = [] { LARGE_INTEGER f; QueryPerformanceFrequency(&f); return (double)f.QuadPart; }();
+    return (double)qpc() * 1000.0 / freq;
+}
+
 DWORD WINAPI pollThread(void*) {
     // Wait for a visible top-level window of this process.
     HWND hwnd = nullptr;
     while (!(hwnd = findOwnWindow())) Sleep(200);
-    HRESULT hr = g_dev->SetCooperativeLevel(hwnd, DISCL_NONEXCLUSIVE | DISCL_BACKGROUND);
-    if (FAILED(hr)) LOG("wheel: SetCooperativeLevel failed 0x%08lx", (unsigned long)hr);
+    bool ffbOn = g_cfg.ffbEnabled && g_ffbCapable && !g_cfg.testMode;
+    HRESULT hr = S_OK;
+    if (ffbOn) {
+        hr = g_dev->SetCooperativeLevel(hwnd, DISCL_EXCLUSIVE | DISCL_BACKGROUND);
+        if (FAILED(hr)) {
+            LOG("wheel ffb: exclusive cooperative level failed 0x%08lx; force feedback off", (unsigned long)hr);
+            ffbOn = false;
+        }
+    }
+    if (!ffbOn) {
+        hr = g_dev->SetCooperativeLevel(hwnd, DISCL_NONEXCLUSIVE | DISCL_BACKGROUND);
+        if (FAILED(hr)) LOG("wheel: SetCooperativeLevel failed 0x%08lx", (unsigned long)hr);
+    }
     DIPROPRANGE rng{};
     rng.diph.dwSize = sizeof(rng);
     rng.diph.dwHeaderSize = sizeof(DIPROPHEADER);
@@ -158,16 +194,37 @@ DWORD WINAPI pollThread(void*) {
     rng.diph.dwHow = DIPH_DEVICE;
     rng.lMin = 0; rng.lMax = 65535;
     g_dev->SetProperty(DIPROP_RANGE, &rng.diph);   // failures ignored
+    if (ffbOn) {
+        DIPROPDWORD ac{};
+        ac.diph.dwSize = sizeof(ac);
+        ac.diph.dwHeaderSize = sizeof(DIPROPHEADER);
+        ac.diph.dwObj = 0;
+        ac.diph.dwHow = DIPH_DEVICE;
+        ac.dwData = DIPROPAUTOCENTER_OFF;
+        g_dev->SetProperty(DIPROP_AUTOCENTER, &ac.diph);   // failures ignored
+    }
     g_dev->Acquire();
     LOG("wheel: polling started");
 
     bool acquired = false;
+    IDirectInputEffect* effect = nullptr;
+    bool effectTried = false, needRestart = false, sendErrLogged = false, forceSend = false;
+    DICONSTANTFORCE cf{};
+    DIEFFECT eff{};
+    LONG dir[1] = {1};          // eff points at these for the lifetime of the effect
+    DWORD axes[1] = {DIJOFS_X};
+    LONG lastSent = 0;
+    double lastSendMs = 0;
+    struct Sample { double ms; float angle; };
+    std::deque<Sample> samples;
+    float velocity = 0;
     for (;;) {
         hr = g_dev->Poll();
         DIJOYSTATE2 st{};
         if (SUCCEEDED(hr)) hr = g_dev->GetDeviceState(sizeof(st), &st);
         if (hr == DIERR_INPUTLOST || hr == DIERR_NOTACQUIRED) {
             acquired = false;
+            if (effect) needRestart = true;
             g_dev->Acquire();
             AcquireSRWLockExclusive(&g_lock);
             g_snap.valid = false;
@@ -182,6 +239,83 @@ DWORD WINAPI pollThread(void*) {
             in.timestamp = qpc();
             in.valid = true;
             publish(in);
+
+            if (ffbOn && !effectTried) {
+                effectTried = true;
+                axes[0] = axisOffset(g_cfg.steeringAxis);
+                cf.lMagnitude = 0;
+                eff.dwSize = sizeof(DIEFFECT);
+                eff.dwFlags = DIEFF_CARTESIAN | DIEFF_OBJECTOFFSETS;
+                eff.dwDuration = INFINITE;
+                eff.dwSamplePeriod = 0;
+                eff.dwGain = 10000;
+                eff.dwTriggerButton = DIEB_NOTRIGGER;
+                eff.dwTriggerRepeatInterval = 0;
+                eff.cAxes = 1;
+                eff.rgdwAxes = axes;
+                eff.rglDirection = dir;
+                eff.lpEnvelope = nullptr;
+                eff.cbTypeSpecificParams = sizeof(DICONSTANTFORCE);
+                eff.lpvTypeSpecificParams = &cf;
+                eff.dwStartDelay = 0;
+                HRESULT he = g_dev->CreateEffect(GUID_ConstantForce, &eff, &effect, nullptr);
+                if (SUCCEEDED(he) && effect) he = effect->Start(1, 0);
+                if (SUCCEEDED(he) && effect) {
+                    LOG("wheel ffb: constant force effect started");
+                    lastSent = 0; lastSendMs = qpcMs();
+                } else {
+                    LOG("wheel ffb: constant force effect failed 0x%08lx; force feedback off", (unsigned long)he);
+                    if (effect) { effect->Release(); effect = nullptr; }
+                    ffbOn = false;
+                }
+            }
+            if (effect && needRestart) {
+                effect->Start(1, 0);
+                forceSend = true;      // reset lastSent: the next value is always sent
+                needRestart = false;
+            }
+            if (ffbOn && effect) {
+                double nowMs = qpcMs();
+                float angle = VirtualWheel_GameAngle(in.steering);
+                samples.push_back({nowMs, angle});
+                // keep the newest sample that is >= 20 ms old; drop everything older
+                int idx = -1;
+                for (int i = (int)samples.size() - 1; i >= 0; --i)
+                    if (nowMs - samples[i].ms >= 20.0) { idx = i; break; }
+                if (idx >= 0) {
+                    samples.erase(samples.begin(), samples.begin() + idx);
+                    velocity = (angle - samples.front().angle) / (float)((nowMs - samples.front().ms) / 1000.0);
+                }
+                FfbParams p;
+                VirtualWheel_FfbSnapshot(p);
+                FfbTerms terms{};
+                float F = FfbForce(p, angle, velocity, nowMs, &terms);
+                LONG mag = FfbDeviceMagnitude(F, g_cfg.ffbGain, g_cfg.ffbInvert);
+                bool send = forceSend || labs(mag - lastSent) >= 20 || (mag != lastSent && nowMs - lastSendMs >= 10.0) ||
+                            (mag == 0 && lastSent != 0);
+                if (send) {
+                    cf.lMagnitude = mag;
+                    HRESULT sh = effect->SetParameters(&eff, DIEP_TYPESPECIFICPARAMS);
+                    if (SUCCEEDED(sh)) {
+                        lastSent = mag; lastSendMs = nowMs; forceSend = false;
+                    } else if (sh == DIERR_INPUTLOST || sh == DIERR_NOTACQUIRED) {
+                        acquired = false;
+                        needRestart = true;
+                        g_dev->Acquire();
+                        AcquireSRWLockExclusive(&g_lock);
+                        g_snap.valid = false;
+                        ReleaseSRWLockExclusive(&g_lock);
+                    } else if (!sendErrLogged) {
+                        sendErrLogged = true;
+                        LOG("wheel ffb: SetParameters failed 0x%08lx", (unsigned long)sh);
+                    }
+                }
+                AcquireSRWLockExclusive(&g_lock);
+                g_ffbStatus.terms = terms; g_ffbStatus.angle = angle; g_ffbStatus.velocity = velocity;
+                g_ffbStatus.mag = mag; g_ffbStatus.race = p.race; g_ffbStatus.stale = p.stale;
+                g_ffbStatus.active = true;
+                ReleaseSRWLockExclusive(&g_lock);
+            }
         }
         Sleep(2);
     }
@@ -229,9 +363,26 @@ bool WheelDevice_Start(const WheelConfig& cfg) {
     if (FAILED(hr) || !g_dev) { LOG("wheel: CreateDevice failed 0x%08lx", (unsigned long)hr); return false; }
     hr = g_dev->SetDataFormat(&c_dfDIJoystick2);
     if (FAILED(hr)) { LOG("wheel: SetDataFormat failed 0x%08lx", (unsigned long)hr); g_dev->Release(); g_dev = nullptr; return false; }
+    if (cfg.ffbEnabled) {
+        DIDEVCAPS caps{};
+        caps.dwSize = sizeof(caps);
+        if (SUCCEEDED(g_dev->GetCapabilities(&caps)) && (caps.dwFlags & DIDC_FORCEFEEDBACK)) {
+            g_ffbCapable = true;
+            LOG("wheel ffb: device supports force feedback");
+        } else {
+            LOG("wheel ffb: device has no force feedback");
+        }
+    }
     if (HANDLE t = CreateThread(nullptr, 0, pollThread, nullptr, 0, nullptr)) CloseHandle(t);
     g_started = true;
     return true;
+}
+
+bool WheelDevice_FfbStatus(FfbStatus& out) {
+    AcquireSRWLockShared(&g_lock);
+    out = g_ffbStatus;
+    ReleaseSRWLockShared(&g_lock);
+    return out.active;
 }
 
 bool WheelDevice_Read(WheelInput& out) {
