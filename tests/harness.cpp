@@ -299,9 +299,11 @@ static void ffbTests(uint8_t* base, HMODULE plugin) {
 
 typedef uint8_t (MSABI *FnGetter)(void*);
 
-static const fh2::CarInfo* findCarBy(char abs, char tc, int skip) {
+// abs / stm '*' = any
+static const fh2::CarInfo* findCarBy(char abs, char tc, char stm, int skip) {
     for (size_t i = 0; i < fh2::kCarCount; ++i)
-        if (fh2::kCars[i].abs == abs && fh2::kCars[i].tc == tc && skip-- == 0) return &fh2::kCars[i];
+        if ((abs == '*' || fh2::kCars[i].abs == abs) && fh2::kCars[i].tc == tc && (stm == '*' || fh2::kCars[i].stm == stm) && skip-- == 0)
+            return &fh2::kCars[i];
     return nullptr;
 }
 
@@ -316,7 +318,7 @@ static void assistTests(uint8_t* base, uint64_t absOrig, uint64_t stmOrig, uint6
     for (int v = 0; v < 2; ++v) {
         CHECK(*(uint64_t*)(base + kVt[v] + 0xd8) != absOrig && *(uint64_t*)(base + kVt[v] + 0xd8) != 0, "vtable %d ABS slot re-pointed", v);
         CHECK(*(uint64_t*)(base + kVt[v] + 0xf0) != tcOrig && *(uint64_t*)(base + kVt[v] + 0xf0) != 0, "vtable %d TC slot re-pointed", v);
-        CHECK(*(uint64_t*)(base + kVt[v] + 0xe8) == stmOrig, "vtable %d stability slot unchanged", v);
+        CHECK(*(uint64_t*)(base + kVt[v] + 0xe8) != stmOrig && *(uint64_t*)(base + kVt[v] + 0xe8) != 0, "vtable %d STM slot re-pointed", v);
     }
     if (!patched) return;
 
@@ -328,7 +330,9 @@ static void assistTests(uint8_t* base, uint64_t absOrig, uint64_t stmOrig, uint6
     choices[0x2b4] = 1;
     FnGetter absG = (FnGetter)*(uint64_t*)(base + kVt[0] + 0xd8);
     FnGetter tcG  = (FnGetter)*(uint64_t*)(base + kVt[0] + 0xf0);
-    CHECK(absG(choices) == 2 && tcG(choices) == 1, "no car seen yet: game values pass through (abs %u tc %u)", absG(choices), tcG(choices));
+    FnGetter stmG = (FnGetter)*(uint64_t*)(base + kVt[0] + 0xe8);
+    choices[0x2b3] = 1;
+    CHECK(absG(choices) == 2 && tcG(choices) == 1 && stmG(choices) == 1, "no car seen yet: game values pass through (abs %u tc %u stm %u)", absG(choices), tcG(choices), stmG(choices));
 
     // call the patched UpdateFFB call-site target with rsi = &elem
     const uintptr_t kSite = 0x2fe134;
@@ -343,12 +347,17 @@ static void assistTests(uint8_t* base, uint64_t absOrig, uint64_t stmOrig, uint6
     alignas(16) static uint8_t carObj[0x200];
     void* elem = carObj;
 
-    const fh2::CarInfo* yy = findCarBy('y', 'y', 0);
-    const fh2::CarInfo* yy2 = findCarBy('y', 'y', 1);
-    const fh2::CarInfo* nn = findCarBy('n', 'n', 0);
-    CHECK(yy && yy2 && nn, "test cars found: ABS+TC car %u (%s), second %u, neither car %u (%s)", yy ? yy->id : 0,
-          yy ? yy->name : "-", yy2 ? yy2->id : 0, nn ? nn->id : 0, nn ? nn->name : "-");
-    if (!yy || !yy2 || !nn) return;
+    const fh2::CarInfo* yy = findCarBy('y', 'y', '*', 0);
+    const fh2::CarInfo* yy2 = findCarBy('y', 'y', 'y', 1);      // 2-field override "off,on" (STM stays auto)
+    const fh2::CarInfo* nn = findCarBy('n', 'n', '*', 0);
+    const fh2::CarInfo* tcNoStm = findCarBy('*', 'y', 'n', 0);   // TC yes, STM no
+    const fh2::CarInfo* allYes = findCarBy('y', 'y', 'y', 0);
+    const fh2::CarInfo* ov3 = findCarBy('y', 'y', 'y', 2);       // 3-field override "auto,off,on"
+    CHECK(yy && yy2 && nn && tcNoStm && allYes && ov3, "test cars found: ABS+TC car %u (%s), 2-field override car %u, neither car %u (%s), "
+          "TC-yes/STM-no car %u, all-yes car %u, 3-field override car %u", yy ? yy->id : 0, yy ? yy->name : "-",
+          yy2 ? yy2->id : 0, nn ? nn->id : 0, nn ? nn->name : "-", tcNoStm ? tcNoStm->id : 0, allYes ? allYes->id : 0,
+          ov3 ? ov3->id : 0);
+    if (!yy || !yy2 || !nn || !tcNoStm || !allYes || !ov3) return;
 
     memset(carObj, 0, sizeof(carObj));
     *(uint32_t*)(carObj + 0x118) = yy->id;
@@ -362,20 +371,39 @@ static void assistTests(uint8_t* base, uint64_t absOrig, uint64_t stmOrig, uint6
 
     *(uint32_t*)(carObj + 0x118) = nn->id;
     callWithRsi(target, slot, in, &elem);
-    choices[0x2b1] = 1; choices[0x2b4] = 0;       // user has both on
-    CHECK(absG(choices) == 2 && tcG(choices) == 1, "car %u (ABS no, TC no): ABS off, TC off (abs %u tc %u)", nn->id, absG(choices), tcG(choices));
-    choices[0x2b1] = 2; choices[0x2b4] = 1;
+    choices[0x2b1] = 1; choices[0x2b4] = 0; choices[0x2b3] = 0;       // user has all three on
+    CHECK(absG(choices) == 2 && tcG(choices) == 1 && stmG(choices) == (nn->stm == 'n' ? 1u : 0u),
+          "car %u (ABS no, TC no): ABS off, TC off (abs %u tc %u stm %u)", nn->id, absG(choices), tcG(choices), stmG(choices));
+    choices[0x2b1] = 2; choices[0x2b4] = 1; choices[0x2b3] = 1;
 
-    *(uint32_t*)(carObj + 0x118) = yy2->id;       // per-car override file says <id>=off,on
+    *(uint32_t*)(carObj + 0x118) = tcNoStm->id;   // TC yes, STM no: TC forced on, STM forced off
     callWithRsi(target, slot, in, &elem);
-    choices[0x2b1] = 1; choices[0x2b4] = 1;
+    choices[0x2b4] = 1; choices[0x2b3] = 0;       // user has TC off, STM on
+    CHECK(tcG(choices) == 0 && stmG(choices) == 1, "car %u (TC yes, STM no): TC getter 0, STM getter 1 (tc %u stm %u)", tcNoStm->id, tcG(choices), stmG(choices));
+    choices[0x2b4] = 1; choices[0x2b3] = 1;
+
+    *(uint32_t*)(carObj + 0x118) = allYes->id;    // TC yes, STM yes: both on
+    callWithRsi(target, slot, in, &elem);
+    choices[0x2b4] = 1; choices[0x2b3] = 1;       // user has both off
+    CHECK(tcG(choices) == 0 && stmG(choices) == 0, "car %u (TC yes, STM yes): TC getter 0, STM getter 0 (tc %u stm %u)", allYes->id, tcG(choices), stmG(choices));
+
+    *(uint32_t*)(carObj + 0x118) = yy2->id;       // per-car override file says <id>=off,on (old 2-field format)
+    callWithRsi(target, slot, in, &elem);
+    choices[0x2b1] = 1; choices[0x2b4] = 1; choices[0x2b3] = 1;
     CHECK(absG(choices) == 2 && tcG(choices) == 0, "car %u override off,on: ABS off, TC on (abs %u tc %u)", yy2->id, absG(choices), tcG(choices));
+    CHECK(stmG(choices) == 0, "car %u 2-field override leaves STM auto (research: yes -> getter %u)", yy2->id, stmG(choices));
     choices[0x2b1] = 2;
+
+    *(uint32_t*)(carObj + 0x118) = ov3->id;       // <id>=auto,off,on
+    callWithRsi(target, slot, in, &elem);
+    choices[0x2b4] = 0; choices[0x2b3] = 1;       // user has TC on, STM off
+    CHECK(tcG(choices) == 1 && stmG(choices) == 0, "car %u override auto,off,on: TC 1, STM 0 (tc %u stm %u)", ov3->id, tcG(choices), stmG(choices));
+    choices[0x2b4] = 1; choices[0x2b3] = 1;
 
     *(uint32_t*)(carObj + 0x118) = 999999;        // not in the table
     callWithRsi(target, slot, in, &elem);
-    choices[0x2b1] = 1; choices[0x2b4] = 0;
-    CHECK(absG(choices) == 1 && tcG(choices) == 0, "unknown car: game values (abs %u tc %u)", absG(choices), tcG(choices));
+    choices[0x2b1] = 1; choices[0x2b4] = 0; choices[0x2b3] = 0;
+    CHECK(absG(choices) == 1 && tcG(choices) == 0 && stmG(choices) == 0, "unknown car: game values (abs %u tc %u stm %u)", absG(choices), tcG(choices), stmG(choices));
 
     callWithRsi(target, slot, in, nullptr);       // unreadable car vector element: no crash, car unchanged
     callWithRsi(target, slot, in, (void*)(uintptr_t)8);
@@ -435,9 +463,12 @@ int wmain(int argc, wchar_t** argv) {
         WritePrivateProfileStringW(L"Simulation", L"FovCockpit", L"10", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealisticABS", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealisticTC", L"1", iniPath.c_str());
-        // per-car override: the second ABS+TC car gets ABS off, TC on
-        const fh2::CarInfo* ov = findCarBy('y', 'y', 1);
+        WritePrivateProfileStringW(L"Simulation", L"RealisticSTM", L"1", iniPath.c_str());
+        // per-car overrides: old two-field format (ABS off, TC on, STM auto) and the three-field format
+        const fh2::CarInfo* ov = findCarBy('y', 'y', 'y', 1);
         if (ov) WritePrivateProfileStringW(L"Cars", std::to_wstring(ov->id).c_str(), L"off,on", carsPath.c_str());
+        const fh2::CarInfo* ov3 = findCarBy('y', 'y', 'y', 2);
+        if (ov3) WritePrivateProfileStringW(L"Cars", std::to_wstring(ov3->id).c_str(), L"auto,off,on", carsPath.c_str());
     }
     struct RestoreIni {
         std::wstring p, cars;
@@ -446,6 +477,7 @@ int wmain(int argc, wchar_t** argv) {
             WritePrivateProfileStringW(L"Simulation", L"FovCockpit", L"0", p.c_str());
             WritePrivateProfileStringW(L"Simulation", L"RealisticABS", L"0", p.c_str());
             WritePrivateProfileStringW(L"Simulation", L"RealisticTC", L"0", p.c_str());
+            WritePrivateProfileStringW(L"Simulation", L"RealisticSTM", L"0", p.c_str());
             DeleteFileW(cars.c_str());
         }
     } restoreIni{iniPath, carsPath};

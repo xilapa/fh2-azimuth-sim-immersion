@@ -1,4 +1,4 @@
-// Realistic ABS / traction control: overrides the game's LocalPlayerChoices assist getters per car.
+// Realistic ABS / traction control / stability control: overrides the game's LocalPlayerChoices assist getters per car.
 #pragma once
 #include <cstdint>
 #include "config.h"
@@ -6,7 +6,7 @@
 namespace fh2 {
 
 // Called from installWhenReady once the verified game image base is known.
-// Does nothing unless RealisticABS or RealisticTC is on.
+// Does nothing unless RealisticABS, RealisticTC or RealisticSTM is on.
 void AssistHook_Install(uintptr_t base, const Config& cfg);
 
 // Records the car ordinal of the local player's car (called from the FFB call-site hook, game thread).

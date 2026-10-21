@@ -22,7 +22,7 @@ constexpr size_t    kStmFieldOff   = 0x2b3;
 constexpr size_t    kTcFieldOff    = 0x2b4;
 
 uintptr_t g_base = 0;
-bool      g_absOn = false, g_tcOn = false, g_tieStm = false;
+bool      g_absOn = false, g_tcOn = false, g_stmOn = false;
 AssistMode g_optional = AssistMode::Game;
 std::vector<CarAssistOverride> g_overrides;
 
@@ -30,7 +30,7 @@ std::atomic<bool>     g_installed{false};
 std::atomic<int64_t>  g_carId{-1};
 std::atomic<uint64_t> g_carTick{0};
 std::atomic<const char*> g_carName{nullptr};
-std::atomic<int>      g_absMode{0}, g_tcMode{0};              // AssistMode of the current car
+std::atomic<int>      g_absMode{0}, g_tcMode{0}, g_stmMode{0};              // AssistMode of the current car
 std::atomic<bool>     g_loggedAbs{false}, g_loggedTc{false}, g_loggedStm{false};
 std::atomic<uint32_t> g_callsAbs{0}, g_callsTc{0}, g_callsStm{0};
 
@@ -66,10 +66,10 @@ uint8_t absGetter(void* self) {
     return out;
 }
 
-uint8_t tcLike(void* self, size_t field, std::atomic<bool>& logged, const char* what) {
+uint8_t tcLike(void* self, size_t field, std::atomic<int>& mode, std::atomic<bool>& logged, const char* what) {
     uint8_t real = *(reinterpret_cast<uint8_t*>(self) + field);
     uint8_t out = real;
-    switch (static_cast<AssistMode>(g_tcMode.load(std::memory_order_relaxed))) {
+    switch (static_cast<AssistMode>(mode.load(std::memory_order_relaxed))) {
         case AssistMode::On:  out = 0; break;
         case AssistMode::Off: out = 1; break;
         default: break;
@@ -83,29 +83,32 @@ uint8_t tcLike(void* self, size_t field, std::atomic<bool>& logged, const char* 
 
 uint8_t tcGetter(void* self) {
     g_callsTc.fetch_add(1, std::memory_order_relaxed);
-    return tcLike(self, kTcFieldOff, g_loggedTc, "TC");
+    return tcLike(self, kTcFieldOff, g_tcMode, g_loggedTc, "TC");
 }
 
 uint8_t stmGetter(void* self) {
     g_callsStm.fetch_add(1, std::memory_order_relaxed);
-    return tcLike(self, kStmFieldOff, g_loggedStm, "stability control");
+    return tcLike(self, kStmFieldOff, g_stmMode, g_loggedStm, "stability control");
 }
 
 // ---- decision per car ----------------------------------------------------------------------------
 void decide(uint32_t id, const CarInfo* car) {
-    AssistMode a = AssistMode::Game, t = AssistMode::Game;
+    AssistMode a = AssistMode::Game, t = AssistMode::Game, s = AssistMode::Game;
     if (car) {
         if (g_absOn) a = carValue(car->abs);
         if (g_tcOn)  t = carValue(car->tc);
+        if (g_stmOn) s = carValue(car->stm);
     }
     for (const auto& o : g_overrides) {
         if (o.id != id) continue;
         if (o.absSet && g_absOn) a = o.abs;
         if (o.tcSet && g_tcOn)   t = o.tc;
+        if (o.stmSet && g_stmOn) s = o.stm;
         break;
     }
     g_absMode = static_cast<int>(a);
     g_tcMode  = static_cast<int>(t);
+    g_stmMode = static_cast<int>(s);
 }
 
 DWORD WINAPI diagThread(void*) {
@@ -152,26 +155,26 @@ void AssistHook_SetPlayerCar(uint32_t ordinal) {
     g_carName.store(car ? car->name : nullptr);
     g_loggedAbs = false; g_loggedTc = false; g_loggedStm = false;
     g_carId.store(static_cast<int64_t>(ordinal));
-    LOG("car: %u %s (ABS %s, TC %s)", ordinal, car ? car->name : "unknown car", car ? word(car->abs) : "unknown",
-        car ? word(car->tc) : "unknown");
+    LOG("car: %u %s (ABS %s, TC %s, STM %s)", ordinal, car ? car->name : "unknown car", car ? word(car->abs) : "unknown",
+        car ? word(car->tc) : "unknown", car ? word(car->stm) : "unknown");
 }
 
 void AssistHook_Install(uintptr_t base, const Config& cfg) {
     g_absOn = cfg.sim.realisticAbs;
     g_tcOn  = cfg.sim.realisticTc;
-    if (!g_absOn && !g_tcOn) return;
+    g_stmOn = cfg.sim.realisticStm;
+    if (!g_absOn && !g_tcOn && !g_stmOn) return;
     g_base = base;
-    g_tieStm = cfg.sim.tieStabilityToTc;
     g_optional = cfg.sim.optionalAssists;
     g_overrides = cfg.sim.carOverrides;
     void* absFn = g_absOn ? reinterpret_cast<void*>(&absGetter) : nullptr;
     void* tcFn  = g_tcOn ? reinterpret_cast<void*>(&tcGetter) : nullptr;
-    void* stmFn = g_tieStm ? reinterpret_cast<void*>(&stmGetter) : nullptr;
+    void* stmFn = g_stmOn ? reinterpret_cast<void*>(&stmGetter) : nullptr;
     int ok = 0;
     for (int i = 0; i < 2; ++i) if (patchVtable(i, absFn, stmFn, tcFn)) ++ok;
     if (!ok) { LOG("assists: no vtable verified; realistic assists inactive"); return; }
-    LOG("assists: getters installed in %d vtable(s) (ABS %d, TC %d, stability %d, optional %s)", ok, g_absOn, g_tcOn,
-        g_tieStm, modeName(g_optional));
+    LOG("assists: getters installed in %d vtable(s) (ABS %d, TC %d, STM %d, optional %s)", ok, g_absOn, g_tcOn,
+        g_stmOn, modeName(g_optional));
     g_installed.store(true, std::memory_order_release);
     if (cfg.diagnostics)
         if (HANDLE t = CreateThread(nullptr, 0, diagThread, nullptr, 0, nullptr)) CloseHandle(t);

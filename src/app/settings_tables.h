@@ -106,8 +106,8 @@ inline constexpr Setting kSimSettings[] = {
 
     ST_BOOL ("Simulation", "RealisticABS", "Realistic ABS (per car)", "Realistic assists", nullptr),
     ST_BOOL ("Simulation", "RealisticTC", "Realistic traction control (per car)", "Realistic assists", nullptr),
+    ST_BOOL ("Simulation", "RealisticSTM", "Realistic stability control (per car)", "Realistic assists", nullptr),
     ST_ENUM ("Simulation", "OptionalAssists", "Cars where the aid was optional", "Realistic assists", nullptr, "game|on|off"),
-    ST_BOOL ("Simulation", "TieStabilityToTC", "Stability control follows traction control", "Realistic assists", nullptr),
 };
 
 inline constexpr Setting kMainSettings[] = {

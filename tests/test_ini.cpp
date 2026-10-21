@@ -44,6 +44,8 @@ int main() {
     CHECK(val["Wheel.GearButtons"] == "12,13,14,15,16,17,-1");
     CHECK(val["Wheel.FFBTorqueGain"] == "2.0");
     CHECK(val["Simulation.OptionalAssists"] == "game");
+    CHECK(val["Simulation.RealisticSTM"] == "0");
+    CHECK(val.count("Simulation.TieStabilityToTC") == 0);
     CHECK(val.count("Launcher.AzimuthPath") == 1 && val["Launcher.AzimuthPath"].empty());
     CHECK(val["Rotation.YawLimit"] == "90");
 

@@ -200,7 +200,7 @@ static AssistMode parseAssistWord(const std::string& tok, bool& set) {
     return t == "on" ? AssistMode::On : t == "off" ? AssistMode::Off : AssistMode::Game;
 }
 
-// [Cars] section: key = car Id, value = "ABS,TC", each on|off|auto.
+// [Cars] section: key = car Id, value = "ABS,TC,STM", each on|off|auto (two fields = old format, STM auto).
 static void loadCarOverrides(const std::wstring& path, std::vector<CarAssistOverride>& out) {
     if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) return;
     std::vector<wchar_t> buf(32768);
@@ -214,12 +214,13 @@ static void loadCarOverrides(const std::wstring& path, std::vector<CarAssistOver
         if (end == line.c_str() || id == 0) { LOG("config: bad car id in %ls", line.c_str()); continue; }
         std::string val;
         for (wchar_t wc : line.substr(eq + 1)) val += wc < 128 ? (char)wc : '?';
-        size_t comma = val.find(',');
+        size_t c1 = val.find(','), c2 = c1 == std::string::npos ? c1 : val.find(',', c1 + 1);
         CarAssistOverride o;
         o.id = (unsigned)id;
-        o.abs = parseAssistWord(val.substr(0, comma), o.absSet);
-        if (comma != std::string::npos) o.tc = parseAssistWord(val.substr(comma + 1), o.tcSet);
-        if (o.absSet || o.tcSet) out.push_back(o);
+        o.abs = parseAssistWord(val.substr(0, c1), o.absSet);
+        if (c1 != std::string::npos) o.tc = parseAssistWord(val.substr(c1 + 1, c2 == std::string::npos ? c2 : c2 - c1 - 1), o.tcSet);
+        if (c2 != std::string::npos) o.stm = parseAssistWord(val.substr(c2 + 1), o.stmSet);
+        if (o.absSet || o.tcSet || o.stmSet) out.push_back(o);
     }
 }
 
@@ -295,10 +296,11 @@ Config loadConfig(const std::wstring& iniPath) {
     std::string opt        = readStr(ini, "Simulation", "OptionalAssists", "game");
     for (char& ch : opt) ch = (char)tolower((unsigned char)ch);
     c.sim.optionalAssists  = opt == "on" ? AssistMode::On : opt == "off" ? AssistMode::Off : AssistMode::Game;
-    c.sim.tieStabilityToTc = readI(ini, "Simulation", "TieStabilityToTC", 0) != 0;
-    LOG("config: realistic abs %d tc %d optional %s tie-stm %d", c.sim.realisticAbs, c.sim.realisticTc,
-        c.sim.optionalAssists == AssistMode::On ? "on" : c.sim.optionalAssists == AssistMode::Off ? "off" : "game",
-        c.sim.tieStabilityToTc);
+    c.sim.realisticStm     = readI(ini, "Simulation", "RealisticSTM", 0) != 0;
+    if (readI(ini, "Simulation", "TieStabilityToTC", 0) != 0)
+        LOG("config: TieStabilityToTC is no longer used; use RealisticSTM");
+    LOG("config: realistic abs %d tc %d stm %d optional %s", c.sim.realisticAbs, c.sim.realisticTc, c.sim.realisticStm,
+        c.sim.optionalAssists == AssistMode::On ? "on" : c.sim.optionalAssists == AssistMode::Off ? "off" : "game");
     {
         std::wstring cars = iniPath;
         size_t sep = cars.find_last_of(L"\\/");

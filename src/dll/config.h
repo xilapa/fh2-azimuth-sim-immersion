@@ -41,15 +41,14 @@ enum class AssistMode { Game, On, Off };     // Game = keep the player's game se
 
 struct CarAssistOverride {                   // from FH2SimImmersion_cars.ini
     unsigned id = 0;
-    bool     absSet = false, tcSet = false;  // false = auto (use the research data)
-    AssistMode abs = AssistMode::Game, tc = AssistMode::Game;
+    bool     absSet = false, tcSet = false, stmSet = false;  // false = auto (use the research data)
+    AssistMode abs = AssistMode::Game, tc = AssistMode::Game, stm = AssistMode::Game;
 };
 
 struct SimConfig {
     float fovCockpit = 0, fovDriver = 0, fovHood = 0, fovBumper = 0;   // extra degrees, 0 = game default
-    bool       realisticAbs = false, realisticTc = false;
+    bool       realisticAbs = false, realisticTc = false, realisticStm = false;
     AssistMode optionalAssists = AssistMode::Game;   // cars where the real car had it as an option
-    bool       tieStabilityToTc = false;
     std::vector<CarAssistOverride> carOverrides;
 };
 
