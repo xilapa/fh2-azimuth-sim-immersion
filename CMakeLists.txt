@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(fh2_azimuth_sim_immersion VERSION 0.8.0 LANGUAGES CXX)
+project(fh2_azimuth_sim_immersion VERSION 0.9.0 LANGUAGES CXX RC)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -33,14 +33,23 @@ target_link_libraries(FH2SimImmersion PRIVATE ws2_32 dinput8 dxguid ole32)
 target_compile_definitions(FH2SimImmersion PRIVATE FH2SI_VERSION="${PROJECT_VERSION}")
 set_target_properties(FH2SimImmersion PROPERTIES PREFIX "")
 
-# The launcher / injector
-add_executable(FH2SimImmersionLauncher src/injector/injector.cpp)
-set_target_properties(FH2SimImmersionLauncher PROPERTIES OUTPUT_NAME FH2SimImmersion)
-target_link_libraries(FH2SimImmersionLauncher PRIVATE psapi)
-if(MSVC)
-  target_link_options(FH2SimImmersionLauncher PRIVATE /ENTRY:wmainCRTStartup)
-else()
-  target_link_options(FH2SimImmersionLauncher PRIVATE -municode)
+# The settings window / launcher (plain Win32; comctl32 v6 and DPI awareness come from the manifest in app.rc)
+add_executable(FH2SimImmersionApp WIN32
+  src/app/main.cpp
+  src/app/page.cpp
+  src/app/draw.cpp
+  src/app/ini.cpp
+  src/app/injector.cpp
+  src/app/pages_head.cpp
+  src/app/pages_wheel.cpp
+  src/app/pages_sim.cpp
+  src/app/pages_main.cpp
+  src/app/app.rc)
+set_target_properties(FH2SimImmersionApp PROPERTIES OUTPUT_NAME FH2SimImmersion)
+target_compile_definitions(FH2SimImmersionApp PRIVATE FH2SI_VERSION="${PROJECT_VERSION}" UNICODE _UNICODE)
+target_link_libraries(FH2SimImmersionApp PRIVATE comctl32 psapi shlwapi ole32 shell32 uuid gdi32 dinput8 dxguid)
+if(NOT MSVC)
+  target_link_options(FH2SimImmersionApp PRIVATE -municode -mwindows)
 endif()
 
 # Integration test (needs your own copy of the game executable to run)

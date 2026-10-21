@@ -1,6 +1,6 @@
 # FH2 Sim Immersion for Azimuth
 
-**Status: 0.8.0. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
+**Status: 0.9.0. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
 Steering wheel support is experimental.**
 
 Realism and immersion add-ons for Forza Horizon 2 running in Azimuth:
@@ -49,12 +49,14 @@ are widened in memory.
      * **Filter:** `Accela`.
      * Bind a key to **Center**.
 2. Unzip this folder anywhere **outside** the Azimuth folder, e.g. `C:\Games\FH2SimImmersion`.
-3. Start head tracking. Use either:
-   * **A:** Double-click `FH2SimImmersion.exe`, then start Azimuth as usual. Leave the
-     window open while you play.
-   * **B:** Drag `azimuth.exe` onto `FH2SimImmersion.exe`. It starts Azimuth and closes itself
-     when Azimuth exits. A shortcut works too:
-     `FH2SimImmersion.exe "E:\XOne\Forza Horizon 2 Azimuth 0.9.10\azimuth-windows-0.9.10\azimuth.exe"`
+3. Start `FH2SimImmersion.exe`. It opens the **settings window** and, while the window is open,
+   loads the plugin into any `azimuth.exe` that starts. Use either:
+   * **A:** Start Azimuth as usual (or press **Start Azimuth** on the **Main** tab, after choosing
+     `azimuth.exe` with **Browse...**). Leave the window open while you play.
+   * **B:** Drag `azimuth.exe` onto `FH2SimImmersion.exe`, or use a shortcut:
+     `FH2SimImmersion.exe "E:\XOne\Forza Horizon 2 Azimuth 0.9.10\azimuth-windows-0.9.10\azimuth.exe"`.
+     It starts Azimuth with the plugin; the window stays open after Azimuth exits.
+   Starting `FH2SimImmersion.exe` a second time brings the open window to the front.
 4. Drive in the **cockpit camera**.
 
 Windows Defender may flag FH2SimImmersion.exe, because it loads a DLL into another process,
@@ -63,6 +65,29 @@ which is what injectors do. If it does, allow it, or use the ASI loader option b
 **Alternative without the injector:** copy Ultimate ASI Loader's `dinput8.dll` next to
 `azimuth.exe`, renamed to `winmm.dll`, and copy `FH2SimImmersion.dll` there renamed to
 `FH2SimImmersion.asi`. This does put files in the Azimuth folder.
+
+## Settings window
+
+`FH2SimImmersion.exe` is the settings window. Change values, then press **Apply**. They are saved
+in `FH2SimImmersion.ini` next to it and take effect the next time the game starts (the plugin
+reads the file when it loads). **Revert** reloads the saved values of the current tab, and
+**Defaults (this tab)** puts the default values in the current tab's controls (press Apply to
+keep them). Hover a setting for its explanation.
+
+* **Head tracking:** tracker input and network, smoothing, every rotation and position gain,
+  invert and limit, the hotkeys and the recenter buttons. The picture shows a head from above,
+  the side and the front with the axis you are editing highlighted; the arrows follow the limits.
+* **Wheel (experimental):** device, axes, buttons, H-shifter and all force feedback settings.
+  The picture shows the wheel, pedals and shifter with the setting of each part; the part of
+  the control you edit is highlighted. **Test input** reads the wheel without the game and shows
+  its axes and the numbers of the pressed buttons, to find the right button numbers.
+* **Simulation:** field of view per camera, realistic assists and a list of all known cars with
+  what the real car had. Select a car and choose how its ABS / traction control is forced
+  (auto, on or off); Apply saves `FH2SimImmersion_cars.ini` (a car with both on auto is removed).
+* **Main:** the path of `azimuth.exe`, Start Azimuth, the diagnostics switch, and a status box
+  with what the launcher did and the last lines of `FH2SimImmersion.log`.
+
+The INI file still works when edited by hand, and everything the window does is also described below.
 
 ## Controls
 
@@ -73,7 +98,7 @@ which is what injectors do. If it does, allow it, or use the ASI loader option b
 
 Both clicks also reach the game, as usual. You can also recenter in your tracker
 (Beam / OpenTrack). All of these are remappable in `FH2SimImmersion.ini`:
-* `RecenterButtons`, e.g. `BACK+START`.
+* `RecenterButtons`, e.g. `BACK+START` (also on the Head tracking tab).
 * `WheelRecenterButtons`: steering wheel buttons held together to recenter (default `4+5`,
   both G29 shift paddles).
 * `RecenterKey` / `ChordRecenterKey` to add a keyboard key. That file is created next to the DLL on the
@@ -169,7 +194,7 @@ settings.
 `FH2SimImmersion.log` is written next to the DLL. A good run looks like this:
 
 ```
-FH2 Sim Immersion 0.8.0 loaded into pid ... (...\azimuth.exe)
+FH2 Sim Immersion 0.9.0 loaded into pid ... (...\azimuth.exe)
 waiting for the Forza Horizon 2 image to be mapped...
 game image found at 0000...
 patch: 5 head-tracking inputs redirected (thunks at ...)
@@ -230,7 +255,8 @@ FH2HeadTracking.ini is renamed automatically.
 
 ```
 src/dll/        plugin loaded into azimuth.exe (hook, tracker, config)
-src/injector/   FH2SimImmersion.exe launcher
+src/common/     shared headers: default settings text, car database
+src/app/        FH2SimImmersion.exe: settings window and launcher (Win32, GDI pictures, app.rc/app.manifest)
 tests/          pose unit tests, integration harness, fake azimuth.exe
 docs/           reverse-engineering notes
 ```
@@ -242,7 +268,7 @@ cmake --build build --config Release
 ```
 
 **Linux cross-build (mingw-w64):** run `./build.sh`. It builds both binaries and the harness,
-runs the pose unit tests, and packages `dist/`.
+runs the unit tests (pose, force feedback, settings parser), and packages `dist/`.
 
 **Integration test.** `harness.exe` needs your own copy of the game executable; none is
 included. It maps the real game executable, loads the DLL, sends OpenTrack packets and runs
