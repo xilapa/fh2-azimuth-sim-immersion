@@ -2,6 +2,7 @@
 #include "wheel_hook.h"
 #include <windows.h>
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -480,6 +481,29 @@ extern "C" void hookFfbUpdate(uint8_t* slot, const float* in, void** carElem) {
             g.dynScale = d[0x28 / 4]; g.dynMax = d[0x2c / 4]; g.springParam = d[0x48 / 4];
             g.slip0 = d[0x54 / 4]; g.slip1 = d[0x58 / 4]; g.slipScale0 = d[0x5c / 4]; g.slipScale1 = d[0x60 / 4];
             g.speed0 = d[0x64 / 4]; g.speed1 = d[0x68 / 4]; g.speedScale0 = d[0x6c / 4]; g.speedScale1 = d[0x70 / 4];
+            // Front slip: load-weighted average of slip(0), slip(1) from the car's physics object,
+            // computed the same way the game does for the rear (vtable +0x610 load, +0x578 slip).
+            if (readable(carElem, sizeof(void*))) {
+                const uint8_t* car = static_cast<const uint8_t*>(*carElem);
+                if (readable(car, 0x4c10)) {
+                    const uint8_t* phys = *reinterpret_cast<const uint8_t* const*>(car + 0x4c08);
+                    if (readable(phys, 8)) {
+                        const uint8_t* vt = *reinterpret_cast<const uint8_t* const*>(phys);
+                        if (readable(vt, 0x618)) {
+                            using Fn = float (*)(const void*, int);
+                            Fn load = *reinterpret_cast<const Fn*>(vt + 0x610);
+                            Fn slip = *reinterpret_cast<const Fn*>(vt + 0x578);
+                            float l0 = load(phys, 0), l1 = load(phys, 1), s0 = slip(phys, 0), s1 = slip(phys, 1);
+                            float sum = l0 + l1;
+                            float fsl = (l0 * s0 + l1 * s1) / sum;
+                            if (std::isfinite(l0) && std::isfinite(l1) && std::isfinite(s0) && std::isfinite(s1) &&
+                                sum > 1e-6f && std::isfinite(fsl)) {
+                                g.frontSlip = fsl; g.haveFront = true;
+                            }
+                        }
+                    }
+                }
+            }
             VirtualWheel_SetGameFfbInput(g);
         }
     }
@@ -499,8 +523,8 @@ DWORD WINAPI diagThread(void*) {
         if (n == 0) { btn[0] = '-'; btn[1] = 0; }
         char vars[1024];
         VirtualWheel_FormatVars(vars, sizeof(vars));
-        LOG("wheel diag: steer %.3f thr %.2f brk %.2f clu %.2f btn %s gear %d | game rot %.0f | vars: %s",
-            in.steering, in.throttle, in.brake, in.clutch, btn, in.gear, VirtualWheel_GameRotation(), vars);
+        LOG("wheel diag: steer %.3f thr %.2f brk %.2f clu %.2f btn %s gear %d hb %d | game rot %.0f | vars: %s",
+            in.steering, in.throttle, in.brake, in.clutch, btn, in.gear, in.handbrake ? 1 : 0, VirtualWheel_GameRotation(), vars);
         if (!have) continue;
         char pressed[256]; size_t pn = 0; pressed[0] = 0;
         for (int i = 0; i < 128 && pn < sizeof(pressed) - 1; ++i)
@@ -519,9 +543,13 @@ DWORD WINAPI diagThread(void*) {
                          fs.game.speed, fs.game.slip, fs.game.gain);
             else
                 snprintf(game, sizeof(game), " | game input none");
-            LOG("wheel diag ffb: %s F %.3f (torque %.3f spring %.3f damp %.3f rumble %.3f menu %.3f) angle %.3f vel %.2f out %ld slip %.3f%s",
+            char front[24];
+            if (fs.haveGame && fs.game.haveFront) snprintf(front, sizeof(front), "front %.3f", fs.game.frontSlip);
+            else snprintf(front, sizeof(front), "front none");
+            LOG("wheel diag ffb: %s F %.3f (torque %.3f spring %.3f damp %.3f rumble %.3f menu %.3f) angle %.3f vel %.2f out %ld slip %.3f align %.3f %s rumbleAmp L %.3f R %.3f%s",
                 fs.stale ? "stale" : fs.race ? "race" : "menu", fs.terms.total, fs.terms.torque, fs.terms.spring,
-                fs.terms.damping, fs.terms.rumble, fs.terms.menu, fs.angle, fs.velocity, fs.mag, fs.terms.slip, game);
+                fs.terms.damping, fs.terms.rumble, fs.terms.menu, fs.angle, fs.velocity, fs.mag, fs.terms.slip,
+                fs.terms.align, front, fs.leftAmp, fs.rightAmp, game);
         }
     }
 }

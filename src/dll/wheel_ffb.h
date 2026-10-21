@@ -9,6 +9,8 @@ struct GameFfbInput {
     float rawTorque = 0, speed = 0, slip = 0, gain = 0, dynScale = 0, dynMax = 0, springParam = 0,
           slip0 = 0, slip1 = 0, slipScale0 = 0, slipScale1 = 0, speed0 = 0, speed1 = 0,
           speedScale0 = 0, speedScale1 = 0;
+    float frontSlip = 0;     // load-weighted average of the front tyres' slip
+    bool  haveFront = false;
     uint64_t qpc = 0;
 };
 
@@ -24,10 +26,12 @@ struct FfbParams {
 struct FfbTuning {
     float torqueGain = 2.0f, springGain = 1.0f, slipSpringFloor = 0.4f, slipGain = 0.5f,
           slipStart = 0.08f, slipFull = 0.55f;
-    bool slipInvert = false;
+    bool slipInvert = true;
+    float alignGain = 0.6f, alignStart = 0.05f, alignFull = 0.5f;   // front-slip aligning force
+    float rumbleGain = 1.5f;
 };
 
-struct FfbTerms { float torque, spring, damping, rumble, menu, total, slip; };
+struct FfbTerms { float torque, spring, damping, rumble, menu, total, slip, align; };
 
 // Returns the clamped total force in game units (-0.5..0.5). terms may be null.
 float FfbForce(const FfbParams& p, const FfbTuning& tune, float angle, float velocity, double tMs, FfbTerms* terms);

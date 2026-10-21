@@ -1,6 +1,6 @@
 # FH2 Sim Immersion for Azimuth
 
-**Status: 0.9.1. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
+**Status: 0.9.2. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
 Steering wheel support is experimental.**
 
 Realism and immersion add-ons for Forza Horizon 2 running in Azimuth:
@@ -143,8 +143,23 @@ Setup:
   `FFBSpringGain` (centring spring), `FFBSlipSpringFloor` (share of the centring spring kept
   when the rear slides), `FFBSlipGain` (counter-steer force in a slide, 0 = off),
   `FFBSlipStart` / `FFBSlipFull` (rear slip range for that force) and `FFBSlipInvert`.
-  If it feels too light off-road, raise `FFBTorqueGain` or `FFBSlipSpringFloor`. If the wheel
-  turns into the slide instead of against it, set `FFBSlipInvert=1`.
+  `FFBSlipInvert=1` is the default: the counter-steer force pushes the wheel toward the
+  direction of travel, which is correct for the G29. If it turns into the slide instead, set
+  `FFBSlipInvert=0`. If the wheel feels too light off-road, raise `FFBTorqueGain` or
+  `FFBSlipSpringFloor`.
+* Front-tyre slides (understeer, spins, handbrake turns): `FFBAlignGain` (0.6, 0 = off) is a
+  self-aligning force that turns the wheel toward the direction of travel while the front
+  tyres slide; `FFBAlignStart` / `FFBAlignFull` (0.05 / 0.5) are the front slip where it starts
+  and where it is full. It follows `FFBSlipInvert`.
+* `FFBRumbleGain` (1.5, 0 - 5) scales the road-surface and impact vibration (kerbs,
+  cobblestones, gravel). 1.0 = game default.
+* Handbrake: the game reads the handbrake only as a button (its wheel layouts use **B**, layout 4
+  uses **A**). Set `HandbrakeButton` (a DirectInput button number, -1 = none) and/or
+  `HandbrakeAxis` (an axis name, NONE = none; `HandbrakeAxisInvert=1` if it reads maximum when
+  released, `HandbrakeThreshold` = travel from 0.05 to 0.95 that counts as pulled). While the
+  handbrake is pulled the plugin presses the game button named by `HandbrakeGameButton`
+  (A, B, X, Y, LB or RB; default B). The settings window has a Handbrake group and a lever in the
+  wheel picture.
 
 To find axis and button numbers, set `Diagnostics=1` (under `[Input]`). Every 2 seconds the log shows a
 `wheel diag raw:` line with every axis value and the pressed buttons.
@@ -199,7 +214,7 @@ settings.
 `FH2SimImmersion.log` is written next to the DLL. A good run looks like this:
 
 ```
-FH2 Sim Immersion 0.9.1 loaded into pid ... (...\azimuth.exe)
+FH2 Sim Immersion 0.9.2 loaded into pid ... (...\azimuth.exe)
 waiting for the Forza Horizon 2 image to be mapped...
 game image found at 0000...
 patch: 5 head-tracking inputs redirected (thunks at ...)

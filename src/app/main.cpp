@@ -57,18 +57,26 @@ static void makeFonts() {
     G.bold = CreateFontIndirectW(&b);
 }
 
+static void redrawAll(HWND hwnd) {
+    RedrawWindow(hwnd, nullptr, nullptr, RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);
+}
+
 static void showPage(int i) {
     if (i < 0 || i >= (int)g_pages.size()) return;
+    // (WM_SETREDRAW FALSE hides the window for IsWindowVisible, so the page style bit is tested instead)
+    SendMessageW(G.main, WM_SETREDRAW, FALSE, 0);
     for (int k = 0; k < (int)g_pages.size(); ++k)
-        if (k != i && IsWindowVisible(g_pages[k]->host())) { ShowWindow(g_pages[k]->host(), SW_HIDE); g_pages[k]->OnShow(false); }
+        if (k != i && (GetWindowLongPtrW(g_pages[k]->host(), GWL_STYLE) & WS_VISIBLE)) { ShowWindow(g_pages[k]->host(), SW_HIDE); g_pages[k]->OnShow(false); }
     g_cur = i;
     ShowWindow(g_pages[i]->host(), SW_SHOW);
-    RedrawWindow(g_pages[i]->host(), nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
     g_pages[i]->OnShow(true);
     TabCtrl_SetCurSel(g_tab, i);
+    SendMessageW(G.main, WM_SETREDRAW, TRUE, 0);
+    redrawAll(G.main);
 }
 
 static void layoutAll(HWND hwnd) {
+    SendMessageW(hwnd, WM_SETREDRAW, FALSE, 0);
     RECT rc; GetClientRect(hwnd, &rc);
     int bar = S(46), m = S(8);
     SetWindowPos(g_tab, nullptr, m, m, rc.right - 2 * m, rc.bottom - bar - m, SWP_NOZORDER);
@@ -83,6 +91,8 @@ static void layoutAll(HWND hwnd) {
     SetWindowPos(g_revert, nullptr, x - S(170) - S(8) - bw, by, bw, bh, SWP_NOZORDER);
     SetWindowPos(g_apply, nullptr, x - S(170) - 2 * (S(8) + bw) + 0, by, bw, bh, SWP_NOZORDER);
     SetWindowPos(g_status, nullptr, m + S(2), by, std::max(S(60), x - S(170) - 2 * (S(8) + bw) - S(8) - m), bh, SWP_NOZORDER);
+    SendMessageW(hwnd, WM_SETREDRAW, TRUE, 0);
+    redrawAll(hwnd);
 }
 
 static void applyFontsToWindow(HWND hwnd) {
@@ -117,7 +127,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT m, WPARAM w, LPARAM l) {
         G.main = hwnd;
         G.dpi = dpiOfWindow(hwnd);
         makeFonts();
-        g_tab = CreateWindowExW(0, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS,
+        g_tab = CreateWindowExW(0, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
                                 0, 0, 10, 10, hwnd, (HMENU)IDC_TAB, G.inst, nullptr);
         g_pages.emplace_back(NewHeadPage(0));
         g_pages.emplace_back(NewWheelPage(1));
@@ -241,6 +251,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     wc.lpfnWndProc = WndProc;
     wc.hInstance = inst;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.style = CS_HREDRAW | CS_VREDRAW;
     wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
     wc.lpszClassName = kClass;
     wc.hIcon = LoadIconW(inst, MAKEINTRESOURCEW(1));

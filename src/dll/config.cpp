@@ -152,6 +152,22 @@ static void readWheel(const wchar_t* ini, WheelConfig& w) {
         }
     }
     w.reverseButton = readI(ini, "Wheel", "ReverseButton", 18);
+    w.handbrakeButton     = readI(ini, "Wheel", "HandbrakeButton", -1);
+    w.handbrakeAxis       = readWheelAxis(ini, "HandbrakeAxis", WheelAxis::None, "NONE");
+    w.handbrakeAxisInvert = readI(ini, "Wheel", "HandbrakeAxisInvert", 0) != 0;
+    w.handbrakeThreshold  = clampCfg(ini, "HandbrakeThreshold", (float)readF(ini, "Wheel", "HandbrakeThreshold", 0.3), 0.05f, 0.95f);
+    {
+        std::string g = readStr(ini, "Wheel", "HandbrakeGameButton", "B"), t;
+        for (char ch : g) if (ch != ' ') t += (char)toupper((unsigned char)ch);
+        char c = 'B';
+        if (t == "A" || t == "B" || t == "X" || t == "Y") c = t[0];
+        else if (t == "LB") c = 'L';
+        else if (t == "RB") c = 'R';
+        else LOG("config: unknown HandbrakeGameButton '%s'; using B", g.c_str());
+        w.handbrakeGameButton = c;
+        LOG("config: handbrake button %d axis %s%s threshold %.2f -> game %c", w.handbrakeButton,
+            wheelAxisName(w.handbrakeAxis), w.handbrakeAxisInvert ? "(inv)" : "", w.handbrakeThreshold, c);
+    }
     std::string um = readStr(ini, "Wheel", "UserMode", "auto"), umt;
     for (char ch : um) if (ch != ' ') umt += (char)tolower((unsigned char)ch);
     if (umt == "none") w.userMode = WheelUserMode::None;
@@ -179,9 +195,14 @@ static void readWheel(const wchar_t* ini, WheelConfig& w) {
         t.slipGain        = clampCfg(ini, "FFBSlipGain", (float)readF(ini, "Wheel", "FFBSlipGain", 0.5), 0.0f, 5.0f);
         t.slipStart       = clampCfg(ini, "FFBSlipStart", (float)readF(ini, "Wheel", "FFBSlipStart", 0.08), 0.0f, 2.0f);
         t.slipFull        = clampCfg(ini, "FFBSlipFull", (float)readF(ini, "Wheel", "FFBSlipFull", 0.55), 0.0f, 2.0f);
-        t.slipInvert      = readI(ini, "Wheel", "FFBSlipInvert", 0) != 0;
-        LOG("config: ffb torque %.2f spring %.2f floor %.2f slip %.2f [%.2f..%.2f] inv %d", t.torqueGain,
-            t.springGain, t.slipSpringFloor, t.slipGain, t.slipStart, t.slipFull, t.slipInvert);
+        t.slipInvert      = readI(ini, "Wheel", "FFBSlipInvert", 1) != 0;
+        t.alignGain       = clampCfg(ini, "FFBAlignGain", (float)readF(ini, "Wheel", "FFBAlignGain", 0.6), 0.0f, 5.0f);
+        t.alignStart      = clampCfg(ini, "FFBAlignStart", (float)readF(ini, "Wheel", "FFBAlignStart", 0.05), 0.0f, 2.0f);
+        t.alignFull       = clampCfg(ini, "FFBAlignFull", (float)readF(ini, "Wheel", "FFBAlignFull", 0.5), 0.0f, 2.0f);
+        t.rumbleGain      = clampCfg(ini, "FFBRumbleGain", (float)readF(ini, "Wheel", "FFBRumbleGain", 1.5), 0.0f, 5.0f);
+        LOG("config: ffb torque %.2f spring %.2f floor %.2f slip %.2f [%.2f..%.2f] inv %d align %.2f [%.2f..%.2f] rumble %.2f",
+            t.torqueGain, t.springGain, t.slipSpringFloor, t.slipGain, t.slipStart, t.slipFull, t.slipInvert,
+            t.alignGain, t.alignStart, t.alignFull, t.rumbleGain);
     }
     LOG("config: wheel enabled %d match '%s' range %d axes steer %s%s thr %s brk %s clu %s pedalsInv %d dz %.2f "
         "hshifter %d user %s rescan %d id %04x:%04x flag14 %d test %d ffb %d gain %.2f inv %d",

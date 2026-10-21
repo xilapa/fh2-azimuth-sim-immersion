@@ -51,6 +51,18 @@ public:
         live_.clutch = pedal(axis(js, "ClutchAxis", true), dz);
         live_.pressed.clear();
         for (int i = 0; i < 128; ++i) if (js.rgbButtons[i] & 0x80) live_.pressed.push_back(i);
+        {
+            double hb = 0;
+            Ctl* hbA = Find("Wheel", "HandbrakeAxis");
+            if (hbA && GetValue(*hbA) != "NONE" && !GetValue(*hbA).empty()) {
+                hb = axis(js, "HandbrakeAxis", true);
+                Ctl* inv = Find("Wheel", "HandbrakeAxisInvert");
+                if (inv && GetValue(*inv) == "1") hb = 1.0 - hb;
+            }
+            int hbBtn = (int)Num("Wheel", "HandbrakeButton", -1);
+            if (hbBtn >= 0 && hbBtn < 128 && (js.rgbButtons[hbBtn] & 0x80)) hb = 1.0;
+            live_.handbrake = hb;
+        }
         if (picture_) InvalidateRect(picture_, nullptr, FALSE);
     }
 
@@ -71,6 +83,15 @@ public:
             std::string v = GetValue(*c);
             if (c->s->type == SType::Enum && v.empty()) v = "?";
             st.label[m.part] = Widen(m.valueOnly ? v : std::string(m.key) + "=" + v);
+        }
+        {   // handbrake label: button and/or axis
+            std::wstring t;
+            Ctl* b = Find("Wheel", "HandbrakeButton");
+            Ctl* a = Find("Wheel", "HandbrakeAxis");
+            std::string bv = b ? GetValue(*b) : "", av = a ? GetValue(*a) : "";
+            if (!bv.empty() && bv != "-1") t = L"button " + Widen(bv);
+            if (!av.empty() && av != "NONE") t += (t.empty() ? L"axis " : L" / axis ") + Widen(av);
+            st.label["handbrake"] = t.empty() ? L"not set" : t;
         }
         DrawWheelPicture(dc, rc, st, (int)G.dpi, G.font);
     }

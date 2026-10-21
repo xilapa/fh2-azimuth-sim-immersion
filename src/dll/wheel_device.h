@@ -12,6 +12,8 @@ struct WheelInput {            // already mapped to game conventions
     float throttle = 0, brake = 0, clutch = 0;   // 0..1, 0 = released
     bool  a = false, b = false, x = false, y = false, view = false, menu = false;
     bool  up = false, down = false, left = false, right = false, lb = false, rb = false;
+    bool  handbrake = false;   // real handbrake pulled (already ORed into the configured game button)
+    float handbrakeAxis = 0;   // 0..1 normalized handbrake axis (0 when none)
     int   gear = 0;            // -1 reverse, 0 neutral, 1..7 (only when H-shifter enabled)
     uint64_t timestamp = 0;    // QPC ticks of last poll
     bool  valid = false;       // device acquired and polled within the last 500 ms
@@ -27,6 +29,7 @@ struct FfbStatus {             // latest force feedback state, for diagnostics
     bool  active = false;      // effect running
     bool  haveGame = false;    // game UpdateFFB input was fresh
     GameFfbInput game{};
+    float leftAmp = 0, rightAmp = 0;   // raw rumble amplitudes from the game
 };
 
 // Enumerates, logs, starts the poll thread; false if no device (unless TestMode).

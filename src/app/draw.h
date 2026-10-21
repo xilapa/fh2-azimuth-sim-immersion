@@ -17,11 +17,11 @@ void DrawHeadPicture(HDC dc, const RECT& rc, const HeadPicState& st, int dpi, HF
 struct WheelLive {
     bool active = false;
     std::wstring device;               // device name or a message
-    double steer = 0.5, throttle = 0, brake = 0, clutch = 0;   // 0..1
+    double steer = 0.5, throttle = 0, brake = 0, clutch = 0, handbrake = 0;   // 0..1
     std::vector<int> pressed;
 };
 struct WheelPicState {
-    std::string part;                  // steer throttle brake clutch pedals btnA btnB btnX btnY view menu lb rb shifter ffb
+    std::string part;                  // steer throttle brake clutch pedals btnA btnB btnX btnY view menu lb rb shifter handbrake ffb
     std::map<std::string, std::wstring> label;   // text shown for each part (the controlling setting)
     double rangeDeg = 900;
     WheelLive live;

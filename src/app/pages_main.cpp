@@ -164,10 +164,10 @@ private:
         if (f == INVALID_HANDLE_VALUE) return out;
         LARGE_INTEGER sz{};
         GetFileSizeEx(f, &sz);
-        LONGLONG start = sz.QuadPart > 32768 ? sz.QuadPart - 32768 : 0;
+        LONGLONG start = sz.QuadPart > 65536 ? sz.QuadPart - 65536 : 0;
         LARGE_INTEGER pos; pos.QuadPart = start;
         SetFilePointerEx(f, pos, nullptr, FILE_BEGIN);
-        std::string data(32768, '\0');
+        std::string data(65536, '\0');
         DWORD got = 0;
         ReadFile(f, data.data(), (DWORD)data.size(), &got, nullptr);
         CloseHandle(f);

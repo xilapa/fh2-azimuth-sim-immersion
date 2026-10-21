@@ -97,6 +97,7 @@ int main() {
     {
         FfbParams p = game();
         FfbTuning t; t.torqueGain = 1; t.slipSpringFloor = 0; t.slipGain = 0.5f;
+        t.slipInvert = false; t.alignGain = 0; t.rumbleGain = 1;
         p.game.slip = 0.315f;
         FfbTerms tm{};
         FfbForce(p, t, 0, 0, 0, &tm);
@@ -123,6 +124,53 @@ int main() {
         // total includes the slip term
         t.slipGain = 0.5f; p.game.slip = 0.315f;
         assert(near(FfbForce(p, t, 0, 0, 0, nullptr), 0.125f));
+    }
+    // 13. front-slip aligning force
+    {
+        FfbParams p = game();
+        FfbTuning t; t.torqueGain = 1; t.slipSpringFloor = 0; t.slipGain = 0; t.rumbleGain = 1;
+        t.alignGain = 0.6f; t.alignStart = 0.05f; t.alignFull = 0.5f; t.slipInvert = true;
+        p.game.haveFront = true; p.game.frontSlip = 0.275f;
+        FfbTerms tm{};
+        FfbForce(p, t, 0, 0, 0, &tm);
+        assert(near(tm.align, -0.15f));
+        assert(near(FfbForce(p, t, 0, 0, 0, nullptr), -0.15f));       // included in the total
+        t.slipInvert = false;
+        FfbForce(p, t, 0, 0, 0, &tm);
+        assert(near(tm.align, 0.15f));
+        p.game.frontSlip = -0.275f;
+        FfbForce(p, t, 0, 0, 0, &tm);
+        assert(near(tm.align, -0.15f));
+        p.game.frontSlip = 0.02f;                                      // below start
+        FfbForce(p, t, 0, 0, 0, &tm);
+        assert(tm.align == 0.0f);
+        p.game.frontSlip = 3.0f;                                       // saturates at gain*0.5
+        FfbForce(p, t, 0, 0, 0, &tm);
+        assert(near(tm.align, 0.3f));
+        p.game.frontSlip = 0.275f;
+        p.game.haveFront = false;
+        FfbForce(p, t, 0, 0, 0, &tm);
+        assert(tm.align == 0.0f);
+        p.game.haveFront = true; t.alignGain = 0;
+        FfbForce(p, t, 0, 0, 0, &tm);
+        assert(tm.align == 0.0f);
+        t.alignGain = 0.6f; t.alignFull = t.alignStart;                // degenerate range
+        FfbForce(p, t, 0, 0, 0, &tm);
+        assert(tm.align == 0.0f);
+    }
+    // 14. rumble gain
+    {
+        FfbParams p = live(true); p.leftAmp = 0.1f; p.leftWl = 40.0f;
+        FfbTuning t; t.torqueGain = 1; t.rumbleGain = 1;
+        FfbTerms tm{};
+        FfbForce(p, t, 0, 0, 10.0, &tm);
+        assert(near(tm.rumble, 0.1f));
+        t.rumbleGain = 2;
+        FfbForce(p, t, 0, 0, 10.0, &tm);
+        assert(near(tm.rumble, 0.2f));
+        t.rumbleGain = 0;
+        FfbForce(p, t, 0, 0, 10.0, &tm);
+        assert(tm.rumble == 0.0f);
     }
     // 12. no game input: fall back to the captured spring scale; no slip term
     {

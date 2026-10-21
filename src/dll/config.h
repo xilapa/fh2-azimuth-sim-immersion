@@ -26,6 +26,11 @@ struct WheelConfig {
     bool        hShifter = false;
     int         gearButtons[7] = {12, 13, 14, 15, 16, 17, -1};
     int         reverseButton = 18;
+    int         handbrakeButton = -1;
+    WheelAxis   handbrakeAxis = WheelAxis::None;
+    bool        handbrakeAxisInvert = false;
+    float       handbrakeThreshold = 0.3f;
+    char        handbrakeGameButton = 'B';   // A, B, X, Y, L (LB) or R (RB)
     WheelUserMode userMode = WheelUserMode::Auto;
     bool        forceRescan = true;
     int         vendorId = 0x046D, productId = 0xC261;

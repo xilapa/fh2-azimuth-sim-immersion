@@ -78,6 +78,12 @@ inline constexpr Setting kWheelSettings[] = {
     ST_TEXT ("Wheel", "GearButtons", "Gear buttons 1-6 and 7th", "H-shifter", "shifter"),
     ST_INT  ("Wheel", "ReverseButton", "Reverse button", "H-shifter", "shifter", -1, 127, 1),
 
+    ST_INT  ("Wheel", "HandbrakeButton", "Handbrake button (-1 = none)", "Handbrake", "handbrake", -1, 127, 1),
+    ST_ENUM ("Wheel", "HandbrakeAxis", "Handbrake axis", "Handbrake", "handbrake", AXES),
+    ST_BOOL ("Wheel", "HandbrakeAxisInvert", "Axis reads maximum when released", "Handbrake", "handbrake"),
+    ST_FLOAT("Wheel", "HandbrakeThreshold", "Pulled at axis travel (0.05 - 0.95)", "Handbrake", "handbrake", 0.05, 0.95, 0.05),
+    ST_ENUM ("Wheel", "HandbrakeGameButton", "Game button it presses", "Handbrake", "handbrake", "A|B|X|Y|LB|RB"),
+
     ST_ENUM ("Wheel", "UserMode", "Player of the wheel", "Player", nullptr, "auto|none"),
     ST_BOOL ("Wheel", "ForceRescan", "Re-scan controllers once", "Player", nullptr),
 
@@ -90,7 +96,11 @@ inline constexpr Setting kWheelSettings[] = {
     ST_FLOAT("Wheel", "FFBSlipGain", "Counter-steer force", "Force feedback", "ffb", 0, 5, 0.1),
     ST_FLOAT("Wheel", "FFBSlipStart", "Counter-steer starts at slip", "Force feedback", "ffb", 0, 2, 0.01),
     ST_FLOAT("Wheel", "FFBSlipFull", "Counter-steer full at slip", "Force feedback", "ffb", 0, 2, 0.01),
-    ST_BOOL ("Wheel", "FFBSlipInvert", "Invert counter-steer", "Force feedback", "ffb"),
+    ST_BOOL ("Wheel", "FFBSlipInvert", "Counter-steer toward travel (G29)", "Force feedback", "ffb"),
+    ST_FLOAT("Wheel", "FFBAlignGain", "Front-slip aligning force", "Force feedback", "ffb", 0, 5, 0.1),
+    ST_FLOAT("Wheel", "FFBAlignStart", "Aligning force starts at front slip", "Force feedback", "ffb", 0, 2, 0.01),
+    ST_FLOAT("Wheel", "FFBAlignFull", "Aligning force full at front slip", "Force feedback", "ffb", 0, 2, 0.01),
+    ST_FLOAT("Wheel", "FFBRumbleGain", "Road vibration strength", "Force feedback", "ffb", 0, 5, 0.1),
 
     ST_TEXT ("Wheel", "VendorId", "Reported vendor id (hex)", "Advanced", nullptr),
     ST_TEXT ("Wheel", "ProductId", "Reported product id (hex)", "Advanced", nullptr),

@@ -262,6 +262,11 @@ typedef bool (*FnLastFfb)(fh2::GameFfbInput*);
 typedef void (MSABI *FnUpdateFfb)(uint8_t*, const float*);
 typedef float (MSABI *FnGetFov)(void*);
 
+// Fake car for the front-slip capture: car + 0x4c08 -> phys, phys -> vtable of 0xC4 entries.
+static float MSABI fakeSlip(void*, int i) { static const float s[4] = {0.3f, 0.3f, 0.1f, 0.1f}; return i >= 0 && i < 4 ? s[i] : 0.0f; }
+static float MSABI fakeLoad(void*, int) { return 1.0f; }
+static void MSABI fakeUnexpected() { printf("  FAIL: unexpected physics vtable entry called\n"); fflush(stdout); abort(); }
+
 static void ffbTests(uint8_t* base, HMODULE plugin) {
     printf("game FFB input hook:\n");
     const uintptr_t kSite = 0x2fe134, kOrigTarget = 0x10743c0;
@@ -295,6 +300,24 @@ static void ffbTests(uint8_t* base, HMODULE plugin) {
           std::fabs(g.gain - 1.0f) < 1e-6f, "captured raw %f speed %f slip %f gain %f", g.rawTorque, g.speed, g.slip, g.gain);
     CHECK(std::fabs(g.dynScale - 0.42f) < 1e-6f && std::fabs(g.springParam - 0.5f) < 1e-6f && std::fabs(g.slip1 - 0.55f) < 1e-6f &&
           std::fabs(g.speed0 - 2.0f) < 1e-6f && std::fabs(g.speedScale1 - 1.0f) < 1e-6f, "captured driver parameters");
+    CHECK(!g.haveFront, "garbage rsi: no front slip captured");
+
+    // fake car: front slip comes from the physics object's vtable
+    alignas(16) static uint8_t carBuf[0x4c10];
+    alignas(16) static uint8_t physBuf[64];
+    static void* fakeVt[0xC4];
+    for (auto& e : fakeVt) e = (void*)&fakeUnexpected;
+    fakeVt[0x578 / 8] = (void*)&fakeSlip;
+    fakeVt[0x610 / 8] = (void*)&fakeLoad;
+    memset(carBuf, 0, sizeof(carBuf)); memset(physBuf, 0, sizeof(physBuf));
+    *(void**)physBuf = fakeVt;
+    *(void**)(carBuf + 0x4c08) = physBuf;
+    static void* carElemFake;
+    carElemFake = carBuf;
+    float inCopy2[3] = {in[0], in[1], in[2]};
+    callWithRsi((void*)target, slot, inCopy2, &carElemFake);
+    CHECK(last(&g), "plugin captured the input with a fake car");
+    CHECK(g.haveFront && std::fabs(g.frontSlip - 0.3f) < 1e-6f, "front slip %f (have %d), expected 0.3", g.frontSlip, (int)g.haveFront);
 }
 
 typedef uint8_t (MSABI *FnGetter)(void*);

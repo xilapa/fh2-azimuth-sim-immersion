@@ -21,7 +21,7 @@ float piecewise(float x, float x0, float y0, float x1, float y1) {
 } // namespace
 
 float FfbForce(const FfbParams& p, const FfbTuning& tune, float angle, float velocity, double tMs, FfbTerms* terms) {
-    FfbTerms t{0, 0, 0, 0, 0, 0, 0};
+    FfbTerms t{0, 0, 0, 0, 0, 0, 0, 0};
     if (!p.stale) {
         if (p.race) {
             t.torque  = p.torque * tune.torqueGain;
@@ -37,6 +37,7 @@ float FfbForce(const FfbParams& p, const FfbTuning& tune, float angle, float vel
             t.spring  = limit(-scale * angle, p.raceSpringMax);
             t.damping = limit(-p.dampScale * velocity, p.dampMax);
             t.rumble  = sq(p.leftAmp, p.leftWl, tMs) + sq(p.rightAmp, p.rightWl, tMs);
+            t.rumble *= tune.rumbleGain;
             if (p.haveGame && tune.slipGain > 0.0f) {
                 float s = std::fabs(p.game.slip);
                 float k = tune.slipFull <= tune.slipStart ? 0.0f
@@ -44,7 +45,14 @@ float FfbForce(const FfbParams& p, const FfbTuning& tune, float angle, float vel
                 float sign = p.game.slip > 0.0f ? 1.0f : p.game.slip < 0.0f ? -1.0f : 0.0f;
                 t.slip = tune.slipGain * 0.5f * k * sign * (tune.slipInvert ? -1.0f : 1.0f);
             }
-            t.total   = t.torque + t.spring + t.damping + t.slip + t.rumble;
+            if (p.haveGame && p.game.haveFront && tune.alignGain > 0.0f) {
+                float fs = p.game.frontSlip;
+                float k = tune.alignFull <= tune.alignStart ? 0.0f
+                              : clampf((std::fabs(fs) - tune.alignStart) / (tune.alignFull - tune.alignStart), 0.0f, 1.0f);
+                float sign = fs > 0.0f ? 1.0f : fs < 0.0f ? -1.0f : 0.0f;
+                t.align = tune.alignGain * 0.5f * k * sign * (tune.slipInvert ? -1.0f : 1.0f);
+            }
+            t.total   = t.torque + t.spring + t.damping + t.slip + t.align + t.rumble;
         } else {
             t.menu  = -p.menuSpringScale * angle;
             t.total = t.menu;
@@ -58,6 +66,7 @@ float FfbForce(const FfbParams& p, const FfbTuning& tune, float angle, float vel
 float FfbForce(const FfbParams& p, float angle, float velocity, double tMs, FfbTerms* terms) {
     FfbTuning neutral;
     neutral.torqueGain = 1.0f; neutral.springGain = 1.0f; neutral.slipSpringFloor = 0.0f; neutral.slipGain = 0.0f;
+    neutral.alignGain = 0.0f; neutral.rumbleGain = 1.0f;
     return FfbForce(p, neutral, angle, velocity, tMs, terms);
 }
 

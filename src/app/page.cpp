@@ -46,6 +46,8 @@ void RegisterPageClasses() {
     WNDCLASSW wc{};
     wc.hInstance = G.inst;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);       // both classes paint the window colour
     wc.lpfnWndProc = PanelWndProc;
     wc.lpszClassName = L"FH2Panel";
     RegisterClassW(&wc);
@@ -133,6 +135,28 @@ void Page::AddTip(HWND w, const std::wstring& text) {
     SendMessageW(tips_, TTM_ADDTOOLW, 0, (LPARAM)&ti);
 }
 
+// Combo boxes and trackbars must not change value on the mouse wheel: the page scrolls instead.
+// dwRef = the window that receives the wheel message (the page's scroller).
+static LRESULT CALLBACK NoWheelProc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, DWORD_PTR dwRef) {
+    if (m == WM_MOUSEWHEEL || m == WM_MOUSEHWHEEL) {
+        HWND combo = h;
+        wchar_t cls[32] = L"";
+        GetClassNameW(h, cls, 32);
+        if (_wcsicmp(cls, L"COMBOBOX") != 0) combo = GetParent(h);      // the edit child of a dropdown combo
+        bool combo_ = combo && GetClassNameW(combo, cls, 32) && _wcsicmp(cls, L"COMBOBOX") == 0;
+        if (!combo_ || !SendMessageW(combo, CB_GETDROPPEDSTATE, 0, 0)) {
+            SendMessageW((HWND)dwRef, m, w, l);
+            return 0;
+        }
+    }
+    return DefSubclassProc(h, m, w, l);
+}
+static void noWheel(HWND w, HWND target) {
+    if (!w) return;
+    SetWindowSubclass(w, NoWheelProc, 1, (DWORD_PTR)target);
+    for (HWND c = GetWindow(w, GW_CHILD); c; c = GetWindow(c, GW_HWNDNEXT)) SetWindowSubclass(c, NoWheelProc, 1, (DWORD_PTR)target);
+}
+
 Ctl& Page::MakeCtl(HWND parent, const Setting& s, bool withLabel) {
     ctls_.push_back(Ctl());
     Ctl& c = ctls_.back();
@@ -150,6 +174,7 @@ Ctl& Page::MakeCtl(HWND parent, const Setting& s, bool withLabel) {
             c.main = CreateWindowExW(0, L"COMBOBOX", L"", vis | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
                                      0, 0, 10, 10, parent, (HMENU)(INT_PTR)c.id, hi, nullptr);
             for (auto& v : splitBar(s.values)) SendMessageW(c.main, CB_ADDSTRING, 0, (LPARAM)Widen(v).c_str());
+            noWheel(c.main, scroller_ ? scroller_ : parent);
         } else {
             c.main = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", vis | WS_TABSTOP | ES_AUTOHSCROLL,
                                      0, 0, 10, 10, parent, (HMENU)(INT_PTR)c.id, hi, nullptr);
@@ -158,6 +183,7 @@ Ctl& Page::MakeCtl(HWND parent, const Setting& s, bool withLabel) {
                                            0, 0, 10, 10, parent, (HMENU)(INT_PTR)(c.id + 500), hi, nullptr);
                 double f = std::pow(10.0, decimalsFor(s.step));
                 SendMessageW(c.slider, TBM_SETRANGE, TRUE, MAKELONG((int)std::lround(s.min * f), (int)std::lround(s.max * f)));
+                noWheel(c.slider, scroller_ ? scroller_ : parent);
                 SendMessageW(c.slider, TBM_SETPAGESIZE, 0, (LPARAM)std::max(1L, std::lround(s.step * f * 5)));
                 SendMessageW(c.slider, TBM_SETLINESIZE, 0, (LPARAM)std::max(1L, std::lround(s.step * f)));
             }
@@ -370,6 +396,7 @@ void Page::LayoutRows() {
         si.nMin = 0; si.nMax = rowsHeight_ - 1; si.nPage = rc.bottom; si.nPos = scrollY_;
         SetScrollInfo(scroller_, SB_VERT, &si, TRUE);
     }
+    RedrawWindow(scroller_, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
 }
 
 void Page::EnsureVisible(HWND w) {

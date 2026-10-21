@@ -293,7 +293,7 @@ void DrawWheelPicture(HDC dc, const RECT& rc, const WheelPicState& st, int dpi, 
     struct Pedal { const char* part; const wchar_t* name; double hgt; double val; };
     const Pedal pedals[] = {{"clutch", L"Clutch", 0.62, st.live.clutch}, {"brake", L"Brake", 0.62, st.live.brake},
                             {"throttle", L"Throttle", 0.85, st.live.throttle}};
-    int px0 = m + c.px(4), pw = c.px(34), pgap = (int)((W * 0.56 - 3 * pw) / 3);
+    int px0 = m + c.px(4), pw = c.px(34), pgap = (int)((W * 0.47 - 3 * pw) / 3);
     for (int i = 0; i < 3; ++i) {
         const Pedal& p = pedals[i];
         bool h = hi(p.part) || hi("pedals");
@@ -312,6 +312,29 @@ void DrawWheelPicture(HDC dc, const RECT& rc, const WheelPicState& st, int dpi, 
         int ty = areaTop + full + c.px(2);
         text(c, h ? kAccent : kText, p.name, x + pw / 2, ty, DT_CENTER);
         text(c, h ? kAccent : kDim, lab(st, p.part, L""), x + pw / 2, ty + c.px(14), DT_CENTER);
+    }
+    {   // handbrake lever, between the pedals and the shifter
+        bool h = hi("handbrake");
+        int full = areaBot - areaTop - c.px(30);
+        int lx0 = (int)(W * 0.50), lx1 = (int)(W * 0.62);
+        int pivX = (lx0 + lx1) / 2, pivY = areaTop + full - c.px(6);
+        double len = std::min<double>(full * 0.8, (lx1 - lx0) * 1.6);
+        double val = std::min(std::max(st.live.active ? st.live.handbrake : 0.0, 0.0), 1.0);
+        double ang = (-35.0 + 35.0 * val) * kPi / 180;     // from vertical; leans back when released
+        COLORREF lc = h ? kAccent : kGray;
+        // housing
+        pen(c, lc, h ? 3 : 1.5); brush(c, kLight);
+        RoundRect(dc, pivX - c.px(14), pivY - c.px(2), pivX + c.px(14), pivY + c.px(8), c.px(4), c.px(4));
+        cleanup(c);
+        // lever arm and grip
+        int ex = pivX + (int)(len * std::sin(ang)), ey = pivY - (int)(len * std::cos(ang));
+        line(c, st.live.active && val > 0.002 ? kAccent : lc, h ? 4 : 3, pivX, pivY, ex, ey);
+        line(c, st.live.active && val > 0.002 ? kAccent : lc, 8, ex - (int)(5 * c.k * std::cos(ang)), ey - (int)(5 * c.k * std::sin(ang)),
+             ex + (int)(5 * c.k * std::cos(ang)), ey + (int)(5 * c.k * std::sin(ang)));
+        cleanup(c);
+        int ty = areaTop + full + c.px(2);
+        text(c, h ? kAccent : kText, L"Handbrake", (lx0 + lx1) / 2, ty, DT_CENTER);
+        text(c, h ? kAccent : kDim, lab(st, "handbrake", L""), (lx0 + lx1) / 2, ty + c.px(14), DT_CENTER);
     }
     {
         bool h = hi("shifter");

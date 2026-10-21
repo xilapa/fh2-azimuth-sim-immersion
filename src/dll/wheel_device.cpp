@@ -124,6 +124,28 @@ void mapState(const DIJOYSTATE2& s, WheelInput& o) {
     o.x = btn(s, g_cfg.buttonX); o.y = btn(s, g_cfg.buttonY);
     o.view = btn(s, g_cfg.buttonView); o.menu = btn(s, g_cfg.buttonMenu);
     o.lb = btn(s, g_cfg.buttonLB); o.rb = btn(s, g_cfg.buttonRB);
+    {   // real handbrake -> the configured game button
+        bool hbPresent;
+        LONG hraw = axisValue(s, g_cfg.handbrakeAxis, hbPresent);
+        double h = 0.0;
+        if (hbPresent) {
+            h = hraw / 65535.0;
+            h = h < 0 ? 0 : h > 1 ? 1 : h;
+            if (g_cfg.handbrakeAxisInvert) h = 1.0 - h;
+        }
+        o.handbrakeAxis = (float)h;
+        o.handbrake = btn(s, g_cfg.handbrakeButton) || (hbPresent && h >= g_cfg.handbrakeThreshold);
+        if (o.handbrake) {
+            switch (g_cfg.handbrakeGameButton) {
+                case 'A': o.a = true; break;
+                case 'X': o.x = true; break;
+                case 'Y': o.y = true; break;
+                case 'L': o.lb = true; break;
+                case 'R': o.rb = true; break;
+                default:  o.b = true; break;
+            }
+        }
+    }
     o.up = o.down = o.left = o.right = false;
     DWORD pov = s.rgdwPOV[0];
     if ((pov & 0xFFFF) != 0xFFFF) {
@@ -339,6 +361,7 @@ DWORD WINAPI pollThread(void*) {
                 g_ffbStatus.mag = mag; g_ffbStatus.race = p.race; g_ffbStatus.stale = p.stale;
                 g_ffbStatus.active = true;
                 g_ffbStatus.haveGame = p.haveGame; g_ffbStatus.game = p.game;
+                g_ffbStatus.leftAmp = p.leftAmp; g_ffbStatus.rightAmp = p.rightAmp;
                 ReleaseSRWLockExclusive(&g_lock);
             }
         }
