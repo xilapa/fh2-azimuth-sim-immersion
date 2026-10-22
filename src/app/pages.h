@@ -6,6 +6,7 @@ namespace app {
 Page* NewHeadPage(int index);
 Page* NewWheelPage(int index);
 Page* NewSimPage(int index);
+Page* NewDrawDistPage(int index);
 Page* NewMainPage(int index);
 
 // Main page services used by main.cpp

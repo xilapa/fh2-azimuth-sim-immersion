@@ -10,6 +10,7 @@
 #include "wheel_hook.h"
 #include "fov_hook.h"
 #include "assist_hook.h"
+#include "drawdist_hook.h"
 #include "game_layout.h"
 #include "tracker.h"
 #include "log.h"
@@ -346,6 +347,7 @@ bool installWhenReady(const Config& cfg) {
             WheelHook_Install(base, cfg);
             FovHook_Install(base, cfg);
             AssistHook_Install(base, cfg);
+            DrawDist_Install(base, cfg);
             return patched;
         }
         Sleep(20);

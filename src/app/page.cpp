@@ -368,7 +368,7 @@ int Page::PositionRows(int W) {
         } else {
             put(c.label, S(14), y, labelW, S(24));
             if (c.slider) {
-                int ew = S(52), sw = std::max(S(60), W - x0 - ew - S(22));
+                int ew = S(sliderEditW_), sw = std::max(S(60), W - x0 - ew - S(22));
                 put(c.slider, x0, y, sw, S(26));
                 put(c.main, x0 + sw + S(6), y + S(1), ew, S(22));
             } else if (c.s->type == SType::Enum) {

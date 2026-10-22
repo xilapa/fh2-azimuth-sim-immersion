@@ -111,14 +111,14 @@ static void doApply() {
                  : L"Could not write a settings file. Is the folder writable?");
 }
 
-static MainPageApi* mainApi() { return g_pages.size() > 3 ? AsMainApi(g_pages[3].get()) : nullptr; }
+static MainPageApi* mainApi() { return g_pages.size() > 4 ? AsMainApi(g_pages[4].get()) : nullptr; }
 
 static void startWithPath(const std::wstring& path) {
     if (MainPageApi* api = mainApi()) {
         api->SetAzimuthPath(path, true);
         api->StartAzimuthNow();
     }
-    showPage(3);
+    showPage(4);
 }
 
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT m, WPARAM w, LPARAM l) {
@@ -132,7 +132,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT m, WPARAM w, LPARAM l) {
         g_pages.emplace_back(NewHeadPage(0));
         g_pages.emplace_back(NewWheelPage(1));
         g_pages.emplace_back(NewSimPage(2));
-        g_pages.emplace_back(NewMainPage(3));
+        g_pages.emplace_back(NewDrawDistPage(3));
+        g_pages.emplace_back(NewMainPage(4));
         for (size_t i = 0; i < g_pages.size(); ++i) {
             TCITEMW ti{}; ti.mask = TCIF_TEXT; ti.pszText = const_cast<wchar_t*>(g_pages[i]->Title());
             SendMessageW(g_tab, TCM_INSERTITEMW, i, (LPARAM)&ti);

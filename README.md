@@ -1,6 +1,6 @@
 # FH2 Sim Immersion for Azimuth
 
-**Status: 0.9.2. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
+**Status: 0.9.3. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
 Steering wheel support is experimental.**
 
 Realism and immersion add-ons for Forza Horizon 2 running in Azimuth:
@@ -84,6 +84,8 @@ keep them). Hover a setting for its explanation.
 * **Simulation:** field of view per camera, realistic assists and a list of all known cars with
   what the real car had. Select a car and choose how its ABS / traction control is forced
   (auto, on or off); Apply saves `FH2SimImmersion_cars.ini` (a car with both on auto is removed).
+* **Draw distance:** a slider per distance (see [Draw distance](#draw-distance)), with a
+  top-down picture of the distances to scale.
 * **Main:** the path of `azimuth.exe`, Start Azimuth, the diagnostics switch, and a status box
   with what the launcher did and the last lines of `FH2SimImmersion.log`.
 
@@ -172,6 +174,35 @@ number of degrees added to the game's own field of view; `0` leaves the game def
 For example `FovCockpit=10`. The log shows the game's value once per camera as
 `fov: ... base`.
 
+## Draw distance
+
+The `[DrawDistance]` section raises how far the game draws things. All values are **metres**.
+`0` (the default) leaves the game's own value alone, and a value at or below the game's own
+changes nothing: the plugin only ever raises a distance (`new = max(game value, setting)`).
+Nothing in the game files is edited; the values are changed in memory while the game loads
+each track. In the settings window (**Draw distance** tab) every setting is a slider that starts
+at the game's own value (far left = game default) and a picture shows the distances to scale.
+
+| Key | What it controls | Game value | Range |
+|---|---|---|---|
+| `ShadowDistance` | how far shadows are drawn | 85 m | up to 1000 |
+| `WorldDistance` | scenery: terrain, buildings, trees, everything not listed below | 360 m (200 m on some tracks) | up to 3000 |
+| `PropsDistance` | props that can be knocked over: fences, signs, bollards | 450 m | up to 3000 |
+| `CrowdDistance` | spectators (their model and fade distances follow) | 250 m | up to 1000 |
+| `GrassDistance` | grass (the start of its fade follows) | 100 m | up to 500 |
+| `TrafficDistance` | traffic cars: fully visible up to 50 m less, faded out at this distance; above 150 m the medium detail level of traffic also reaches this far | 150 m | up to 500 |
+| `RacerDistance` | racer cars: distance of the farthest car detail level; the nearer levels (15 / 25 / 50 m in the game) scale with it | 75 m | up to 1000 |
+
+The game has **no separate terrain and city distances**: all scenery is culled by one distance
+(`WorldDistance`), and only props that can be knocked over have their own (`PropsDistance`).
+
+Higher values cost performance, most of all `WorldDistance`, `ShadowDistance` and
+`PropsDistance`; raise them one at a time and watch the frame rate. Settings are read when the
+game starts. The log shows what was changed (`drawdist: ...` lines): the track values each time
+a track's settings load, `drawdist: traffic fade ...` and `drawdist: car LOD distances ...`.
+If the game build differs from the one the offsets were taken from, the log says `mismatch;
+unchanged` and that part does nothing.
+
 ## Realistic assists (experimental)
 
 Forza lets you switch ABS, traction control and stability control on or off for every car. With
@@ -214,7 +245,7 @@ settings.
 `FH2SimImmersion.log` is written next to the DLL. A good run looks like this:
 
 ```
-FH2 Sim Immersion 0.9.2 loaded into pid ... (...\azimuth.exe)
+FH2 Sim Immersion 0.9.3 loaded into pid ... (...\azimuth.exe)
 waiting for the Forza Horizon 2 image to be mapped...
 game image found at 0000...
 patch: 5 head-tracking inputs redirected (thunks at ...)

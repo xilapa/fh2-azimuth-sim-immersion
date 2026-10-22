@@ -67,8 +67,8 @@ protected:
     int   RowsHeight() const { return rowsHeight_; }
     Ctl*  Find(const char* section, const char* key);
     Ctl*  FindByWnd(HWND w);
-    std::string GetValue(Ctl& c);
-    void  SetValue(Ctl& c, const std::string& v);
+    virtual std::string GetValue(Ctl& c);
+    virtual void SetValue(Ctl& c, const std::string& v);
     double Num(const char* section, const char* key, double def);   // current numeric value of a control
     HWND  MakePicture();
     HWND  MakeStatic(HWND parent, const wchar_t* text, int id = -1);
@@ -87,6 +87,7 @@ protected:
     std::vector<HWND> headers_;
     int   rowsHeight_ = 0;
     int   nextId_ = 0;
+    int   sliderEditW_ = 52;                         // width (96 dpi) of the edit next to a slider
     HWND  lastFocus_ = nullptr;
 private:
     std::deque<std::wstring> tipText_;

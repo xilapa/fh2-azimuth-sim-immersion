@@ -452,6 +452,65 @@ static void fovTests(uint8_t* base) {
     CHECK(std::fabs(v - 45.0f) < 1e-4f, "hood FOV unchanged = %f", v);
 }
 
+static void drawDistTests(uint8_t* base, HMODULE plugin) {
+    printf("draw distance:\n");
+    // A. the tail-jump thunk in front of the track settings deserializer points at our hook
+    uint8_t* jmp = base + 0x134af97;
+    int32_t rel; memcpy(&rel, jmp + 1, 4);
+    uint8_t* target = jmp + 5 + rel;
+    CHECK(jmp[0] == 0xE9, "thunk keeps the jmp opcode");
+    CHECK(target != base + 0x1144320, "track settings jmp re-pointed away from Serialize (%p)", (void*)target);
+    typedef void (MSABI *FnApplyTrack)(uint8_t*);
+    typedef void (MSABI *FnApplyTraffic)();
+    auto applyTrack = (FnApplyTrack)GetProcAddress(plugin, "FH2SI_TestApplyTrackOverrides");
+    auto applyTraffic = (FnApplyTraffic)GetProcAddress(plugin, "FH2SI_TestApplyTrafficOverrides");
+    CHECK(applyTrack && applyTraffic, "test exports found");
+    if (!applyTrack || !applyTraffic) return;
+
+    alignas(16) static uint8_t ts[0x600];
+    memset(ts, 0, sizeof(ts));
+    auto F = [&](int off) -> float& { return *(float*)(ts + off); };
+    F(0x234) = 85.0f; F(0x5e4) = 360.0f; F(0x32c) = 4000.0f; F(0x168) = 100.0f; F(0x404) = 250.0f;
+    applyTrack(ts);
+    CHECK(F(0x234) == 200.0f && F(0x5f4) == 200.0f, "shadow 85 -> %.0f, screen-area shadow 0 -> %.0f", F(0x234), F(0x5f4));
+    CHECK(F(0x5e4) == 800.0f, "world objects 360 -> %.0f", F(0x5e4));
+    CHECK(F(0x32c) == 4000.0f, "props: larger game value kept (%.0f)", F(0x32c));
+    CHECK(F(0x168) == 100.0f && F(0x404) == 250.0f && F(0x164) == 0.0f && F(0x40c) == 0.0f && F(0x410) == 0.0f,
+          "grass and crowd untouched with their settings at 0");
+
+    // B. traffic: the game's static initializers did not run here, so lay the registry variables out first
+    struct Var { uintptr_t rva; float def, max; };
+    const Var vars[] = {{0x36e8c80, 100.0f, 500.0f}, {0x36e8d88, 150.0f, 500.0f}, {0x36e8160, 30.0f, 1000.0f}, {0x36e8048, 120.0f, 1000.0f}};
+    for (auto& v : vars) {
+        *(float*)(base + v.rva + 0x10) = v.def;
+        *(float*)(base + v.rva + 0x14) = v.def;
+        *(float*)(base + v.rva + 0x20) = v.max;
+    }
+    applyTraffic();
+    float tmin = *(float*)(base + 0x36e8c80 + 0x10), tmax = *(float*)(base + 0x36e8d88 + 0x10),
+          thigh = *(float*)(base + 0x36e8160 + 0x10), tmed = *(float*)(base + 0x36e8048 + 0x10);
+    CHECK(tmin == 250.0f && tmax == 300.0f, "traffic fade %.0f-%.0f (want 250-300)", tmin, tmax);
+    CHECK(tmed == 300.0f && thigh == 30.0f, "medium LOD %.0f (want 300), high LOD %.0f unchanged", tmed, thigh);
+    // a mismatching layout is left alone
+    *(float*)(base + 0x36e8d88 + 0x14) = 999.0f;
+    *(float*)(base + 0x36e8d88 + 0x10) = 150.0f;
+    applyTraffic();
+    CHECK(*(float*)(base + 0x36e8d88 + 0x10) == 150.0f, "registry mismatch: unchanged");
+
+    // C. racer cars: CarLODTransDist parse / defaults slots
+    uint64_t* slots = (uint64_t*)(base + 0x2eb9bc0);
+    CHECK(slots[0] == (uint64_t)(base + 0x1307230), "CarLODTransDist name getter slot unchanged");
+    CHECK(slots[1] != (uint64_t)(base + 0x12ffa90), "parse slot re-pointed");
+    CHECK(slots[2] != (uint64_t)(base + 0x130bb20), "defaults slot re-pointed");
+    alignas(16) static uint8_t obj[0x40];
+    memset(obj, 0, sizeof(obj));
+    typedef uint64_t (MSABI *FnCar)(void*, void*, void*, void*);
+    ((FnCar)slots[2])(obj, nullptr, nullptr, nullptr);
+    float* lod = (float*)(obj + 8);
+    CHECK(lod[0] == 30.0f && lod[1] == 50.0f && lod[2] == 100.0f && lod[3] == 120.0f,
+          "default car LOD distances %.0f/%.0f/%.0f/%.0f (want 30/50/100/120: built-in defaults 15/25/50/60 x2)", lod[0], lod[1], lod[2], lod[3]);
+}
+
 int wmain(int argc, wchar_t** argv) {
     if (argc < 3) { printf("usage: harness <game.exe> <FH2SimImmersion.dll> [--deep]\n"); return 2; }
     bool deep = argc > 3 && wcscmp(argv[3], L"--deep") == 0;
@@ -487,6 +546,10 @@ int wmain(int argc, wchar_t** argv) {
         WritePrivateProfileStringW(L"Simulation", L"RealisticABS", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealisticTC", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealisticSTM", L"1", iniPath.c_str());
+        WritePrivateProfileStringW(L"DrawDistance", L"ShadowDistance", L"200", iniPath.c_str());
+        WritePrivateProfileStringW(L"DrawDistance", L"WorldDistance", L"800", iniPath.c_str());
+        WritePrivateProfileStringW(L"DrawDistance", L"TrafficDistance", L"300", iniPath.c_str());
+        WritePrivateProfileStringW(L"DrawDistance", L"RacerDistance", L"150", iniPath.c_str());
         // per-car overrides: old two-field format (ABS off, TC on, STM auto) and the three-field format
         const fh2::CarInfo* ov = findCarBy('y', 'y', 'y', 1);
         if (ov) WritePrivateProfileStringW(L"Cars", std::to_wstring(ov->id).c_str(), L"off,on", carsPath.c_str());
@@ -501,6 +564,8 @@ int wmain(int argc, wchar_t** argv) {
             WritePrivateProfileStringW(L"Simulation", L"RealisticABS", L"0", p.c_str());
             WritePrivateProfileStringW(L"Simulation", L"RealisticTC", L"0", p.c_str());
             WritePrivateProfileStringW(L"Simulation", L"RealisticSTM", L"0", p.c_str());
+            for (const wchar_t* k : {L"ShadowDistance", L"WorldDistance", L"TrafficDistance", L"RacerDistance"})
+                WritePrivateProfileStringW(L"DrawDistance", k, L"0", p.c_str());
             DeleteFileW(cars.c_str());
         }
     } restoreIni{iniPath, carsPath};
@@ -593,6 +658,7 @@ int wmain(int argc, wchar_t** argv) {
     ffbTests(base, plugin);
     assistTests(base, absOrig, stmOrig, tcOrig);
     fovTests(base);
+    drawDistTests(base, plugin);
 
     printf(failures ? "\n%d check(s) FAILED\n" : "\nall integration checks passed\n", failures);
     return failures ? 1 : 0;

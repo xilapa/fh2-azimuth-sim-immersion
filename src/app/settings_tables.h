@@ -120,6 +120,18 @@ inline constexpr Setting kSimSettings[] = {
     ST_ENUM ("Simulation", "OptionalAssists", "Cars where the aid was optional", "Realistic assists", nullptr, "game|on|off"),
 };
 
+// Draw distance (metres). The INI stores 0 = game default; the page shows a slider from the game's own
+// value up to the maximum (pages_draw.cpp), the table range here is the range of the stored value.
+inline constexpr Setting kDrawDistSettings[] = {
+    ST_SLIDER("DrawDistance", "ShadowDistance",  "Shadows (game: 85 m)",         "Draw distance (metres)", "shadow",  0, 1000, 1),
+    ST_SLIDER("DrawDistance", "WorldDistance",   "World objects (game: 360 m)",  "Draw distance (metres)", "world",   0, 3000, 1),
+    ST_SLIDER("DrawDistance", "PropsDistance",   "Props (game: 450 m)",          "Draw distance (metres)", "props",   0, 3000, 1),
+    ST_SLIDER("DrawDistance", "CrowdDistance",   "Crowd (game: 250 m)",          "Draw distance (metres)", "crowd",   0, 1000, 1),
+    ST_SLIDER("DrawDistance", "GrassDistance",   "Grass (game: 100 m)",          "Draw distance (metres)", "grass",   0, 500, 1),
+    ST_SLIDER("DrawDistance", "TrafficDistance", "Traffic cars (game: 150 m)",   "Draw distance (metres)", "traffic", 0, 500, 1),
+    ST_SLIDER("DrawDistance", "RacerDistance",   "Racer cars, full detail (game: 75 m)", "Draw distance (metres)", "racer", 0, 1000, 1),
+};
+
 inline constexpr Setting kMainSettings[] = {
     ST_TEXT ("Launcher", "AzimuthPath", "Azimuth (azimuth.exe)", "Azimuth", nullptr),
     ST_BOOL ("Input", "Diagnostics", "Diagnostics: write the received pose and wheel state to the log", "Diagnostics", nullptr),
@@ -130,6 +142,7 @@ inline constexpr SettingTable kAllTables[] = {
     {kHeadSettings, sizeof(kHeadSettings) / sizeof(Setting)},
     {kWheelSettings, sizeof(kWheelSettings) / sizeof(Setting)},
     {kSimSettings, sizeof(kSimSettings) / sizeof(Setting)},
+    {kDrawDistSettings, sizeof(kDrawDistSettings) / sizeof(Setting)},
     {kMainSettings, sizeof(kMainSettings) / sizeof(Setting)},
 };
 

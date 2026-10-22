@@ -57,6 +57,10 @@ struct SimConfig {
     std::vector<CarAssistOverride> carOverrides;
 };
 
+struct DrawDistConfig {                      // metres; 0 = game default
+    float shadow = 0, world = 0, props = 0, crowd = 0, grass = 0, traffic = 0, racer = 0;
+};
+
 struct Config {
     // [Input]
     Source source = Source::Auto;
@@ -81,6 +85,8 @@ struct Config {
     WheelConfig wheel;
     // [Simulation]
     SimConfig sim;
+    // [DrawDistance]
+    DrawDistConfig drawDist;
 };
 
 // Loads the INI, writing a commented default file first if it does not exist.

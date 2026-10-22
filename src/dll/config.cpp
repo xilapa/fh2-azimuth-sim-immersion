@@ -323,6 +323,18 @@ Config loadConfig(const std::wstring& iniPath) {
     LOG("config: realistic abs %d tc %d stm %d optional %s", c.sim.realisticAbs, c.sim.realisticTc, c.sim.realisticStm,
         c.sim.optionalAssists == AssistMode::On ? "on" : c.sim.optionalAssists == AssistMode::Off ? "off" : "game");
     {
+        DrawDistConfig& d = c.drawDist;
+        d.shadow  = clampCfg(ini, "ShadowDistance", (float)readF(ini, "DrawDistance", "ShadowDistance", 0.0), 0.0f, 1000.0f);
+        d.world   = clampCfg(ini, "WorldDistance", (float)readF(ini, "DrawDistance", "WorldDistance", 0.0), 0.0f, 3000.0f);
+        d.props   = clampCfg(ini, "PropsDistance", (float)readF(ini, "DrawDistance", "PropsDistance", 0.0), 0.0f, 3000.0f);
+        d.crowd   = clampCfg(ini, "CrowdDistance", (float)readF(ini, "DrawDistance", "CrowdDistance", 0.0), 0.0f, 1000.0f);
+        d.grass   = clampCfg(ini, "GrassDistance", (float)readF(ini, "DrawDistance", "GrassDistance", 0.0), 0.0f, 500.0f);
+        d.traffic = clampCfg(ini, "TrafficDistance", (float)readF(ini, "DrawDistance", "TrafficDistance", 0.0), 0.0f, 500.0f);
+        d.racer   = clampCfg(ini, "RacerDistance", (float)readF(ini, "DrawDistance", "RacerDistance", 0.0), 0.0f, 1000.0f);
+        LOG("config: drawdist shadow %.0f world %.0f props %.0f crowd %.0f grass %.0f traffic %.0f racer %.0f",
+            d.shadow, d.world, d.props, d.crowd, d.grass, d.traffic, d.racer);
+    }
+    {
         std::wstring cars = iniPath;
         size_t sep = cars.find_last_of(L"\\/");
         cars = (sep == std::wstring::npos ? std::wstring() : cars.substr(0, sep + 1)) + L"FH2SimImmersion_cars.ini";
