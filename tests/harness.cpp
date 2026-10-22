@@ -362,21 +362,53 @@ static void ffbTests(uint8_t* base, HMODULE plugin) {
 
 typedef uint8_t (MSABI *FnGetter)(void*);
 
+static bool autoOnlyBox(char g) { return g == 'a' || g == 'c' || g == 'e'; }
+
 // abs / stm '*' = any
 // clutch car, skipping the cars used by the assist override lines
 static const fh2::CarInfo* findClutch(char clutch, int skip, const fh2::CarInfo* x1 = nullptr, const fh2::CarInfo* x2 = nullptr) {
     for (size_t i = 0; i < fh2::kCarCount; ++i) {
         const fh2::CarInfo& c = fh2::kCars[i];
-        if (c.clutch == clutch && &c != x1 && &c != x2 && skip-- == 0) return &c;
+        if (c.clutch == clutch && !autoOnlyBox(c.gearbox) && &c != x1 && &c != x2 && skip-- == 0) return &c;
     }
     return nullptr;
 }
+
+// car with this gearbox (and clutch, '*' = any), skipping up to four cars already used by override lines
+static const fh2::CarInfo* findGearbox(char gearbox, char clutch, int skip, const fh2::CarInfo* x1 = nullptr, const fh2::CarInfo* x2 = nullptr,
+                                       const fh2::CarInfo* x3 = nullptr, const fh2::CarInfo* x4 = nullptr) {
+    for (size_t i = 0; i < fh2::kCarCount; ++i) {
+        const fh2::CarInfo& c = fh2::kCars[i];
+        if (c.gearbox == gearbox && (clutch == '*' || c.clutch == clutch) && &c != x1 && &c != x2 && &c != x3 && &c != x4 && skip-- == 0) return &c;
+    }
+    return nullptr;
+}
+
+// Cars for the shifting-mode checks; the start-up code writes the override lines for the same picks.
+struct ShiftPicks {
+    const fh2::CarInfo *ov, *ov3, *cyOv, *cnOv, *cy, *manualAuto, *atOn, *atPlain, *dct;
+};
+static ShiftPicks pickShiftCars();
 
 static const fh2::CarInfo* findCarBy(char abs, char tc, char stm, int skip) {
     for (size_t i = 0; i < fh2::kCarCount; ++i)
         if ((abs == '*' || fh2::kCars[i].abs == abs) && fh2::kCars[i].tc == tc && (stm == '*' || fh2::kCars[i].stm == stm) && skip-- == 0)
             return &fh2::kCars[i];
     return nullptr;
+}
+
+static ShiftPicks pickShiftCars() {
+    ShiftPicks p{};
+    p.ov = findCarBy('y', 'y', 'y', 1);
+    p.ov3 = findCarBy('y', 'y', 'y', 2);
+    p.cyOv = findClutch('y', 0, p.ov, p.ov3);
+    p.cnOv = findClutch('n', 0, p.ov, p.ov3);
+    p.cy = findClutch('y', 1, p.ov, p.ov3);
+    p.manualAuto = findGearbox('m', 'y', 0, p.ov, p.ov3, p.cyOv, p.cy);          // manual car forced to automatic shifting
+    p.atOn = findGearbox('a', '*', 0);                                           // automatic-only car with clutch override "on"
+    p.atPlain = findGearbox('a', '*', 1);
+    p.dct = findGearbox('d', 'n', 0, p.ov, p.ov3, p.cyOv, p.cnOv);
+    return p;
 }
 
 static void assistTests(uint8_t* base, uint64_t absOrig, uint64_t stmOrig, uint64_t tcOrig, uint64_t clutchOrig) {
@@ -488,11 +520,11 @@ static void assistTests(uint8_t* base, uint64_t absOrig, uint64_t stmOrig, uint6
     {
         FnGetter clG  = (FnGetter)*(uint64_t*)(base + kVt[0] + 0xf8);
         FnGetter clG1 = (FnGetter)*(uint64_t*)(base + kVt[1] + 0xf8);
-        const fh2::CarInfo* a1 = findCarBy('y', 'y', 'y', 1);
-        const fh2::CarInfo* a2 = findCarBy('y', 'y', 'y', 2);
-        const fh2::CarInfo* cyOv = findClutch('y', 0, a1, a2);       // same picks as the 4-field lines written at start-up
-        const fh2::CarInfo* cnOv = findClutch('n', 0, a1, a2);
-        const fh2::CarInfo* cy = findClutch('y', 1, a1, a2);         // plain cars: no clutch override
+        const ShiftPicks sp = pickShiftCars();                       // same picks as the override lines written at start-up
+        const fh2::CarInfo *a1 = sp.ov, *a2 = sp.ov3;
+        const fh2::CarInfo* cyOv = sp.cyOv;
+        const fh2::CarInfo* cnOv = sp.cnOv;
+        const fh2::CarInfo* cy = sp.cy;                              // plain cars: no clutch override
         const fh2::CarInfo* cn = findClutch('n', 1, a1, a2);
         const fh2::CarInfo* co = findClutch('o', 0, a1, a2);
         CHECK(cy && cn && co && cyOv && cnOv, "clutch test cars found: yes %u, no %u, optional %u, override yes->off %u, override no->on %u",
@@ -521,6 +553,24 @@ static void assistTests(uint8_t* base, uint64_t absOrig, uint64_t stmOrig, uint6
             setCar(cnOv->id);              // <id>=auto,auto,auto,on
             CHECK(mode(clG, 1) == 2 && mode(clG, 2) == 2 && mode(clG, 0) == 0,
                   "car %u (clutch no, 4-field override clutch on): 1 -> 2, 2 -> 2, 0 -> 0", cnOv->id);
+            // ---- RealisticAutomatic=1 (set in the harness ini) ----
+            CHECK(sp.atOn && sp.atPlain && sp.dct && sp.manualAuto, "automatic test cars found: at %u / %u, dct %u, manual %u",
+                  sp.atOn ? sp.atOn->id : 0, sp.atPlain ? sp.atPlain->id : 0, sp.dct ? sp.dct->id : 0, sp.manualAuto ? sp.manualAuto->id : 0);
+            if (sp.atOn && sp.atPlain && sp.dct && sp.manualAuto) {
+                setCar(sp.atPlain->id);        // gearbox 'a', no override
+                CHECK(mode(clG, 1) == 0 && mode(clG, 2) == 0 && mode(clG, 0) == 0,
+                      "car %u (gearbox at): 1 -> 0, 2 -> 0, 0 -> 0 (got %u %u %u)", sp.atPlain->id, mode(clG, 1), mode(clG, 2), mode(clG, 0));
+                CHECK(mode(clG1, 2) == 0, "second vtable behaves the same (gearbox at, 2 -> 0)");
+                setCar(sp.dct->id);            // gearbox 'd', clutch 'n': existing behaviour
+                CHECK(mode(clG, 2) == 1 && mode(clG, 1) == 1 && mode(clG, 0) == 0,
+                      "car %u (gearbox dct, clutch no): 2 -> 1, 1 -> 1, 0 -> 0 (got %u %u %u)", sp.dct->id, mode(clG, 2), mode(clG, 1), mode(clG, 0));
+                setCar(sp.manualAuto->id);     // <id>=auto,auto,auto,automatic
+                CHECK(mode(clG, 1) == 0 && mode(clG, 2) == 0 && mode(clG, 0) == 0,
+                      "car %u (manual, 4-field override automatic): 1 -> 0, 2 -> 0 (got %u %u %u)", sp.manualAuto->id, mode(clG, 1), mode(clG, 2), mode(clG, 0));
+                setCar(sp.atOn->id);           // <id>=auto,auto,auto,on cancels forcing
+                CHECK(mode(clG, 1) == 2 && mode(clG, 2) == 2 && mode(clG, 0) == 0,
+                      "car %u (gearbox at, override clutch on): forcing cancelled, 1 -> 2 (got %u %u %u)", sp.atOn->id, mode(clG, 1), mode(clG, 2), mode(clG, 0));
+            }
             choices[0x2b5] = 0;
         }
     }
@@ -643,20 +693,25 @@ int wmain(int argc, wchar_t** argv) {
         WritePrivateProfileStringW(L"Simulation", L"RealisticTC", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealisticSTM", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealisticClutch", L"1", iniPath.c_str());
+        WritePrivateProfileStringW(L"Simulation", L"RealisticAutomatic", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"DrawDistance", L"ShadowDistance", L"200", iniPath.c_str());
         WritePrivateProfileStringW(L"DrawDistance", L"WorldDistance", L"800", iniPath.c_str());
         WritePrivateProfileStringW(L"DrawDistance", L"TrafficDistance", L"300", iniPath.c_str());
         WritePrivateProfileStringW(L"DrawDistance", L"RacerDistance", L"150", iniPath.c_str());
         // per-car overrides: old two-field format (ABS off, TC on, STM auto) and the three-field format
-        const fh2::CarInfo* ov = findCarBy('y', 'y', 'y', 1);
+        const ShiftPicks sp = pickShiftCars();
+        const fh2::CarInfo* ov = sp.ov;
         if (ov) WritePrivateProfileStringW(L"Cars", std::to_wstring(ov->id).c_str(), L"off,on", carsPath.c_str());
-        const fh2::CarInfo* ov3 = findCarBy('y', 'y', 'y', 2);
+        const fh2::CarInfo* ov3 = sp.ov3;
         if (ov3) WritePrivateProfileStringW(L"Cars", std::to_wstring(ov3->id).c_str(), L"auto,off,on", carsPath.c_str());
         // 4-field overrides: a clutch-yes car forced to "no clutch", a clutch-no car forced to "has a clutch"
-        const fh2::CarInfo* cy = findClutch('y', 0, ov, ov3);
-        const fh2::CarInfo* cn = findClutch('n', 0, ov, ov3);
+        const fh2::CarInfo* cy = sp.cyOv;
+        const fh2::CarInfo* cn = sp.cnOv;
         if (cy) WritePrivateProfileStringW(L"Cars", std::to_wstring(cy->id).c_str(), L"auto,auto,auto,off", carsPath.c_str());
         if (cn) WritePrivateProfileStringW(L"Cars", std::to_wstring(cn->id).c_str(), L"auto,auto,auto,on", carsPath.c_str());
+        // automatic shifting: a manual car forced to automatic, an automatic-only car with an explicit clutch "on"
+        if (sp.manualAuto) WritePrivateProfileStringW(L"Cars", std::to_wstring(sp.manualAuto->id).c_str(), L"auto,auto,auto,automatic", carsPath.c_str());
+        if (sp.atOn) WritePrivateProfileStringW(L"Cars", std::to_wstring(sp.atOn->id).c_str(), L"auto,auto,auto,on", carsPath.c_str());
     }
     struct RestoreIni {
         std::wstring p, cars;
@@ -667,6 +722,7 @@ int wmain(int argc, wchar_t** argv) {
             WritePrivateProfileStringW(L"Simulation", L"RealisticTC", L"0", p.c_str());
             WritePrivateProfileStringW(L"Simulation", L"RealisticSTM", L"0", p.c_str());
             WritePrivateProfileStringW(L"Simulation", L"RealisticClutch", L"0", p.c_str());
+            WritePrivateProfileStringW(L"Simulation", L"RealisticAutomatic", L"0", p.c_str());
             for (const wchar_t* k : {L"ShadowDistance", L"WorldDistance", L"TrafficDistance", L"RacerDistance"})
                 WritePrivateProfileStringW(L"DrawDistance", k, L"0", p.c_str());
             DeleteFileW(cars.c_str());

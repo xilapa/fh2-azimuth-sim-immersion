@@ -46,6 +46,7 @@ int main() {
     CHECK(val["Simulation.OptionalAssists"] == "game");
     CHECK(val["Simulation.RealisticSTM"] == "0");
     CHECK(val["Simulation.RealisticClutch"] == "0");
+    CHECK(val["Simulation.RealisticAutomatic"] == "0");
     CHECK(val["Wheel.OverrideAzimuthWheel"] == "1");
     CHECK(val["General.OverrideAzimuthHeadTracking"] == "1");
     CHECK(val.count("Simulation.TieStabilityToTC") == 0);

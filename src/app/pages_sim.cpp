@@ -12,17 +12,24 @@ namespace app {
 
 namespace {
 const int kIdFilter = 9200, kIdList = 9201, kIdAbs = 9202, kIdTc = 9203, kIdStm = 9204, kIdClutch = 9205;
-using Triple = std::array<int, 4>;      // ABS, TC, STM, clutch: 0 = auto, 1 = on, 2 = off
+using Triple = std::array<int, 4>;      // ABS, TC, STM, clutch: 0 = auto, 1 = on, 2 = off, 3 = automatic (clutch only)
 const Triple kAuto{0, 0, 0, 0};
 
 const wchar_t* yn(char c) {
     switch (c) { case 'y': return L"yes"; case 'n': return L"no"; case 'o': return L"optional"; default: return L"unknown"; }
 }
-const wchar_t* ovr(int v) { return v == 1 ? L"on" : v == 2 ? L"off" : L"auto"; }
+const wchar_t* ovr(int v) { return v == 1 ? L"on" : v == 2 ? L"off" : v == 3 ? L"automatic" : L"auto"; }
+const wchar_t* gearboxText(char c) {
+    switch (c) {
+        case 'm': return L"manual"; case 'x': return L"manual or auto"; case 'a': return L"automatic only";
+        case 't': return L"auto, manual mode"; case 'd': return L"dual-clutch"; case 's': return L"automated manual";
+        case 'c': return L"CVT"; case 'e': return L"electric"; case 'q': return L"sequential"; default: return L"unknown";
+    }
+}
 int parseOvr(const std::wstring& s) {
     std::wstring t;
     for (wchar_t c : s) if (c != L' ' && c != L'\t') t += (wchar_t)towlower(c);
-    return t == L"on" ? 1 : t == L"off" ? 2 : 0;
+    return t == L"on" ? 1 : t == L"off" ? 2 : t == L"automatic" ? 3 : 0;
 }
 std::wstring lowerW(std::wstring s) { for (auto& c : s) c = (wchar_t)towlower(c); return s; }
 }
@@ -61,8 +68,8 @@ protected:
                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_REPORT | LVS_OWNERDATA | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
                                 0, 0, 10, 10, host_, (HMENU)(INT_PTR)kIdList, G.inst, nullptr);
         ListView_SetExtendedListViewStyle(list_, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_GRIDLINES);
-        static const wchar_t* heads[] = {L"Id", L"Car", L"Year", L"Real ABS", L"Real TC", L"Real STM", L"Real clutch", L"ABS override", L"TC override", L"STM override", L"Clutch override"};
-        for (int i = 0; i < 11; ++i) {
+        static const wchar_t* heads[] = {L"Id", L"Car", L"Year", L"Real ABS", L"Real TC", L"Real STM", L"Real clutch", L"Gearbox", L"ABS ovr.", L"TC ovr.", L"STM ovr.", L"Clutch ovr."};
+        for (int i = 0; i < 12; ++i) {
             LVCOLUMNW col{};
             col.mask = LVCF_TEXT | LVCF_FMT;
             col.fmt = LVCFMT_LEFT;
@@ -77,15 +84,16 @@ protected:
             HWND cb = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
                                       0, 0, 10, 10, host_, (HMENU)(INT_PTR)(k == 0 ? kIdAbs : k == 1 ? kIdTc : k == 2 ? kIdStm : kIdClutch), G.inst, nullptr);
             for (const wchar_t* t : {L"auto", L"on", L"off"}) SendMessageW(cb, CB_ADDSTRING, 0, (LPARAM)t);
+            if (k == 3) SendMessageW(cb, CB_ADDSTRING, 0, (LPARAM)L"automatic");
             (k == 0 ? absCombo_ : k == 1 ? tcCombo_ : k == 2 ? stmCombo_ : clutchCombo_) = cb;
         }
         hint_ = MakeStatic(host_, L"auto = use the real car data");
-        AddTip(list_, L"Real ABS / TC / STM / clutch: what the real car had (yes, no, optional, unknown). "
+        AddTip(list_, L"Real ABS / TC / STM / clutch: what the real car had (yes, no, optional, unknown). Gearbox: the real car's gearbox. ovr. = override. "
                       L"Overrides are saved in FH2SimImmersion_cars.ini ([Cars], key = car Id).");
         AddTip(absCombo_, L"auto = use the research data (and the settings above); on / off = force it for this car.");
         AddTip(tcCombo_, L"auto = use the research data (and the settings above); on / off = force it for this car.");
         AddTip(stmCombo_, L"auto = use the research data (and the settings above); on / off = force it for this car.");
-        AddTip(clutchCombo_, L"auto = use the research data (and the settings above); on = the car has a clutch, off = it has none.");
+        AddTip(clutchCombo_, L"auto = use the research data; on = the car has a clutch; off = it has none; automatic = always shift automatically.");
         EnableWindow(absCombo_, FALSE); EnableWindow(tcCombo_, FALSE); EnableWindow(stmCombo_, FALSE);
         EnableWindow(clutchCombo_, FALSE);
     }
@@ -102,8 +110,8 @@ protected:
         SetWindowPos(count_, nullptr, S(364), y, std::max(S(50), w - S(372)), S(24), SWP_NOZORDER);
         int ly = y + S(30), bottom = h - S(36);   // combos sit in the strip under the list
         SetWindowPos(list_, nullptr, 0, ly, w, std::max(S(60), bottom - ly), SWP_NOZORDER);
-        static const int cw[] = {38, 160, 40, 60, 54, 62, 70, 82, 74, 80, 90};
-        for (int i = 0; i < 11; ++i) ListView_SetColumnWidth(list_, i, S(cw[i]));
+        static const int cw[] = {34, 172, 36, 58, 52, 64, 66, 104, 56, 54, 62, 68};
+        for (int i = 0; i < 12; ++i) ListView_SetColumnWidth(list_, i, S(cw[i]));
         int by = h - S(30);
         SetWindowPos(absLabel_, nullptr, S(8), by, S(90), S(24), SWP_NOZORDER);
         SetWindowPos(absCombo_, nullptr, S(100), by, S(70), S(200), SWP_NOZORDER);
@@ -112,8 +120,8 @@ protected:
         SetWindowPos(stmLabel_, nullptr, S(342), by, S(90), S(24), SWP_NOZORDER);
         SetWindowPos(stmCombo_, nullptr, S(434), by, S(70), S(200), SWP_NOZORDER);
         SetWindowPos(clutchLabel_, nullptr, S(514), by, S(100), S(24), SWP_NOZORDER);
-        SetWindowPos(clutchCombo_, nullptr, S(616), by, S(70), S(200), SWP_NOZORDER);
-        SetWindowPos(hint_, nullptr, S(696), by, std::max(S(50), w - S(704)), S(24), SWP_NOZORDER);
+        SetWindowPos(clutchCombo_, nullptr, S(616), by, S(80), S(200), SWP_NOZORDER);
+        SetWindowPos(hint_, nullptr, S(704), by, std::max(S(50), w - S(712)), S(24), SWP_NOZORDER);
     }
 
     void OnCommand(int id, int code, HWND) override {
@@ -150,10 +158,11 @@ protected:
             case 4: t = yn(c.tc); break;
             case 5: t = yn(c.stm); break;
             case 6: t = yn(c.clutch); break;
-            case 7: t = ovr(p[0]); break;
-            case 8: t = ovr(p[1]); break;
-            case 9: t = ovr(p[2]); break;
-            case 10: t = ovr(p[3]); break;
+            case 7: t = gearboxText(c.gearbox); break;
+            case 8: t = ovr(p[0]); break;
+            case 9: t = ovr(p[1]); break;
+            case 10: t = ovr(p[2]); break;
+            case 11: t = ovr(p[3]); break;
             }
             wcsncpy(di->item.pszText, t.c_str(), di->item.cchTextMax - 1);
             di->item.pszText[di->item.cchTextMax - 1] = 0;
@@ -247,6 +256,7 @@ private:
                 if (c1 != std::wstring::npos) pr[1] = parseOvr(v.substr(c1 + 1, c2 == std::wstring::npos ? c2 : c2 - c1 - 1));
                 if (c2 != std::wstring::npos) pr[2] = parseOvr(v.substr(c2 + 1, c3 == std::wstring::npos ? c3 : c3 - c2 - 1));
                 if (c3 != std::wstring::npos) pr[3] = parseOvr(v.substr(c3 + 1));
+                for (int k = 0; k < 3; ++k) if (pr[k] == 3) pr[k] = 0;      // "automatic" only exists for the clutch
                 if (pr != kAuto) cur_[(unsigned)id] = pr;
             }
         }

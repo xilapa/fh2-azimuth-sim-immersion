@@ -223,7 +223,7 @@ static AssistMode parseAssistWord(const std::string& tok, bool& set) {
 }
 
 // [Cars] section: key = car Id, value = "ABS,TC,STM,CLUTCH", each on|off|auto (missing fields = auto).
-// For CLUTCH, on = the car has a clutch, off = it has none.
+// For CLUTCH, on = the car has a clutch, off = it has none, automatic = always shift automatically.
 static void loadCarOverrides(const std::wstring& path, std::vector<CarAssistOverride>& out) {
     if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) return;
     std::vector<wchar_t> buf(32768);
@@ -244,7 +244,12 @@ static void loadCarOverrides(const std::wstring& path, std::vector<CarAssistOver
         o.abs = parseAssistWord(val.substr(0, c1), o.absSet);
         if (c1 != std::string::npos) o.tc = parseAssistWord(val.substr(c1 + 1, c2 == std::string::npos ? c2 : c2 - c1 - 1), o.tcSet);
         if (c2 != std::string::npos) o.stm = parseAssistWord(val.substr(c2 + 1, c3 == std::string::npos ? c3 : c3 - c2 - 1), o.stmSet);
-        if (c3 != std::string::npos) o.clutch = parseAssistWord(val.substr(c3 + 1), o.clutchSet);
+        if (c3 != std::string::npos) {
+            std::string tok;
+            for (char ch : val.substr(c3 + 1)) if (ch != ' ' && ch != '\t') tok += (char)tolower((unsigned char)ch);
+            if (tok == "automatic") { o.clutchSet = true; o.clutch = AssistMode::Off; o.forceAutomatic = true; }
+            else o.clutch = parseAssistWord(tok, o.clutchSet);
+        }
         if (o.absSet || o.tcSet || o.stmSet || o.clutchSet) out.push_back(o);
     }
 }
@@ -326,7 +331,9 @@ Config loadConfig(const std::wstring& iniPath) {
     if (readI(ini, "Simulation", "TieStabilityToTC", 0) != 0)
         LOG("config: TieStabilityToTC is no longer used; use RealisticSTM");
     c.sim.realisticClutch  = readI(ini, "Simulation", "RealisticClutch", 0) != 0;
-    LOG("config: realistic abs %d tc %d stm %d clutch %d optional %s", c.sim.realisticAbs, c.sim.realisticTc, c.sim.realisticStm, c.sim.realisticClutch,
+    c.sim.realisticAutomatic = readI(ini, "Simulation", "RealisticAutomatic", 0) != 0;
+    LOG("config: realistic abs %d tc %d stm %d clutch %d automatic %d optional %s", c.sim.realisticAbs, c.sim.realisticTc, c.sim.realisticStm,
+        c.sim.realisticClutch, c.sim.realisticAutomatic,
         c.sim.optionalAssists == AssistMode::On ? "on" : c.sim.optionalAssists == AssistMode::Off ? "off" : "game");
     {
         DrawDistConfig& d = c.drawDist;

@@ -9,6 +9,8 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CODES = {"yes": "y", "no": "n", "optional": "o", "unknown": "u"}
+GEARBOX = {"manual": "m", "mixed": "x", "at": "a", "atm": "t", "dct": "d", "amt": "s", "cvt": "c", "ev": "e",
+           "seq": "q", "unknown": "u"}
 
 
 def cstr(s):
@@ -34,6 +36,13 @@ def code(v, row):
     return CODES[v]
 
 
+def gearbox(v, row):
+    v = v.strip().lower()
+    if v not in GEARBOX:
+        sys.exit("gen_car_db: bad Gearbox value %r for car %s" % (v, row["Id"]))
+    return GEARBOX[v]
+
+
 def main():
     csv_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "data", "car_assists.csv")
     out_path = sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, "src", "common", "car_db.h")
@@ -53,14 +62,17 @@ def main():
         "namespace fh2 {",
         "",
         "// abs / tc / stm / clutch: 'y' = fitted, 'n' = not fitted, 'o' = optional, 'u' = unknown.",
-        "struct CarInfo { uint32_t id; const char* media; uint16_t year; const char* name; char abs; char tc; char stm; char clutch; };",
+        "// gearbox: 'm' manual, 'x' mixed (manual and a non-manual option), 'a' automatic without manual mode,",
+        "// 't' automatic with manual mode, 'd' dual-clutch, 's' automated manual, 'c' CVT, 'e' single-speed electric,",
+        "// 'q' race sequential, 'u' unknown.",
+        "struct CarInfo { uint32_t id; const char* media; uint16_t year; const char* name; char abs; char tc; char stm; char clutch; char gearbox; };",
         "",
         "inline constexpr CarInfo kCars[] = {",
     ]
     for r in rows:
-        lines.append("    {%d, %s, %d, %s, '%s', '%s', '%s', '%s'}," % (
+        lines.append("    {%d, %s, %d, %s, '%s', '%s', '%s', '%s', '%s'}," % (
             int(r["Id"]), cstr(r["MediaName"]), int(r["Year"]), cstr(r["CarName"]),
-            code(r["ABS"], r), code(r["TC"], r), code(r["STM"], r), code(r["Clutch"], r)))
+            code(r["ABS"], r), code(r["TC"], r), code(r["STM"], r), code(r["Clutch"], r), gearbox(r["Gearbox"], r)))
     lines += [
         "};",
         "",

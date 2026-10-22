@@ -25,7 +25,7 @@ constexpr size_t    kTcFieldOff    = 0x2b4;
 constexpr size_t    kClutchFieldOff = 0x2b5;
 
 uintptr_t g_base = 0;
-bool      g_absOn = false, g_tcOn = false, g_stmOn = false, g_clutchOn = false;
+bool      g_absOn = false, g_tcOn = false, g_stmOn = false, g_clutchOn = false, g_autoOn = false;
 AssistMode g_optional = AssistMode::Game;
 std::vector<CarAssistOverride> g_overrides;
 
@@ -34,7 +34,8 @@ std::atomic<int64_t>  g_carId{-1};
 std::atomic<uint64_t> g_carTick{0};
 std::atomic<const char*> g_carName{nullptr};
 std::atomic<int>      g_absMode{0}, g_tcMode{0}, g_stmMode{0}, g_clutchMode{0};   // AssistMode of the current car (clutch: On = has one)
-std::atomic<bool>     g_loggedAbs{false}, g_loggedTc{false}, g_loggedStm{false}, g_loggedClutch{false};
+std::atomic<bool>     g_forceAuto{false};                                          // current car: always shift automatically
+std::atomic<bool>     g_loggedAbs{false}, g_loggedTc{false}, g_loggedStm{false}, g_loggedClutch{false}, g_loggedAuto{false};
 std::atomic<uint32_t> g_callsAbs{0}, g_callsTc{0}, g_callsStm{0}, g_callsClutch{0};
 
 const char* word(char c) {
@@ -47,6 +48,13 @@ AssistMode carValue(char c) {
         case 'n': return AssistMode::Off;
         case 'o': return g_optional;
         default:  return AssistMode::Game;
+    }
+}
+
+const char* gearboxWord(char c) {
+    switch (c) {
+        case 'm': return "manual"; case 'x': return "mixed"; case 'a': return "at"; case 't': return "atm"; case 'd': return "dct";
+        case 's': return "amt"; case 'c': return "cvt"; case 'e': return "ev"; case 'q': return "seq"; default: return "unknown";
     }
 }
 
@@ -98,6 +106,14 @@ uint8_t clutchGetter(void* self) {
     uint8_t real = *(reinterpret_cast<uint8_t*>(self) + kClutchFieldOff);
     g_callsClutch.fetch_add(1, std::memory_order_relaxed);
     uint8_t out = real;
+    if (g_forceAuto.load(std::memory_order_relaxed)) {
+        out = 0;
+        if (!g_loggedAuto.exchange(true)) {
+            const char* n = g_carName.load();
+            LOG("assists: automatic shifting forced for %s", n ? n : "unknown car");
+        }
+        return out;
+    }
     switch (static_cast<AssistMode>(g_clutchMode.load(std::memory_order_relaxed))) {
         case AssistMode::On:  if (real == 1) out = 2; break;           // automatic stays automatic
         case AssistMode::Off: if (real == 2) out = 1; break;
@@ -119,18 +135,22 @@ void decide(uint32_t id, const CarInfo* car) {
         if (g_stmOn) s = carValue(car->stm);
         if (g_clutchOn) c = carValue(car->clutch);
     }
+    // automatic-only gearbox: forced unless the car has an explicit clutch override (on / off)
+    bool forceAuto = car && g_autoOn && (car->gearbox == 'a' || car->gearbox == 'c' || car->gearbox == 'e');
     for (const auto& o : g_overrides) {
         if (o.id != id) continue;
+        if (o.clutchSet) forceAuto = o.forceAutomatic;      // "automatic" forces; on / off cancel; auto (not set) keeps the rule
+        if (o.clutchSet && g_clutchOn && !o.forceAutomatic) c = o.clutch;
         if (o.absSet && g_absOn) a = o.abs;
         if (o.tcSet && g_tcOn)   t = o.tc;
         if (o.stmSet && g_stmOn) s = o.stm;
-        if (o.clutchSet && g_clutchOn) c = o.clutch;
         break;
     }
     g_absMode = static_cast<int>(a);
     g_tcMode  = static_cast<int>(t);
     g_stmMode = static_cast<int>(s);
     g_clutchMode = static_cast<int>(c);
+    g_forceAuto = forceAuto;
 }
 
 DWORD WINAPI diagThread(void*) {
@@ -177,11 +197,11 @@ void AssistHook_SetPlayerCar(uint32_t ordinal) {
     const CarInfo* car = FindCar(ordinal);
     decide(ordinal, car);
     g_carName.store(car ? car->name : nullptr);
-    g_loggedAbs = false; g_loggedTc = false; g_loggedStm = false; g_loggedClutch = false;
+    g_loggedAbs = false; g_loggedTc = false; g_loggedStm = false; g_loggedClutch = false; g_loggedAuto = false;
     g_carId.store(static_cast<int64_t>(ordinal));
-    LOG("car: %u %s (ABS %s, TC %s, STM %s, clutch %s)", ordinal, car ? car->name : "unknown car",
+    LOG("car: %u %s (ABS %s, TC %s, STM %s, clutch %s, gearbox %s)", ordinal, car ? car->name : "unknown car",
         car ? word(car->abs) : "unknown", car ? word(car->tc) : "unknown", car ? word(car->stm) : "unknown",
-        car ? word(car->clutch) : "unknown");
+        car ? word(car->clutch) : "unknown", car ? gearboxWord(car->gearbox) : "unknown");
 }
 
 void AssistHook_Install(uintptr_t base, const Config& cfg) {
@@ -189,19 +209,20 @@ void AssistHook_Install(uintptr_t base, const Config& cfg) {
     g_tcOn  = cfg.sim.realisticTc;
     g_stmOn = cfg.sim.realisticStm;
     g_clutchOn = cfg.sim.realisticClutch;
-    if (!g_absOn && !g_tcOn && !g_stmOn && !g_clutchOn) return;
+    g_autoOn = cfg.sim.realisticAutomatic;
+    if (!g_absOn && !g_tcOn && !g_stmOn && !g_clutchOn && !g_autoOn) return;
     g_base = base;
     g_optional = cfg.sim.optionalAssists;
     g_overrides = cfg.sim.carOverrides;
     void* absFn = g_absOn ? reinterpret_cast<void*>(&absGetter) : nullptr;
     void* tcFn  = g_tcOn ? reinterpret_cast<void*>(&tcGetter) : nullptr;
     void* stmFn = g_stmOn ? reinterpret_cast<void*>(&stmGetter) : nullptr;
-    void* clutchFn = g_clutchOn ? reinterpret_cast<void*>(&clutchGetter) : nullptr;
+    void* clutchFn = (g_clutchOn || g_autoOn) ? reinterpret_cast<void*>(&clutchGetter) : nullptr;
     int ok = 0;
     for (int i = 0; i < 2; ++i) if (patchVtable(i, absFn, stmFn, tcFn, clutchFn)) ++ok;
     if (!ok) { LOG("assists: no vtable verified; realistic assists inactive"); return; }
-    LOG("assists: getters installed in %d vtable(s) (ABS %d, TC %d, STM %d, clutch %d, optional %s)", ok, g_absOn, g_tcOn,
-        g_stmOn, g_clutchOn, modeName(g_optional));
+    LOG("assists: getters installed in %d vtable(s) (ABS %d, TC %d, STM %d, clutch %d, automatic %d, optional %s)", ok, g_absOn, g_tcOn,
+        g_stmOn, g_clutchOn, g_autoOn, modeName(g_optional));
     g_installed.store(true, std::memory_order_release);
     if (cfg.diagnostics)
         if (HANDLE t = CreateThread(nullptr, 0, diagThread, nullptr, 0, nullptr)) CloseHandle(t);

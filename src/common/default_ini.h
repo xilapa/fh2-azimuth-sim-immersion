@@ -175,6 +175,8 @@ inline constexpr char kDefaultIni[] =
 "; Realistic clutch: cars that had a clutch use manual with clutch, cars without one use manual without clutch\n"
 "; (only if you drive manual in the game; automatic stays automatic).\n"
 "RealisticClutch=0\n"
+"; Automatic-only cars (a traditional automatic without manual mode, or a single-speed electric car) always shift automatically, whatever you chose in the game.\n"
+"RealisticAutomatic=0\n"
 "; Cars where the real car had it as an option: game = keep your game setting, on, off.\n"
 "OptionalAssists=game\n"
 "\n"

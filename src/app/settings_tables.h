@@ -120,6 +120,9 @@ inline constexpr Setting kSimSettings[] = {
     ST_BOOL ("Simulation", "RealisticTC", "Realistic traction control (per car)", "Realistic assists", nullptr),
     ST_BOOL ("Simulation", "RealisticSTM", "Realistic stability control (per car)", "Realistic assists", nullptr),
     ST_BOOL ("Simulation", "RealisticClutch", "Realistic clutch (per car)", "Realistic assists", nullptr),
+    {"Simulation", "RealisticAutomatic", SType::Bool, "Automatic-only cars shift automatically (per car)",
+     "Cars that only had a traditional automatic gearbox (no manual mode) or are single-speed electric always use automatic shifting.",
+     0, 0, 0, nullptr, "Realistic assists", nullptr, false},
     ST_ENUM ("Simulation", "OptionalAssists", "Cars where the aid was optional", "Realistic assists", nullptr, "game|on|off"),
 };
 

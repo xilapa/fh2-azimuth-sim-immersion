@@ -1,6 +1,6 @@
 # FH2 Sim Immersion for Azimuth
 
-**Status: 0.9.4. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
+**Status: 0.9.5. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
 Steering wheel support is experimental.**
 
 Realism and immersion add-ons for Forza Horizon 2 running in Azimuth:
@@ -83,7 +83,7 @@ keep them). Hover a setting for its explanation.
   its axes and the numbers of the pressed buttons, to find the right button numbers.
 * **Simulation:** field of view per camera, realistic assists and a list of all known cars with
   what the real car had. Select a car and choose how its ABS / traction control is forced
-  (auto, on or off), including whether it has a clutch; Apply saves `FH2SimImmersion_cars.ini` (a car with both on auto is removed).
+  (auto, on or off), including whether it has a clutch or always shifts automatically; Apply saves `FH2SimImmersion_cars.ini` (a car with both on auto is removed).
 * **Draw distance:** a slider per distance (see [Draw distance](#draw-distance)), with a
   top-down picture of the distances to scale.
 * **Main:** the path of `azimuth.exe`, Start Azimuth, the diagnostics switch, and a status box
@@ -222,6 +222,12 @@ The `[Simulation]` section has the keys:
   shifting and cars without one (sequential or dual-clutch gearboxes) "manual without clutch". It
   only changes the choice of a player who drives manual: if you drive with automatic gears in the
   game, the car stays automatic. Cars where the clutch was optional follow `OptionalAssists`.
+- `RealisticAutomatic=1` (default `0`) makes automatic-only cars always shift automatically, whatever
+  you chose in the game: cars whose real gearbox was a traditional automatic without a manual mode
+  (`at`), a CVT (`cvt`) or a single-speed electric drive (`ev`). The Gearbox column of the car list in
+  the Simulation tab shows the real gearbox of each car (`data/car_assists.csv`, column `Gearbox`). It
+  works on its own or together with `RealisticClutch`. A clutch override of `on` or `off` for a car
+  (see below) cancels this for that car.
 
 `TieStabilityToTC` from version 0.9.0 is no longer used (the log says so); use `RealisticSTM`.
 
@@ -230,18 +236,19 @@ Per-car overrides go in an optional file `FH2SimImmersion_cars.ini` next to the 
 ```
 [Cars]
 ; car Id = ABS,TC,STM,CLUTCH    each on, off or auto (auto = use the research data)
-; for CLUTCH, on = the car has a clutch, off = it has none
+; for CLUTCH, on = the car has a clutch, off = it has none, automatic = always shift automatically
+; (automatic works when RealisticClutch or RealisticAutomatic is on)
 1105=on,auto,off,on
 ```
 
 Old lines with two or three fields (`Id=ABS,TC`, `Id=ABS,TC,STM`) still work; the missing ones are `auto`.
 
 The data comes from research of each real car and is in `data/car_assists.csv` (Id, name, year, ABS,
-TC, STM, clutch, confidence and notes for every car). It can contain mistakes: corrections are welcome. Cars
+TC, STM, clutch, gearbox, confidence and notes for every car). It can contain mistakes: corrections are welcome. Cars
 marked unknown, and cars that are not in the list, keep your game setting.
 
-To check that it works, look in `FH2SimImmersion.log` for `car: <id> <name> (ABS ..., TC ..., STM ..., clutch ...)` when
-a race starts, and `assists: ABS forced ... for <name>` (likewise `TC`, `stability control` and `clutch`) when the plugin changes a setting. With
+To check that it works, look in `FH2SimImmersion.log` for `car: <id> <name> (ABS ..., TC ..., STM ..., clutch ..., gearbox ...)` when
+a race starts, and `assists: ABS forced ... for <name>` (likewise `TC`, `stability control` and `clutch`), or `assists: automatic shifting forced for <name>`, when the plugin changes a setting. With
 `Diagnostics=1` the log also shows `assists diag:` lines with how often the game asked for the
 settings.
 
@@ -259,7 +266,7 @@ is off. Both switches are also in the settings window (Wheel tab, group Advanced
 `FH2SimImmersion.log` is written next to the DLL. A good run looks like this:
 
 ```
-FH2 Sim Immersion 0.9.4 loaded into pid ... (...\azimuth.exe)
+FH2 Sim Immersion 0.9.5 loaded into pid ... (...\azimuth.exe)
 waiting for the Forza Horizon 2 image to be mapped...
 game image found at 0000...
 patch: 5 head-tracking inputs redirected (thunks at ...)
