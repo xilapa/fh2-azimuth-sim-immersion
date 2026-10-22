@@ -60,6 +60,7 @@ Close FH2SimImmersion.exe and delete its folder. Nothing else was changed. Upgra
 
 `FH2SimImmersion.exe` is the settings window. Change values, then press **Apply**. They are saved in `FH2SimImmersion.ini` next to it and take effect the next time the game starts (the plugin reads the file when it loads). **Revert** reloads the saved values of the current tab, and **Defaults (this tab)** puts the default values in the current tab's controls (press Apply to keep them). Hover a setting for its explanation.
 
+![Settings window - TODO: add screenshot](docs/screenshots/settings-window.png)
 * **Head tracking:** tracker input and network, smoothing, every rotation and position gain, invert and limit, the hotkeys and the recenter buttons. The picture shows a head from above, the side and the front with the axis you are editing highlighted.
 * **Wheel (experimental):** device, axes, buttons, H-shifter and all force feedback settings. **Test input** reads the wheel without the game and shows its axes and button numbers.
 * **Simulation:** field of view per camera, realistic assists, the steering wheel group (real steering lock, maximum wheel rotation, in-game wheel, hiding the driver) and a list of all known cars with what the real car had (ABS, TC, STM, clutch, gearbox, lock). Select a car and choose how its ABS / traction control is forced (auto, on or off), including whether it has a clutch or always shifts automatically, and optionally a steering lock override.
@@ -154,6 +155,8 @@ The `[DrawDistance]` section raises how far the game draws things. All values ar
 
 Nothing in the game files is edited; the values are changed in memory while the game loads each track. In the settings window (**Draw distance** tab) every setting is a slider that starts at the game's own value (far left = game default).
 
+![Draw distance tab - TODO: add screenshot](docs/screenshots/draw-distance-tab.png)
+
 | Key | What it controls | Game value | Range |
 |---|---|---|---|
 | `ShadowDistance` | how far shadows are drawn | 85 m | up to 1000 |
@@ -199,6 +202,8 @@ Old lines with two or three fields (`Id=ABS,TC`, `Id=ABS,TC,STM`) still work; th
 The data comes from research of each real car and is in `data/car_assists.csv` (Id, name, year, ABS, TC, STM, clutch, gearbox, steering lock, confidence and notes for every car). It can contain mistakes: corrections are welcome. Cars marked unknown, and cars that are not in the list, keep your game setting.
 
 To check that it works, look in `FH2SimImmersion.log` for `car: <id> <name> (ABS ..., TC ..., STM ..., clutch ..., gearbox ...)` when a race starts, and `assists: ABS forced ... for <name>` (likewise `TC`, `stability control`, `automatic shifting` and `clutch`). With `Diagnostics=1` the log also shows `assists diag:` lines with how often the game asked for the settings.
+
+![Simulation tab with car list - TODO: add screenshot](docs/screenshots/simulation-tab.png)
 
 ## Steering lock and the in-game wheel
 
