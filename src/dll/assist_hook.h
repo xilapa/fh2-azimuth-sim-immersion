@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Realistic ABS / traction control / stability control / clutch / automatic shifting: overrides the game's LocalPlayerChoices getters per car.
 #pragma once
 #include <cstdint>

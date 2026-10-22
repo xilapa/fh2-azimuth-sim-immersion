@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Host-side unit tests for the pose mapping (g++ -std=c++17 tests/test_pose.cpp).
 #include <cassert>
 #include <cmath>

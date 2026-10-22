@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Plugin settings structures (head tracking, wheel, simulation, draw distance).
 #pragma once
 #include <windows.h>
 #include <string>

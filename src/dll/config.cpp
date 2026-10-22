@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Plugin settings: loads FH2SimImmersion.ini into Config.
 #include "config.h"
 #include "log.h"
 #include "../common/default_ini.h"

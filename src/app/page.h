@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Base class of the tab pages: builds scrollable rows of controls from a Setting table, loads and
 // saves them through the INI, keeps tooltips, and tracks which control is focused or hovered so the
 // page picture can highlight the matching part.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Draw distance: raises the game's own shadow, world-object, prop, crowd, grass, traffic and
 // racer-car detail distances (never lowers them). Values are metres, 0 = leave the game value.
 #pragma once

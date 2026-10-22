@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Base class of the tab pages (see page.h).
 #include "page.h"
 #include "ini.h"
 #include <cmath>

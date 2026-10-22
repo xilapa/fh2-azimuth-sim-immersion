@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Replaces the ABS / traction control / stability control / shifting-mode getters of LocalPlayerChoices so that
 // each car gets the assists its real counterpart had (data/car_assists.csv), or a per-car override.
 #include "assist_hook.h"

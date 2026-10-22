@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Tab 1: head tracking.
 #include "pages.h"
 #include "draw.h"

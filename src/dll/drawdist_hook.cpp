@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Draw distance injection (no game files are edited):
 //  A. track settings (shadows, world objects, props, crowd, grass): the game's TrackSettings
 //     deserializer is wrapped and the loaded values are raised afterwards;

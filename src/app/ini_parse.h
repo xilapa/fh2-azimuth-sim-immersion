@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Tiny parser for the default settings text (src/common/default_ini.h): [Section] / Key=Value lines,
 // plus the comment lines above each key (used as tooltip text). Pure C++, no Windows headers.
 #pragma once

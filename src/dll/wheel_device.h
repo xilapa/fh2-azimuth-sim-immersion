@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // DirectInput steering wheel reader (Logitech G29 and friends).
 #pragma once
 #include <windows.h>

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The virtual Xbox wheel: a fake Windows.Xbox.Input.IController/IWheel and its helper objects.
 #pragma once
 #include <windows.h>

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Force feedback model (see wheel_ffb.h).
 #include "wheel_ffb.h"
 #include <cmath>
 

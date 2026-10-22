@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // FreeTrack 2.0 shared-memory layout, as written by OpenTrack's "freetrack 2.0
 // Enhanced" protocol and by TrackIR/FreeTrack emulators such as Beam Eye Tracker.
 // Layout follows OpenTrack's freetrackclient/fttypes.h.

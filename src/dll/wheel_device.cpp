@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// DirectInput steering wheel reader and force feedback output.
 #define DIRECTINPUT_VERSION 0x0800
 #include "wheel_device.h"
 #include <dinput.h>

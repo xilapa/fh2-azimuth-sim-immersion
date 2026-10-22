@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include "patch_util.h"
 #include <tlhelp32.h>
 #include <cstring>

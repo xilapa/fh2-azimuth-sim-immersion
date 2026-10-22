@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Tab 2: steering wheel, with an optional live DirectInput test.
 #define DIRECTINPUT_VERSION 0x0800
 #include "pages.h"

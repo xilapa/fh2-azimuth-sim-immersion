@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Fake Windows.Xbox.Input wheel controller. All objects are plain structs whose first
 // member is a vtable pointer; every method uses the Microsoft x64 ABI (the mingw default)
 // and returns S_OK except where noted (the game throws on any failure HRESULT).

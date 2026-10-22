@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Thread-safe logging to FH2SimImmersion.log.
 #pragma once
 #include <windows.h>
 #include <cstdio>

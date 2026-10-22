@@ -1,5 +1,5 @@
-// FH2 Sim Immersion for Azimuth
-// Feeds OpenTrack head pose into Forza Horizon 2's own head-tracking camera layers.
+// SPDX-License-Identifier: MIT
+// FH2 Sim Immersion for Azimuth: plugin entry point, loaded into azimuth.exe.
 #include <windows.h>
 #include <string>
 #include "config.h"

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Tab 4: draw distance. One slider + edit (metres) per distance. The slider runs from the game's own
 // value (far left = 0 in the INI = "game default") to the maximum; a top-down picture shows the arcs.
 #include "pages.h"

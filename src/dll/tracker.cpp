@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Head tracker input (FreeTrack shared memory or OpenTrack UDP), centring and smoothing.
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>

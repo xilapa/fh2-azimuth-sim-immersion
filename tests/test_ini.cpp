@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Unit test for the default-INI parser used by the settings window and for the settings tables.
 // Build natively: g++ -std=c++17 tests/test_ini.cpp -o build/test_ini
 #include "../src/common/default_ini.h"

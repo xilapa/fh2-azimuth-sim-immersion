@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Field-of-view adjustment for the cockpit, driver, hood and bumper cameras.
 #pragma once
 #include <cstdint>

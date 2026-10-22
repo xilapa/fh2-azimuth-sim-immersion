@@ -44,6 +44,5 @@ $CXX $FLAGS -municode -mavx -o build/harness.exe tests/harness.cpp -lws2_32
 cp build/FH2SimImmersion.dll build/FH2SimImmersion.exe "$PKG"/
 cp README.md "$PKG"/README.md
 cp LICENSE "$PKG"/LICENSE.txt
-cp AUTHORS "$PKG"/AUTHORS.txt
 (cd dist && zip -qr "FH2SimImmersion-$VERSION.zip" FH2SimImmersion)
 echo "built dist/FH2SimImmersion-$VERSION.zip"

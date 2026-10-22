@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Facts about Forza Horizon 2 1.0.0.64 (forza_durango_release_final.exe,
 // TimeDateStamp 0x565501ED) recovered by static analysis. Every value here is
 // verified at runtime before anything is patched; on any mismatch the plugin

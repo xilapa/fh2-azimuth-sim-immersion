@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Emulation of the Xbox wheel's on-device force feedback programs (pure math, no Windows calls).
 #pragma once
 #include <cstdint>

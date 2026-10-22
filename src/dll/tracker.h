@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Head tracker input: publishes the latest camera offsets for the game thread.
 #pragma once
 #include "config.h"
 #include "pose.h"

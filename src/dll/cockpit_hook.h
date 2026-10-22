@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // In-game steering wheel that follows the real wheel, and hiding the driver (arms) in the cockpit view.
 #pragma once
 #include <cstdint>

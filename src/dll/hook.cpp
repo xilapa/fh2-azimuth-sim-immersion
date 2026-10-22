@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Redirects the game's head-tracking camera inputs to the tracker.
 #include <windows.h>
 #include <algorithm>
 #include <atomic>

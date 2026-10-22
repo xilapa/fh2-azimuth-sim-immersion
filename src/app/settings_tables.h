@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The settings of every tab. Adding a row to a table adds a control; tests/test_ini.cpp checks
 // that every key of the default INI text appears in exactly one table.
 #pragma once

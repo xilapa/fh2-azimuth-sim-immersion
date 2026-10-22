@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Head-tracking hook: waits for the game image and redirects its camera inputs.
 #pragma once
 #include "config.h"
 

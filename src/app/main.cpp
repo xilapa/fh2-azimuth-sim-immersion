@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // FH2SimImmersion.exe - settings window and launcher.
 //
 //   FH2SimImmersion.exe                       open the window; plugin is injected into any azimuth.exe that starts

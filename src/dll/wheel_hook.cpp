@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Hooks that present the virtual wheel to Forza Horizon 2.
 #include "wheel_hook.h"
 #include <windows.h>

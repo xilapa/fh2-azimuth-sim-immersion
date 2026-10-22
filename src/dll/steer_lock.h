@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Steering lock math (pure inline functions, unit-tested by tests/test_lock.cpp).
 #pragma once
 #include <algorithm>

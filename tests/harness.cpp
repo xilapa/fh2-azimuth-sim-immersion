@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Integration test (runs under Windows or Wine):
 //   1. maps the real forza_durango_release_final.exe into memory the way a loader would,
 //   2. loads FH2SimImmersion.dll, which must find, verify and patch the image,

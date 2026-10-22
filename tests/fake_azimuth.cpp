@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Stand-in for azimuth.exe used to test the injector: maps the game image and waits.
 #include <windows.h>
 #include <cstdint>

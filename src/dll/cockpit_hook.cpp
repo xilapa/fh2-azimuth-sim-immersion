@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Replaces the car update entry in the car vtable: after the game computed the in-game steering wheel angle
 // (car + 0x4f30, radians) the angle of the real wheel is written over it, and the driver model is shown or
 // hidden depending on the active camera.

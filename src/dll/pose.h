@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Pure pose math: OpenTrack pose -> camera offsets. No Windows dependencies so it
 // can be unit tested on any platform.
 #pragma once

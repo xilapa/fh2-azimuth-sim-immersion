@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Watches for azimuth.exe and loads FH2SimImmersion.dll into it. Runs in a background thread
 // while the settings window is open. Status lines are reported through a callback (called from
 // the background thread).

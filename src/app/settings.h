@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Description of one editable setting. The pages build their controls from tables of these.
 #pragma once
 #include <cstddef>

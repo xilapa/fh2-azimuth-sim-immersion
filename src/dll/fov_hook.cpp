@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Replaces vtable slot 14 (GetFOV) of the selected camera classes with a wrapper that adds
 // a configurable number of degrees to the game's own value.
 #include "fov_hook.h"

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Shared helpers for patching the game image (internal).
 #pragma once
 #include <windows.h>

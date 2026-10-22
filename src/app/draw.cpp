@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// GDI pictures of the settings window: head axes and steering wheel parts.
 #include "draw.h"
 #include <algorithm>
 #include <cmath>

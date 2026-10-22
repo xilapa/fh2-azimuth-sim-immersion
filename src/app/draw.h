@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // GDI pictures of the settings window (no image files): head axes and steering wheel parts.
 #pragma once
 #include <windows.h>

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Default settings file text, shared by the plugin (src/dll/config.cpp) and the settings window
 // (src/app). Written next to the DLL on first run. The settings window reads every key's
 // default and tooltip from this text.

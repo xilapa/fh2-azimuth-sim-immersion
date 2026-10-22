@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Factory functions of the settings window tab pages.
 #pragma once
 #include "page.h"
 

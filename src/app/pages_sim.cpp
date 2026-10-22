@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Tab 3: simulation: field of view, realistic assists, steering wheel, per-car assist and steering lock overrides.
 #include "pages.h"
 #include <algorithm>

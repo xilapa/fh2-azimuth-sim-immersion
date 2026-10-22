@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Settings file access for the settings window (FH2SimImmersion.ini).
 #include "ini.h"
 #include "../common/default_ini.h"
 #include <cstdio>

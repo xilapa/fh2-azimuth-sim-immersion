@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Injector: finds azimuth.exe and loads FH2SimImmersion.dll into it.
 #include "injector.h"
 #include <tlhelp32.h>
 #include <psapi.h>

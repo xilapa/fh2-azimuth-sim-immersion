@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Settings file access: <exe dir>\FH2SimImmersion.ini is the single source of truth.
 #pragma once
 #include <windows.h>

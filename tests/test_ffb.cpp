@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Host-side unit tests for the force feedback model (g++ -std=c++17 tests/test_ffb.cpp src/dll/wheel_ffb.cpp).
 #include <cassert>
 #include <cmath>

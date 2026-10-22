@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Host-side unit tests for the steering lock math (g++ -std=c++17 tests/test_lock.cpp src/dll/wheel_ffb.cpp).
 #include <cmath>
 #include <cstdio>

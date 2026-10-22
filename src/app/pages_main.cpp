@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Tab 4: main: Azimuth path, start button, injector status and log tail.
 #include "pages.h"
 #include <shobjidl.h>
