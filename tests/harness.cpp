@@ -358,6 +358,80 @@ static void ffbTests(uint8_t* base, HMODULE plugin) {
     callWithRsi((void*)target, slot, inCopy2, &carElemFake);
     CHECK(last(&g), "plugin captured the input with a fake car");
     CHECK(g.haveFront && std::fabs(g.frontSlip - 0.3f) < 1e-6f, "front slip %f (have %d), expected 0.3", g.frontSlip, (int)g.haveFront);
+
+    // steering lock per car (RealisticSteeringLock=1, WheelRange 900, game rotation 450, TestMode steering 0.25)
+    printf("steering lock:\n");
+    auto readSteer = [&]() -> float {
+        float st = -9;
+        void* view = ((FnWrapper)(base + 0x1078b80))();
+        void* ctrl = nullptr; void* wheel = nullptr; void* reading = nullptr;
+        if (view && SUCCEEDED(((FnGetAt)slotOf(view, 6))(view, 1, &ctrl)) && ctrl &&
+            SUCCEEDED(((FnQI)slotOf(ctrl, 0))(ctrl, &kIidWheelH, &wheel)) && wheel &&
+            SUCCEEDED(((FnPtrOut)slotOf(wheel, 12))(wheel, &reading)) && reading) {
+            ((FnF32Out)slotOf(reading, 16))(reading, &st);
+            ((Fn0)slotOf(reading, 2))(reading);
+        }
+        return st;
+    };
+    auto setCar = [&](uint32_t id) {
+        *(uint32_t*)(carBuf + 0x118) = id;
+        float inCopy3[3] = {in[0], in[1], in[2]};
+        callWithRsi((void*)target, slot, inCopy3, &carElemFake);
+    };
+    const fh2::CarInfo *low = nullptr, *high = nullptr;
+    for (size_t i = 0; i < fh2::kCarCount; ++i) {
+        if (!low && fh2::kCars[i].lockDeg < 850) low = &fh2::kCars[i];
+        if (!high && fh2::kCars[i].lockDeg > 950) high = &fh2::kCars[i];
+    }
+    CHECK(low && high, "car list has cars with a lock below 850 and above 950");
+    if (low && high) {
+        setCar(low->id);
+        float expect = 0.25f * 900.0f / (float)low->lockDeg;
+        float st = readSteer();
+        CHECK(std::fabs(st - expect) < 1e-4f, "car %u (lock %u): steering %f, expected %f", low->id, (unsigned)low->lockDeg, st, expect);
+        setCar(high->id);
+        st = readSteer();
+        CHECK(std::fabs(st - 0.25f) < 1e-4f, "car %u (lock %u, capped at WheelRange): steering %f, expected 0.25", high->id, (unsigned)high->lockDeg, st);
+        setCar(0xFFFFF);
+        st = readSteer();
+        CHECK(std::fabs(st - 0.5f) < 1e-4f, "unknown car: the game's rotation (450) -> steering %f, expected 0.5", st);
+    }
+    CHECK(fh2::kMaxCarLockDeg == 1620, "kMaxCarLockDeg %u", (unsigned)fh2::kMaxCarLockDeg);
+}
+
+typedef void (*FnTestCockpit)(uint8_t*, float);
+
+static void cockpitTests(uint8_t* base, HMODULE plugin, uint64_t slotOrig, const std::wstring& logPath) {
+    printf("cockpit wheel and driver:\n");
+    const uintptr_t kSlot = 0x2c5cc00, kCarUpdate = 0x2a9400, kSetDriver = 0xf75500;
+    CHECK(slotOrig == (uint64_t)(base + kCarUpdate), "car update slot held the original before loading");
+    uint64_t now = *(uint64_t*)(base + kSlot);
+    CHECK(now != slotOrig, "car update slot re-pointed");
+    static const uint8_t expect[10] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20};
+    CHECK(memcmp(base + kSetDriver, expect, sizeof(expect)) == 0, "Car_SetDriverVisible first 10 bytes");
+    {
+        FILE* f = _wfopen(logPath.c_str(), L"rb");
+        std::string text;
+        if (f) { char b[4096]; size_t n; while ((n = fread(b, 1, sizeof(b), f)) > 0) text.append(b, n); fclose(f); }
+        CHECK(text.find("cockpit: driver hide ready") != std::string::npos, "log: cockpit: driver hide ready");
+        CHECK(text.find("cockpit: car update hook installed") != std::string::npos, "log: car update hook installed");
+    }
+    FnTestCockpit fn = (FnTestCockpit)GetProcAddress(plugin, "FH2SI_TestCockpitWheel");
+    CHECK(fn != nullptr, "FH2SI_TestCockpitWheel exported");
+    if (!fn) return;
+    static uint8_t car[0x5000];
+    memset(car, 0, sizeof(car));
+    fn(car, 0.5f);
+    float a; memcpy(&a, car + 0x4f30, 4);
+    CHECK(std::fabs(a - 3.92699f) < 1e-4f, "steering 0.5 at display lock 900 -> %f rad (3.92699)", a);
+    fn(car, -1.0f);
+    memcpy(&a, car + 0x4f30, 4);
+    CHECK(std::fabs(a + 7.85398f) < 1e-4f, "steering -1 -> %f rad (-7.85398)", a);
+    car[0x4f11] = 1;
+    float before = a;
+    fn(car, 0.25f);
+    memcpy(&a, car + 0x4f30, 4);
+    CHECK(a == before, "frozen car (0x4f11 != 0): angle untouched");
 }
 
 typedef uint8_t (MSABI *FnGetter)(void*);
@@ -680,12 +754,13 @@ int wmain(int argc, wchar_t** argv) {
 
     // No real wheel here: run the virtual wheel on synthetic input (TestMode) for this run.
     std::wstring iniPath = argv[2];
-    std::wstring carsPath;
+    std::wstring carsPath, logPath;
     {
         size_t dot = iniPath.find_last_of(L'.');
         iniPath = (dot == std::wstring::npos ? iniPath : iniPath.substr(0, dot)) + L".ini";
         size_t sep = iniPath.find_last_of(L"\\/");
         carsPath = (sep == std::wstring::npos ? std::wstring() : iniPath.substr(0, sep + 1)) + L"FH2SimImmersion_cars.ini";
+        logPath = (sep == std::wstring::npos ? std::wstring() : iniPath.substr(0, sep + 1)) + L"FH2SimImmersion.log";
         WritePrivateProfileStringW(L"Input", L"ConfigVersion", L"4", iniPath.c_str());
         WritePrivateProfileStringW(L"Wheel", L"TestMode", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"FovCockpit", L"10", iniPath.c_str());
@@ -694,6 +769,9 @@ int wmain(int argc, wchar_t** argv) {
         WritePrivateProfileStringW(L"Simulation", L"RealisticSTM", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealisticClutch", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealisticAutomatic", L"1", iniPath.c_str());
+        WritePrivateProfileStringW(L"Simulation", L"RealisticSteeringLock", L"1", iniPath.c_str());
+        WritePrivateProfileStringW(L"Simulation", L"RealCockpitWheel", L"1", iniPath.c_str());
+        WritePrivateProfileStringW(L"Simulation", L"HideDriverInCockpit", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"DrawDistance", L"ShadowDistance", L"200", iniPath.c_str());
         WritePrivateProfileStringW(L"DrawDistance", L"WorldDistance", L"800", iniPath.c_str());
         WritePrivateProfileStringW(L"DrawDistance", L"TrafficDistance", L"300", iniPath.c_str());
@@ -723,6 +801,9 @@ int wmain(int argc, wchar_t** argv) {
             WritePrivateProfileStringW(L"Simulation", L"RealisticSTM", L"0", p.c_str());
             WritePrivateProfileStringW(L"Simulation", L"RealisticClutch", L"0", p.c_str());
             WritePrivateProfileStringW(L"Simulation", L"RealisticAutomatic", L"0", p.c_str());
+            WritePrivateProfileStringW(L"Simulation", L"RealisticSteeringLock", L"0", p.c_str());
+            WritePrivateProfileStringW(L"Simulation", L"RealCockpitWheel", L"0", p.c_str());
+            WritePrivateProfileStringW(L"Simulation", L"HideDriverInCockpit", L"0", p.c_str());
             for (const wchar_t* k : {L"ShadowDistance", L"WorldDistance", L"TrafficDistance", L"RacerDistance"})
                 WritePrivateProfileStringW(L"DrawDistance", k, L"0", p.c_str());
             DeleteFileW(cars.c_str());
@@ -735,6 +816,7 @@ int wmain(int argc, wchar_t** argv) {
     const uint64_t clutchOrig = *(uint64_t*)(base + kVt0 + 0xf8);
     if (clutchOrig != (uint64_t)(base + 0xfbcb70)) { printf("clutch getter slot does not hold the expected pointer\n"); return 2; }
 
+    const uint64_t carUpdateSlotOrig = *(uint64_t*)(base + 0x2c5cc00);
     HMODULE plugin = LoadLibraryW(argv[2]);
     if (!plugin) { printf("LoadLibrary failed %lu\n", GetLastError()); return 2; }
 
@@ -819,6 +901,7 @@ int wmain(int argc, wchar_t** argv) {
     ffbTests(base, plugin);
     assistTests(base, absOrig, stmOrig, tcOrig, clutchOrig);
     fovTests(base);
+    cockpitTests(base, plugin, carUpdateSlotOrig, logPath);
     drawDistTests(base, plugin);
 
     printf(failures ? "\n%d check(s) FAILED\n" : "\nall integration checks passed\n", failures);

@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 #include "assist_hook.h"
+#include "cockpit_hook.h"
 #include "log.h"
 #include "patch_util.h"
 #include "wheel_com.h"
@@ -482,12 +483,17 @@ void hookControllerUpdate(void* mgr, float dt) {
 // current car object (the call only happens for the local player's car).
 // Captures the inputs and the driver's parameters, then runs the original. in[] is never modified.
 std::atomic<bool> g_wheelActive{false};   // the virtual wheel is installed: feed the FFB capture
-std::atomic<bool> g_trackCar{false};      // realistic assists on: report the player's car
+std::atomic<bool> g_trackCar{false};      // a feature needs the player's car (assists, steering lock, cockpit wheel, hiding the driver)
 
 extern "C" void hookFfbUpdate(uint8_t* slot, const float* in, void** carElem) {
     if (g_trackCar.load(std::memory_order_relaxed) && readable(carElem, sizeof(void*))) {
         const uint8_t* car = static_cast<const uint8_t*>(*carElem);
-        if (readable(car, 0x11c)) AssistHook_SetPlayerCar(*reinterpret_cast<const uint32_t*>(car + 0x118));
+        if (readable(car, 0x11c)) {
+            const uint32_t id = *reinterpret_cast<const uint32_t*>(car + 0x118);
+            AssistHook_SetPlayerCar(id);
+            SteerLock_SetPlayerCar(id);
+            CockpitHook_SetPlayerCar(const_cast<uint8_t*>(car));
+        }
     }
     if (g_wheelActive.load(std::memory_order_relaxed) && slot && in) {
         GameFfbInput g;
@@ -563,10 +569,10 @@ DWORD WINAPI diagThread(void*) {
             char front[24];
             if (fs.haveGame && fs.game.haveFront) snprintf(front, sizeof(front), "front %.3f", fs.game.frontSlip);
             else snprintf(front, sizeof(front), "front none");
-            LOG("wheel diag ffb: %s F %.3f (torque %.3f spring %.3f damp %.3f rumble %.3f menu %.3f) angle %.3f vel %.2f out %ld slip %.3f align %.3f %s rumbleAmp L %.3f R %.3f%s",
+            LOG("wheel diag ffb: %s F %.3f (torque %.3f spring %.3f damp %.3f rumble %.3f menu %.3f) angle %.3f vel %.2f out %ld slip %.3f align %.3f %s rumbleAmp L %.3f R %.3f%s lock %.0f/%.0f k %.2f",
                 fs.stale ? "stale" : fs.race ? "race" : "menu", fs.terms.total, fs.terms.torque, fs.terms.spring,
                 fs.terms.damping, fs.terms.rumble, fs.terms.menu, fs.angle, fs.velocity, fs.mag, fs.terms.slip,
-                fs.terms.align, front, fs.leftAmp, fs.rightAmp, game);
+                fs.terms.align, front, fs.leftAmp, fs.rightAmp, game, fs.lockDeg, fs.lockLim, fs.lockK);
         }
     }
 }
@@ -629,27 +635,29 @@ static bool installWheel(uintptr_t base, const Config& cfg) {
 
 // Game FFB input hook (UpdateFFB call site): the plugin sees what the car computes (wheel FFB) and which
 // car the local player drives (realistic assists). The stub passes rsi as the third argument.
-static void installFfbSite(uintptr_t base, bool wheelFfb, bool assists) {
+static void installFfbSite(uintptr_t base, bool wheelFfb, bool track) {
     const uint8_t* fsite = reinterpret_cast<const uint8_t*>(base + kFfbSiteBytes);
     if (std::memcmp(fsite, kFfbSiteExpected, sizeof(kFfbSiteExpected)) != 0) {
         LOG("wheel ffb: FFB input hook site mismatch; using game variables only%s",
-            assists ? " (realistic assists inactive)" : "");
+            track ? " (car tracking inactive)" : "");
         return;
     }
     uint8_t* fthunk = static_cast<uint8_t*>(allocNear(base + kFfbCallSite, 4096));
     if (!fthunk || !patchCallRel32(base + kFfbCallSite, reinterpret_cast<void*>(&hookFfbUpdate), fthunk, true)) {
-        LOG("wheel ffb: FFB input hook failed; using game variables only%s", assists ? " (realistic assists inactive)" : "");
+        LOG("wheel ffb: FFB input hook failed; using game variables only%s", track ? " (car tracking inactive)" : "");
         return;
     }
     DWORD o;
     VirtualProtect(fthunk, 4096, PAGE_EXECUTE_READ, &o);
-    g_trackCar = assists;
-    LOG("wheel ffb: game FFB input hook installed (wheel ffb %d, car tracking %d)", wheelFfb, assists);
+    g_trackCar = track;
+    LOG("wheel ffb: game FFB input hook installed (wheel ffb %d, car tracking %d)", wheelFfb, track);
 }
 
 void WheelHook_Install(uintptr_t base, const Config& cfg) {
     g_base = base;
-    const bool assists = cfg.sim.realisticAbs || cfg.sim.realisticTc;
+    const bool assists = cfg.sim.realisticAbs || cfg.sim.realisticTc || cfg.sim.realisticStm || cfg.sim.realisticClutch ||
+                         cfg.sim.realisticAutomatic || cfg.sim.realisticSteeringLock ||
+                         cfg.sim.realCockpitWheel || cfg.sim.hideDriverInCockpit;
     bool wheelOk = false;
     if (!cfg.wheel.enabled) {
         LOG("wheel: disabled in settings");

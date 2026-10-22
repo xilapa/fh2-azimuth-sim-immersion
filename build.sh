@@ -26,10 +26,11 @@ fi
 g++ -std=c++17 -O1 -Wall tests/test_pose.cpp -o build/test_pose && ./build/test_pose
 g++ -std=c++17 -O1 -Wall tests/test_ffb.cpp src/dll/wheel_ffb.cpp -o build/test_ffb && ./build/test_ffb
 g++ -std=c++17 -O1 -Wall tests/test_ini.cpp -o build/test_ini && ./build/test_ini
+g++ -std=c++17 -O1 -Wall tests/test_lock.cpp src/dll/wheel_ffb.cpp -o build/test_lock && ./build/test_lock
 
 $CXX $FLAGS -DFH2SI_VERSION="\"$VERSION\"" -shared -o build/FH2SimImmersion.dll \
     src/dll/dllmain.cpp src/dll/config.cpp src/dll/tracker.cpp src/dll/hook.cpp \
-    src/dll/patch_util.cpp src/dll/wheel_device.cpp src/dll/wheel_com.cpp src/dll/wheel_hook.cpp src/dll/wheel_ffb.cpp src/dll/fov_hook.cpp src/dll/assist_hook.cpp src/dll/drawdist_hook.cpp \
+    src/dll/patch_util.cpp src/dll/wheel_device.cpp src/dll/wheel_com.cpp src/dll/wheel_hook.cpp src/dll/wheel_ffb.cpp src/dll/fov_hook.cpp src/dll/assist_hook.cpp src/dll/drawdist_hook.cpp src/dll/cockpit_hook.cpp \
     -lws2_32 -ldinput8 -ldxguid -lole32 -Wl,--subsystem,windows
 # settings window + launcher (plain Win32, comctl32 v6 via the manifest in app.rc)
 x86_64-w64-mingw32-windres -I src/app -O coff src/app/app.rc -o build/app_res.o

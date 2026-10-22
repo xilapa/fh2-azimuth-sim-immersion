@@ -3,10 +3,15 @@
 // and returns S_OK except where noted (the game throws on any failure HRESULT).
 #include "wheel_com.h"
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <new>
+#include <utility>
+#include <vector>
+#include "../common/car_db.h"
 #include "log.h"
+#include "steer_lock.h"
 #include "wheel_device.h"
 #include "wheel_ffb.h"
 
@@ -53,6 +58,24 @@ bool                   g_diag = false;
 uintptr_t              g_base = 0;
 std::atomic<uint32_t>  g_rotation{900};
 std::atomic<float>     g_gain{1.0f};
+// steering lock (see steer_lock.h)
+bool                   g_lockPerCar = false, g_lockScale = false;
+int                    g_lockMax = 0;
+std::vector<std::pair<unsigned, unsigned>> g_lockOverrides;
+std::atomic<uint32_t>  g_carLock{0};          // current car's lock to lock in degrees, 0 = unknown
+std::atomic<int64_t>   g_lockCar{-1};
+
+LockInputs lockInputs(uint32_t gameRotation) {
+    LockInputs in;
+    in.wheelRange = (float)g_wc.wheelRange;
+    in.maxRotation = (float)g_lockMax;
+    in.scale = g_lockScale;
+    in.perCar = g_lockPerCar;
+    in.carLock = (float)g_carLock.load(std::memory_order_relaxed);
+    in.gameRotation = (float)gameRotation;
+    in.maxCarLock = (float)kMaxCarLockDeg;
+    return in;
+}
 std::atomic<int64_t>   g_token{1};
 std::atomic<uint64_t>  g_counter{1};
 void*                  g_user = nullptr;      // owned reference
@@ -265,8 +288,7 @@ Reading* newReading() {
     if (!ok) in = WheelInput();      // neutral
     r->in = in;
     r->rot = g_rotation.load();
-    float s = in.steering * (float)g_wc.wheelRange / (float)r->rot;
-    r->steer = s > 1.0f ? 1.0f : s < -1.0f ? -1.0f : s;
+    r->steer = GameSteer(lockInputs(r->rot), in.steering);
     r->gear = !g_wc.hShifter ? 0 : in.gear < 0 ? 0xFF : (uint8_t)in.gear;
     r->ts = ok ? in.timestamp : g_counter.fetch_add(1);
     return r;
@@ -445,6 +467,10 @@ void VirtualWheel_Configure(const Config& cfg) {
     g_wc = cfg.wheel;
     g_diag = cfg.diagnostics;
     g_rotation.store((uint32_t)cfg.wheel.wheelRange);
+    g_lockPerCar = cfg.sim.realisticSteeringLock;
+    g_lockScale = cfg.sim.lockScale;
+    g_lockMax = cfg.sim.maxWheelRotation;
+    g_lockOverrides = cfg.sim.steeringLocks;
 }
 
 void* VirtualWheel_Controller() { return &g_fake; }
@@ -479,9 +505,27 @@ bool VirtualWheel_LastGameFfbInput(GameFfbInput& out) {
     return g_gameFfb.qpc != 0;
 }
 
-float VirtualWheel_GameAngle(float steering) {
-    float s = steering * (float)g_wc.wheelRange / (float)g_rotation.load();
-    return s > 1.0f ? 1.0f : s < -1.0f ? -1.0f : s;
+float VirtualWheel_GameAngle(float steering) { return GameSteer(lockInputs(g_rotation.load()), steering); }
+
+float VirtualWheel_PhysicalLockDeg() { return PhysicalLock(lockInputs(g_rotation.load())); }
+float VirtualWheel_DisplayLockDeg() { return DisplayLock(lockInputs(g_rotation.load())); }
+
+void SteerLock_SetPlayerCar(uint32_t id) {
+    if (g_lockCar.load(std::memory_order_relaxed) == (int64_t)id) return;
+    const CarInfo* car = FindCar(id);
+    uint32_t lock = 0;
+    const char* src = "game";
+    for (const auto& o : g_lockOverrides)
+        if (o.first == id) { lock = o.second; src = "override"; }
+    if (!lock && car) {
+        lock = car->lockDeg;
+        src = car->lockBasis == 's' ? "source" : car->lockBasis == 'k' ? "known" : "estimate";
+    }
+    g_carLock.store(lock);
+    g_lockCar.store((int64_t)id);
+    const LockInputs in = lockInputs(g_rotation.load());
+    LOG("steering lock: car %u %s real %u deg -> wheel %u deg (display %u, %s)", id, car ? car->name : "unknown car", lock,
+        (unsigned)std::lround(PhysicalLock(in)), (unsigned)std::lround(DisplayLock(in)), src);
 }
 
 float VirtualWheel_GameRotation() { return (float)g_rotation.load(); }

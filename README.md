@@ -1,6 +1,6 @@
 # FH2 Sim Immersion for Azimuth
 
-**Status: 0.9.5. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
+**Status: 0.9.6. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
 Steering wheel support is experimental.**
 
 Realism and immersion add-ons for Forza Horizon 2 running in Azimuth:
@@ -81,9 +81,10 @@ keep them). Hover a setting for its explanation.
   The picture shows the wheel, pedals and shifter with the setting of each part; the part of
   the control you edit is highlighted. **Test input** reads the wheel without the game and shows
   its axes and the numbers of the pressed buttons, to find the right button numbers.
-* **Simulation:** field of view per camera, realistic assists and a list of all known cars with
-  what the real car had. Select a car and choose how its ABS / traction control is forced
-  (auto, on or off), including whether it has a clutch or always shifts automatically; Apply saves `FH2SimImmersion_cars.ini` (a car with both on auto is removed).
+* **Simulation:** field of view per camera, realistic assists, the steering wheel group (real steering lock,
+  maximum wheel rotation, in-game wheel, hiding the driver) and a list of all known cars with
+  what the real car had, including its steering lock. Select a car and choose how its ABS / traction control is forced
+  (auto, on or off), including whether it has a clutch or always shifts automatically, and optionally a steering lock override; Apply saves `FH2SimImmersion_cars.ini` (a car with both on auto is removed).
 * **Draw distance:** a slider per distance (see [Draw distance](#draw-distance)), with a
   top-down picture of the distances to scale.
 * **Main:** the path of `azimuth.exe`, Start Azimuth, the diagnostics switch, and a status box
@@ -244,13 +245,64 @@ Per-car overrides go in an optional file `FH2SimImmersion_cars.ini` next to the 
 Old lines with two or three fields (`Id=ABS,TC`, `Id=ABS,TC,STM`) still work; the missing ones are `auto`.
 
 The data comes from research of each real car and is in `data/car_assists.csv` (Id, name, year, ABS,
-TC, STM, clutch, gearbox, confidence and notes for every car). It can contain mistakes: corrections are welcome. Cars
+TC, STM, clutch, gearbox, steering lock, confidence and notes for every car). It can contain mistakes: corrections are welcome. Cars
 marked unknown, and cars that are not in the list, keep your game setting.
 
 To check that it works, look in `FH2SimImmersion.log` for `car: <id> <name> (ABS ..., TC ..., STM ..., clutch ..., gearbox ...)` when
 a race starts, and `assists: ABS forced ... for <name>` (likewise `TC`, `stability control` and `clutch`), or `assists: automatic shifting forced for <name>`, when the plugin changes a setting. With
 `Diagnostics=1` the log also shows `assists diag:` lines with how often the game asked for the
 settings.
+
+## Steering lock and the in-game wheel
+
+Every real car turns its steering wheel a different amount from lock to lock: about 540 degrees
+for a race car, 900 to 1080 for most road cars, 1500 or more for a truck or an old car. The game
+steers every car through one fixed rotation. These options let your wheel turn like the real one.
+Set the rotation in Logitech G HUB to the same value as `WheelRange` (900 for the G29), or the
+degrees below will not be right.
+
+**Per-car lock.** `RealisticSteeringLock=1` (`[Simulation]`, default `0`) makes full in-game steering
+happen at the real car's lock-to-lock rotation instead of the game's own rotation setting. The data
+is in `data/car_assists.csv` (columns `SteeringLockDeg` and `LockBasis`) and in the **Lock** column of
+the car list in the Simulation tab. `LockBasis` says where a value comes from: `source` (a
+published figure), `known` (known from the car type or model) or `estimate`; the list marks estimates
+with a `*` (for example `900*`). The data can contain mistakes. To correct a car, select it in the car
+list and type the degrees in **Lock override**, or edit `FH2SimImmersion_cars.ini` by hand:
+
+```
+[SteeringLock]
+; car Id = lock to lock in degrees (90..3600)
+1105=720
+```
+
+Unknown cars use the game's own rotation. In the log, `steering lock: car <id> <name> real <deg> deg ->
+wheel <deg> deg (display <deg>, <source>)` shows what was chosen for the car you drive.
+
+**Maximum wheel rotation.** `MaxWheelRotation` (degrees, `0` = `WheelRange`) is the most your wheel may
+turn from lock to lock (the G29: 900). A car with a bigger real lock cannot be turned that far, so
+`SteeringLockMode` decides what happens:
+* `cap` (default): cars whose lock is more than `MaxWheelRotation` use `MaxWheelRotation`; the
+  others stay 1:1. With 900: a 1080 degree truck uses 900, a 540 degree race car stays 540.
+* `scale`: every car is scaled so the car with the largest lock in the list (1620 degrees) uses
+  `MaxWheelRotation`, and all cars keep their proportions. With 900: 1620 becomes 900, 540 becomes 300.
+
+With `RealisticSteeringLock=0` only the maximum applies to the game's own rotation. With both
+options off the steering is the same as in 0.9.5.
+
+**Soft lock.** When the real wheel can turn further than the car's lock, force feedback builds up an
+end stop at the lock (`[Wheel]`): `FFBLockStrength` (default `1.0`, `0` = off, `1` = the wheel's
+full force) and `FFBLockRampDeg` (default `3`) the degrees past the lock over which it builds up.
+It also damps the wheel inside the end stop and works in menus too. It does not apply when the lock
+is as big as the wheel's own range.
+
+**In-game wheel.** `RealCockpitWheel=1` makes the steering wheel of the cockpit model turn as far as
+the real one (the display lock of the car, up to its real lock) instead of at most 90 degrees each
+way. The driver's arms are only animated for 90 degrees each way, so use `HideDriverInCockpit=1` with
+it: the driver (arms and hands) is hidden while the cockpit camera is active and shown again in
+the other cameras. `CockpitWheelDirection` (`1` or `-1`, default `1`) reverses the in-game wheel if
+it turns the wrong way. These need the wheel and the plugin's car tracking; the log shows
+`cockpit: in-game wheel follows the real wheel`, `cockpit: driver hidden` and `cockpit: driver shown`.
+All of these are in the Simulation tab, group Steering wheel; the soft lock is on the Wheel tab.
 
 ## If Azimuth adds wheel or head-tracking support
 
@@ -266,7 +318,7 @@ is off. Both switches are also in the settings window (Wheel tab, group Advanced
 `FH2SimImmersion.log` is written next to the DLL. A good run looks like this:
 
 ```
-FH2 Sim Immersion 0.9.5 loaded into pid ... (...\azimuth.exe)
+FH2 Sim Immersion 0.9.6 loaded into pid ... (...\azimuth.exe)
 waiting for the Forza Horizon 2 image to be mapped...
 game image found at 0000...
 patch: 5 head-tracking inputs redirected (thunks at ...)
@@ -340,7 +392,7 @@ cmake --build build --config Release
 ```
 
 **Linux cross-build (mingw-w64):** run `./build.sh`. It builds both binaries and the harness,
-runs the unit tests (pose, force feedback, settings parser), and packages `dist/`.
+runs the unit tests (pose, force feedback, steering lock, settings parser), and packages `dist/`.
 
 **Integration test.** `harness.exe` needs your own copy of the game executable; none is
 included. It maps the real game executable, loads the DLL, sends OpenTrack packets and runs

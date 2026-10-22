@@ -25,6 +25,7 @@ struct FfbStatus {             // latest force feedback state, for diagnostics
     FfbTerms terms{};
     float angle = 0, velocity = 0;
     long  mag = 0;             // last computed device magnitude (-10000..10000)
+    float lockDeg = 0, lockLim = 0, lockK = 0;   // soft lock: |wheel degrees|, lock/2, build-up 0..1
     bool  race = false, stale = true;
     bool  active = false;      // effect running
     bool  haveGame = false;    // game UpdateFFB input was fresh

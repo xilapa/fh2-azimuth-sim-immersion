@@ -1,6 +1,7 @@
 #pragma once
 #include <windows.h>
 #include <string>
+#include <utility>
 #include <vector>
 #include "pose.h"
 #include "wheel_ffb.h"
@@ -41,6 +42,7 @@ struct WheelConfig {
     float       ffbGain = 1.0f;
     bool        ffbInvert = false;
     FfbTuning   ffbTuning;
+    float       ffbLockStrength = 1.0f, ffbLockRampDeg = 3.0f;   // soft lock at the end of the steering lock
 };
 
 enum class AssistMode { Game, On, Off };     // Game = keep the player's game setting
@@ -57,6 +59,14 @@ struct SimConfig {
     bool       realisticAbs = false, realisticTc = false, realisticStm = false, realisticClutch = false, realisticAutomatic = false;
     AssistMode optionalAssists = AssistMode::Game;   // cars where the real car had it as an option
     std::vector<CarAssistOverride> carOverrides;
+    // steering lock
+    bool realisticSteeringLock = false;     // per-car real lock to lock rotation
+    int  maxWheelRotation = 0;              // degrees, 0 = WheelRange
+    bool lockScale = false;                 // SteeringLockMode=scale (false = cap)
+    bool realCockpitWheel = false;          // the in-game wheel turns like the real one
+    bool hideDriverInCockpit = false;
+    int  cockpitWheelDirection = 1;         // 1 or -1
+    std::vector<std::pair<unsigned, unsigned>> steeringLocks;   // [SteeringLock] car Id -> degrees (from the cars INI)
 };
 
 struct DrawDistConfig {                      // metres; 0 = game default

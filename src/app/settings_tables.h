@@ -102,6 +102,8 @@ inline constexpr Setting kWheelSettings[] = {
     ST_FLOAT("Wheel", "FFBAlignStart", "Aligning force starts at front slip", "Force feedback", "ffb", 0, 2, 0.01),
     ST_FLOAT("Wheel", "FFBAlignFull", "Aligning force full at front slip", "Force feedback", "ffb", 0, 2, 0.01),
     ST_FLOAT("Wheel", "FFBRumbleGain", "Road vibration strength", "Force feedback", "ffb", 0, 5, 0.1),
+    ST_FLOAT("Wheel", "FFBLockStrength", "Soft lock strength", "Force feedback", "ffb", 0, 1, 0.05),
+    ST_FLOAT("Wheel", "FFBLockRampDeg", "Soft lock ramp (degrees)", "Force feedback", "ffb", 0.5, 30, 0.5),
 
     ST_TEXT ("Wheel", "VendorId", "Reported vendor id (hex)", "Advanced", nullptr),
     ST_TEXT ("Wheel", "ProductId", "Reported product id (hex)", "Advanced", nullptr),
@@ -124,6 +126,26 @@ inline constexpr Setting kSimSettings[] = {
      "Cars that only had a traditional automatic gearbox (no manual mode) or are single-speed electric always use automatic shifting.",
      0, 0, 0, nullptr, "Realistic assists", nullptr, false},
     ST_ENUM ("Simulation", "OptionalAssists", "Cars where the aid was optional", "Realistic assists", nullptr, "game|on|off"),
+
+    {"Simulation", "RealisticSteeringLock", SType::Bool, "Real steering lock (per car)",
+     "Full steering happens at the real car's lock-to-lock rotation (see the Lock column of the car list) instead of the game's own rotation setting.",
+     0, 0, 0, nullptr, "Steering wheel", nullptr, false},
+    {"Simulation", "MaxWheelRotation", SType::Int, "Max wheel rotation (degrees, 0 = WheelRange)",
+     "The most your wheel may turn, lock to lock, in degrees (G29: 900). 0 = the WheelRange of the Wheel tab; larger values are limited to WheelRange.",
+     0, 65535, 10, nullptr, "Steering wheel", nullptr, false},
+    {"Simulation", "SteeringLockMode", SType::Enum, "Steering lock mode (cap / scale)",
+     "cap: only cars with a lock above the maximum use the maximum, the others stay 1:1 (maximum 900: a 1080 degree truck uses 900, a 540 degree race car stays 540). "
+     "scale: every car is scaled so the car with the largest lock uses the maximum (maximum 900: 1620 becomes 900, 540 becomes 300).",
+     0, 0, 0, "cap|scale", "Steering wheel", nullptr, false},
+    {"Simulation", "RealCockpitWheel", SType::Bool, "In-game wheel turns like the real one",
+     "The steering wheel of the cockpit model turns as far as the real car's wheel (instead of at most 90 degrees each way). Use it with hiding the driver's arms.",
+     0, 0, 0, nullptr, "Steering wheel", nullptr, false},
+    {"Simulation", "HideDriverInCockpit", SType::Bool, "Hide the driver's arms in the cockpit view",
+     "Hides the driver (arms and hands) while the cockpit camera is active; the other cameras show the driver as usual.",
+     0, 0, 0, nullptr, "Steering wheel", nullptr, false},
+    {"Simulation", "CockpitWheelDirection", SType::Enum, "In-game wheel direction (1 or -1)",
+     "Direction of the in-game wheel for the option above: 1 is normal, -1 only if the in-game wheel turns the wrong way.",
+     0, 0, 0, "1|-1", "Advanced", nullptr, false},
 };
 
 // Draw distance (metres). The INI stores 0 = game default; the page shows a slider from the game's own

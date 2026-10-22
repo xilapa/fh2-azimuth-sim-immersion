@@ -201,9 +201,11 @@ static void readWheel(const wchar_t* ini, WheelConfig& w) {
         t.alignStart      = clampCfg(ini, "FFBAlignStart", (float)readF(ini, "Wheel", "FFBAlignStart", 0.05), 0.0f, 2.0f);
         t.alignFull       = clampCfg(ini, "FFBAlignFull", (float)readF(ini, "Wheel", "FFBAlignFull", 0.5), 0.0f, 2.0f);
         t.rumbleGain      = clampCfg(ini, "FFBRumbleGain", (float)readF(ini, "Wheel", "FFBRumbleGain", 1.5), 0.0f, 5.0f);
-        LOG("config: ffb torque %.2f spring %.2f floor %.2f slip %.2f [%.2f..%.2f] inv %d align %.2f [%.2f..%.2f] rumble %.2f",
+        w.ffbLockStrength = clampCfg(ini, "FFBLockStrength", (float)readF(ini, "Wheel", "FFBLockStrength", 1.0), 0.0f, 1.0f);
+        w.ffbLockRampDeg  = clampCfg(ini, "FFBLockRampDeg", (float)readF(ini, "Wheel", "FFBLockRampDeg", 3.0), 0.5f, 30.0f);
+        LOG("config: ffb torque %.2f spring %.2f floor %.2f slip %.2f [%.2f..%.2f] inv %d align %.2f [%.2f..%.2f] rumble %.2f lock %.2f ramp %.1f",
             t.torqueGain, t.springGain, t.slipSpringFloor, t.slipGain, t.slipStart, t.slipFull, t.slipInvert,
-            t.alignGain, t.alignStart, t.alignFull, t.rumbleGain);
+            t.alignGain, t.alignStart, t.alignFull, t.rumbleGain, w.ffbLockStrength, w.ffbLockRampDeg);
     }
     LOG("config: wheel enabled %d match '%s' range %d axes steer %s%s thr %s brk %s clu %s pedalsInv %d dz %.2f "
         "hshifter %d user %s rescan %d id %04x:%04x flag14 %d test %d ffb %d gain %.2f inv %d overrideAzimuth %d",
@@ -251,6 +253,32 @@ static void loadCarOverrides(const std::wstring& path, std::vector<CarAssistOver
             else o.clutch = parseAssistWord(tok, o.clutchSet);
         }
         if (o.absSet || o.tcSet || o.stmSet || o.clutchSet) out.push_back(o);
+    }
+}
+
+// [SteeringLock] section: key = car Id, value = lock to lock in degrees (90..3600).
+static void loadSteeringLocks(const std::wstring& path, std::vector<std::pair<unsigned, unsigned>>& out) {
+    if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) return;
+    std::vector<wchar_t> buf(32768);
+    DWORD n = GetPrivateProfileSectionW(L"SteeringLock", buf.data(), (DWORD)buf.size(), path.c_str());
+    for (const wchar_t* p = buf.data(); n && *p; p += wcslen(p) + 1) {
+        std::wstring line = p;
+        size_t eq = line.find(L'=');
+        wchar_t* end = nullptr;
+        unsigned long id = eq == std::wstring::npos ? 0 : wcstoul(line.c_str(), &end, 10);
+        unsigned long deg = 0;
+        bool ok = id != 0 && end && end != line.c_str();
+        if (ok) {
+            const wchar_t* v = line.c_str() + eq + 1;
+            wchar_t* e2 = nullptr;
+            deg = wcstoul(v, &e2, 10);
+            while (e2 && (*e2 == L' ' || *e2 == L'\t')) ++e2;
+            ok = e2 != v && *e2 == 0 && deg >= 90 && deg <= 3600;
+        }
+        if (!ok) { LOG("config: bad [SteeringLock] line '%ls' (want CarId=90..3600); ignored", line.c_str()); continue; }
+        bool dup = false;
+        for (auto& e : out) if (e.first == (unsigned)id) { e.second = (unsigned)deg; dup = true; }
+        if (!dup) out.push_back({(unsigned)id, (unsigned)deg});
     }
 }
 
@@ -336,6 +364,31 @@ Config loadConfig(const std::wstring& iniPath) {
         c.sim.realisticClutch, c.sim.realisticAutomatic,
         c.sim.optionalAssists == AssistMode::On ? "on" : c.sim.optionalAssists == AssistMode::Off ? "off" : "game");
     {
+        SimConfig& m = c.sim;
+        m.realisticSteeringLock = readI(ini, "Simulation", "RealisticSteeringLock", 0) != 0;
+        int maxRot = readI(ini, "Simulation", "MaxWheelRotation", 0);
+        if (maxRot != 0 && maxRot < 90) { LOG("config: MaxWheelRotation=%d below 90; using 90", maxRot); maxRot = 90; }
+        if (maxRot > c.wheel.wheelRange) {
+            LOG("config: MaxWheelRotation=%d above WheelRange %d; using WheelRange", maxRot, c.wheel.wheelRange);
+            maxRot = c.wheel.wheelRange;
+        }
+        m.maxWheelRotation = maxRot;
+        std::string mode = readStr(ini, "Simulation", "SteeringLockMode", "cap"), mt;
+        for (char ch : mode) if (ch != ' ') mt += (char)tolower((unsigned char)ch);
+        if (mt == "scale") m.lockScale = true;
+        else {
+            if (mt != "cap") LOG("config: unknown SteeringLockMode '%s'; using cap", mode.c_str());
+            m.lockScale = false;
+        }
+        m.realCockpitWheel = readI(ini, "Simulation", "RealCockpitWheel", 0) != 0;
+        m.hideDriverInCockpit = readI(ini, "Simulation", "HideDriverInCockpit", 0) != 0;
+        int dir = readI(ini, "Simulation", "CockpitWheelDirection", 1);
+        if (dir != 1 && dir != -1) { LOG("config: CockpitWheelDirection=%d is not 1 or -1; using 1", dir); dir = 1; }
+        m.cockpitWheelDirection = dir;
+        LOG("config: steering lock realistic %d max %d mode %s cockpitWheel %d dir %d hideDriver %d", m.realisticSteeringLock,
+            m.maxWheelRotation, m.lockScale ? "scale" : "cap", m.realCockpitWheel, m.cockpitWheelDirection, m.hideDriverInCockpit);
+    }
+    {
         DrawDistConfig& d = c.drawDist;
         d.shadow  = clampCfg(ini, "ShadowDistance", (float)readF(ini, "DrawDistance", "ShadowDistance", 0.0), 0.0f, 1000.0f);
         d.world   = clampCfg(ini, "WorldDistance", (float)readF(ini, "DrawDistance", "WorldDistance", 0.0), 0.0f, 3000.0f);
@@ -353,6 +406,8 @@ Config loadConfig(const std::wstring& iniPath) {
         cars = (sep == std::wstring::npos ? std::wstring() : cars.substr(0, sep + 1)) + L"FH2SimImmersion_cars.ini";
         loadCarOverrides(cars, c.sim.carOverrides);
         LOG("config: %d per-car assist overrides", (int)c.sim.carOverrides.size());
+        loadSteeringLocks(cars, c.sim.steeringLocks);
+        LOG("config: %d per-car steering lock overrides", (int)c.sim.steeringLocks.size());
     }
     return c;
 }

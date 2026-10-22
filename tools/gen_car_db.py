@@ -43,6 +43,22 @@ def gearbox(v, row):
     return GEARBOX[v]
 
 
+LOCK_BASIS = {"source": "s", "known": "k", "estimate": "e"}
+
+
+def lock(row):
+    try:
+        deg = int(row["SteeringLockDeg"])
+    except (KeyError, ValueError):
+        sys.exit("gen_car_db: bad SteeringLockDeg for car %s" % row["Id"])
+    if not 650 <= deg <= 1620:
+        sys.exit("gen_car_db: SteeringLockDeg %d out of range for car %s" % (deg, row["Id"]))
+    b = row["LockBasis"].strip().lower()
+    if b not in LOCK_BASIS:
+        sys.exit("gen_car_db: bad LockBasis %r for car %s" % (b, row["Id"]))
+    return deg, LOCK_BASIS[b]
+
+
 def main():
     csv_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "data", "car_assists.csv")
     out_path = sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, "src", "common", "car_db.h")
@@ -65,16 +81,20 @@ def main():
         "// gearbox: 'm' manual, 'x' mixed (manual and a non-manual option), 'a' automatic without manual mode,",
         "// 't' automatic with manual mode, 'd' dual-clutch, 's' automated manual, 'c' CVT, 'e' single-speed electric,",
         "// 'q' race sequential, 'u' unknown.",
-        "struct CarInfo { uint32_t id; const char* media; uint16_t year; const char* name; char abs; char tc; char stm; char clutch; char gearbox; };",
+        "// lockDeg: steering wheel rotation lock to lock in degrees; lockBasis: 's' source, 'k' known, 'e' estimate.",
+        "struct CarInfo { uint32_t id; const char* media; uint16_t year; const char* name; char abs; char tc; char stm; char clutch; char gearbox; uint16_t lockDeg; char lockBasis; };",
         "",
         "inline constexpr CarInfo kCars[] = {",
     ]
     for r in rows:
-        lines.append("    {%d, %s, %d, %s, '%s', '%s', '%s', '%s', '%s'}," % (
+        lines.append("    {%d, %s, %d, %s, '%s', '%s', '%s', '%s', '%s', %d, '%s'}," % (
             int(r["Id"]), cstr(r["MediaName"]), int(r["Year"]), cstr(r["CarName"]),
-            code(r["ABS"], r), code(r["TC"], r), code(r["STM"], r), code(r["Clutch"], r), gearbox(r["Gearbox"], r)))
+            code(r["ABS"], r), code(r["TC"], r), code(r["STM"], r), code(r["Clutch"], r), gearbox(r["Gearbox"], r),
+            lock(r)[0], lock(r)[1]))
     lines += [
         "};",
+        "",
+        "inline constexpr uint16_t kMaxCarLockDeg = %d;" % max(lock(r)[0] for r in rows),
         "",
         "inline constexpr size_t kCarCount = sizeof(kCars) / sizeof(kCars[0]);",
         "",

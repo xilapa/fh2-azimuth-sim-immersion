@@ -1,12 +1,14 @@
 #define DIRECTINPUT_VERSION 0x0800
 #include "wheel_device.h"
 #include <dinput.h>
+#include <cmath>
 #include <cstdlib>
 #include <cwctype>
 #include <deque>
 #include <string>
 #include <vector>
 #include "log.h"
+#include "steer_lock.h"
 #include "wheel_com.h"
 #include "wheel_ffb.h"
 
@@ -238,9 +240,10 @@ DWORD WINAPI pollThread(void*) {
     DWORD axes[1] = {DIJOFS_X};
     LONG lastSent = 0;
     double lastSendMs = 0;
-    struct Sample { double ms; float angle; };
+    struct Sample { double ms; float angle; float phys; };
     std::deque<Sample> samples;
     float velocity = 0;
+    float physVel = 0;     // degrees per second of the real wheel (not clamped at the lock)
     for (;;) {
         hr = g_dev->Poll();
         DIJOYSTATE2 st{};
@@ -323,20 +326,34 @@ DWORD WINAPI pollThread(void*) {
             if (ffbOn && effect) {
                 double nowMs = qpcMs();
                 float angle = VirtualWheel_GameAngle(in.steering);
-                samples.push_back({nowMs, angle});
+                samples.push_back({nowMs, angle, in.steering * (float)g_cfg.wheelRange * 0.5f});
                 // keep the newest sample that is >= 20 ms old; drop everything older
                 int idx = -1;
                 for (int i = (int)samples.size() - 1; i >= 0; --i)
                     if (nowMs - samples[i].ms >= 20.0) { idx = i; break; }
                 if (idx >= 0) {
                     samples.erase(samples.begin(), samples.begin() + idx);
-                    velocity = (angle - samples.front().angle) / (float)((nowMs - samples.front().ms) / 1000.0);
+                    const float dtS = (float)((nowMs - samples.front().ms) / 1000.0);
+                    velocity = (angle - samples.front().angle) / dtS;
+                    physVel = (samples.back().phys - samples.front().phys) / dtS;
                 }
                 FfbParams p;
                 VirtualWheel_FfbSnapshot(p);
                 FfbTerms terms{};
                 float F = FfbForce(p, g_cfg.ffbTuning, angle, velocity, nowMs, &terms);
                 LONG mag = FfbDeviceMagnitude(F, g_cfg.ffbGain, g_cfg.ffbInvert);
+                // Soft lock: end stop at the physical lock (works also when the game's FFB is idle, e.g. in menus).
+                const float physLock = VirtualWheel_PhysicalLockDeg();
+                const float physDeg = in.steering * (float)g_cfg.wheelRange * 0.5f;
+                const float lockK = SoftLockK(physDeg, physLock, (float)g_cfg.wheelRange, g_cfg.ffbLockStrength, g_cfg.ffbLockRampDeg);
+                if (lockK > 0.0f) {
+                    mag = ApplySoftLock(mag, physDeg, physLock, (float)g_cfg.wheelRange, g_cfg.ffbLockStrength, g_cfg.ffbLockRampDeg,
+                                        g_cfg.ffbInvert);
+                    // damping inside the end zone, from the real wheel's speed (the game angle stops at the lock)
+                    long damp = std::lround(physVel * 0.002f * lockK * 10000.0f * g_cfg.ffbLockStrength);
+                    mag += g_cfg.ffbInvert ? -damp : damp;
+                    mag = mag > 10000 ? 10000 : mag < -10000 ? -10000 : mag;
+                }
                 bool send = forceSend || labs(mag - lastSent) >= 20 || (mag != lastSent && nowMs - lastSendMs >= 10.0) ||
                             (mag == 0 && lastSent != 0);
                 if (send) {
@@ -358,7 +375,8 @@ DWORD WINAPI pollThread(void*) {
                 }
                 AcquireSRWLockExclusive(&g_lock);
                 g_ffbStatus.terms = terms; g_ffbStatus.angle = angle; g_ffbStatus.velocity = velocity;
-                g_ffbStatus.mag = mag; g_ffbStatus.race = p.race; g_ffbStatus.stale = p.stale;
+                g_ffbStatus.mag = mag; g_ffbStatus.lockDeg = std::fabs(physDeg); g_ffbStatus.lockLim = physLock * 0.5f;
+                g_ffbStatus.lockK = lockK; g_ffbStatus.race = p.race; g_ffbStatus.stale = p.stale;
                 g_ffbStatus.active = true;
                 g_ffbStatus.haveGame = p.haveGame; g_ffbStatus.game = p.game;
                 g_ffbStatus.leftAmp = p.leftAmp; g_ffbStatus.rightAmp = p.rightAmp;
