@@ -8,6 +8,7 @@ namespace app {
 inline constexpr Setting kHeadSettings[] = {
     ST_BOOL ("General", "EnableOnStartup", "Head tracking on at game start", "Head tracking", "rot"),
     ST_ENUM ("Input", "Source", "Tracker input", "Head tracking", "rot", "auto|freetrack|udp"),
+    ST_BOOL ("General", "OverrideAzimuthHeadTracking", "Override Azimuth head tracking if it adds its own", "Head tracking", "rot"),
     ST_BOOL ("General", "CockpitOnly", "Cockpit camera only", "Head tracking", "rot"),
     ST_FLOAT("General", "Smoothing", "Smoothing (0 - 1)", "Head tracking", "rot", 0, 1, 0.05),
     ST_INT  ("General", "StaleTimeoutMs", "Lost-signal timeout (ms)", "Head tracking", "rot", 0, 10000, 50),
@@ -105,6 +106,7 @@ inline constexpr Setting kWheelSettings[] = {
     ST_TEXT ("Wheel", "VendorId", "Reported vendor id (hex)", "Advanced", nullptr),
     ST_TEXT ("Wheel", "ProductId", "Reported product id (hex)", "Advanced", nullptr),
     ST_INT  ("Wheel", "ConfigFlag14", "ConfigFlag14", "Advanced", nullptr, 0, 255, 1),
+    ST_BOOL ("Wheel", "OverrideAzimuthWheel", "Override Azimuth's wheel if it adds one", "Advanced", nullptr),
     ST_BOOL ("Wheel", "TestMode", "Test mode", "Advanced", nullptr),
 };
 
@@ -117,6 +119,7 @@ inline constexpr Setting kSimSettings[] = {
     ST_BOOL ("Simulation", "RealisticABS", "Realistic ABS (per car)", "Realistic assists", nullptr),
     ST_BOOL ("Simulation", "RealisticTC", "Realistic traction control (per car)", "Realistic assists", nullptr),
     ST_BOOL ("Simulation", "RealisticSTM", "Realistic stability control (per car)", "Realistic assists", nullptr),
+    ST_BOOL ("Simulation", "RealisticClutch", "Realistic clutch (per car)", "Realistic assists", nullptr),
     ST_ENUM ("Simulation", "OptionalAssists", "Cars where the aid was optional", "Realistic assists", nullptr, "game|on|off"),
 };
 

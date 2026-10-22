@@ -11,9 +11,9 @@
 namespace app {
 
 namespace {
-const int kIdFilter = 9200, kIdList = 9201, kIdAbs = 9202, kIdTc = 9203, kIdStm = 9204;
-using Triple = std::array<int, 3>;      // ABS, TC, STM: 0 = auto, 1 = on, 2 = off
-const Triple kAuto{0, 0, 0};
+const int kIdFilter = 9200, kIdList = 9201, kIdAbs = 9202, kIdTc = 9203, kIdStm = 9204, kIdClutch = 9205;
+using Triple = std::array<int, 4>;      // ABS, TC, STM, clutch: 0 = auto, 1 = on, 2 = off
+const Triple kAuto{0, 0, 0, 0};
 
 const wchar_t* yn(char c) {
     switch (c) { case 'y': return L"yes"; case 'n': return L"no"; case 'o': return L"optional"; default: return L"unknown"; }
@@ -61,8 +61,8 @@ protected:
                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_REPORT | LVS_OWNERDATA | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
                                 0, 0, 10, 10, host_, (HMENU)(INT_PTR)kIdList, G.inst, nullptr);
         ListView_SetExtendedListViewStyle(list_, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_GRIDLINES);
-        static const wchar_t* heads[] = {L"Id", L"Car", L"Year", L"Real ABS", L"Real TC", L"Real STM", L"ABS override", L"TC override", L"STM override"};
-        for (int i = 0; i < 9; ++i) {
+        static const wchar_t* heads[] = {L"Id", L"Car", L"Year", L"Real ABS", L"Real TC", L"Real STM", L"Real clutch", L"ABS override", L"TC override", L"STM override", L"Clutch override"};
+        for (int i = 0; i < 11; ++i) {
             LVCOLUMNW col{};
             col.mask = LVCF_TEXT | LVCF_FMT;
             col.fmt = LVCFMT_LEFT;
@@ -72,19 +72,22 @@ protected:
         absLabel_ = MakeStatic(host_, L"ABS override:");
         tcLabel_ = MakeStatic(host_, L"TC override:");
         stmLabel_ = MakeStatic(host_, L"STM override:");
-        for (int k = 0; k < 3; ++k) {
+        clutchLabel_ = MakeStatic(host_, L"Clutch override:");
+        for (int k = 0; k < 4; ++k) {
             HWND cb = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
-                                      0, 0, 10, 10, host_, (HMENU)(INT_PTR)(k == 0 ? kIdAbs : k == 1 ? kIdTc : kIdStm), G.inst, nullptr);
+                                      0, 0, 10, 10, host_, (HMENU)(INT_PTR)(k == 0 ? kIdAbs : k == 1 ? kIdTc : k == 2 ? kIdStm : kIdClutch), G.inst, nullptr);
             for (const wchar_t* t : {L"auto", L"on", L"off"}) SendMessageW(cb, CB_ADDSTRING, 0, (LPARAM)t);
-            (k == 0 ? absCombo_ : k == 1 ? tcCombo_ : stmCombo_) = cb;
+            (k == 0 ? absCombo_ : k == 1 ? tcCombo_ : k == 2 ? stmCombo_ : clutchCombo_) = cb;
         }
         hint_ = MakeStatic(host_, L"auto = use the real car data");
-        AddTip(list_, L"Real ABS / TC / STM: what the real car had (yes, no, optional, unknown). "
+        AddTip(list_, L"Real ABS / TC / STM / clutch: what the real car had (yes, no, optional, unknown). "
                       L"Overrides are saved in FH2SimImmersion_cars.ini ([Cars], key = car Id).");
         AddTip(absCombo_, L"auto = use the research data (and the settings above); on / off = force it for this car.");
         AddTip(tcCombo_, L"auto = use the research data (and the settings above); on / off = force it for this car.");
         AddTip(stmCombo_, L"auto = use the research data (and the settings above); on / off = force it for this car.");
+        AddTip(clutchCombo_, L"auto = use the research data (and the settings above); on = the car has a clutch, off = it has none.");
         EnableWindow(absCombo_, FALSE); EnableWindow(tcCombo_, FALSE); EnableWindow(stmCombo_, FALSE);
+        EnableWindow(clutchCombo_, FALSE);
     }
 
     void Layout(int w, int h) override {
@@ -97,28 +100,30 @@ protected:
         SetWindowPos(filterLabel_, nullptr, S(8), y, S(100), S(24), SWP_NOZORDER);
         SetWindowPos(filter_, nullptr, S(112), y + S(1), S(240), S(22), SWP_NOZORDER);
         SetWindowPos(count_, nullptr, S(364), y, std::max(S(50), w - S(372)), S(24), SWP_NOZORDER);
-        int ly = y + S(30), bottom = h - S(36);
+        int ly = y + S(30), bottom = h - S(36);   // combos sit in the strip under the list
         SetWindowPos(list_, nullptr, 0, ly, w, std::max(S(60), bottom - ly), SWP_NOZORDER);
-        static const int cw[] = {55, 240, 50, 70, 70, 70, 90, 90, 90};
-        for (int i = 0; i < 9; ++i) ListView_SetColumnWidth(list_, i, S(cw[i]));
+        static const int cw[] = {38, 160, 40, 60, 54, 62, 70, 82, 74, 80, 90};
+        for (int i = 0; i < 11; ++i) ListView_SetColumnWidth(list_, i, S(cw[i]));
         int by = h - S(30);
         SetWindowPos(absLabel_, nullptr, S(8), by, S(90), S(24), SWP_NOZORDER);
-        SetWindowPos(absCombo_, nullptr, S(100), by, S(80), S(200), SWP_NOZORDER);
-        SetWindowPos(tcLabel_, nullptr, S(196), by, S(80), S(24), SWP_NOZORDER);
-        SetWindowPos(tcCombo_, nullptr, S(280), by, S(80), S(200), SWP_NOZORDER);
-        SetWindowPos(stmLabel_, nullptr, S(376), by, S(90), S(24), SWP_NOZORDER);
-        SetWindowPos(stmCombo_, nullptr, S(468), by, S(80), S(200), SWP_NOZORDER);
-        SetWindowPos(hint_, nullptr, S(564), by, std::max(S(50), w - S(572)), S(24), SWP_NOZORDER);
+        SetWindowPos(absCombo_, nullptr, S(100), by, S(70), S(200), SWP_NOZORDER);
+        SetWindowPos(tcLabel_, nullptr, S(180), by, S(80), S(24), SWP_NOZORDER);
+        SetWindowPos(tcCombo_, nullptr, S(262), by, S(70), S(200), SWP_NOZORDER);
+        SetWindowPos(stmLabel_, nullptr, S(342), by, S(90), S(24), SWP_NOZORDER);
+        SetWindowPos(stmCombo_, nullptr, S(434), by, S(70), S(200), SWP_NOZORDER);
+        SetWindowPos(clutchLabel_, nullptr, S(514), by, S(100), S(24), SWP_NOZORDER);
+        SetWindowPos(clutchCombo_, nullptr, S(616), by, S(70), S(200), SWP_NOZORDER);
+        SetWindowPos(hint_, nullptr, S(696), by, std::max(S(50), w - S(704)), S(24), SWP_NOZORDER);
     }
 
     void OnCommand(int id, int code, HWND) override {
         if (id == kIdFilter && code == EN_CHANGE) { Refilter(); return; }
-        if ((id == kIdAbs || id == kIdTc || id == kIdStm) && code == CBN_SELCHANGE) {
+        if ((id == kIdAbs || id == kIdTc || id == kIdStm || id == kIdClutch) && code == CBN_SELCHANGE) {
             int sel = Selected();
             if (sel < 0) return;
             unsigned car = shown_[sel]->id;
             Triple p{(int)SendMessageW(absCombo_, CB_GETCURSEL, 0, 0), (int)SendMessageW(tcCombo_, CB_GETCURSEL, 0, 0),
-                     (int)SendMessageW(stmCombo_, CB_GETCURSEL, 0, 0)};
+                     (int)SendMessageW(stmCombo_, CB_GETCURSEL, 0, 0), (int)SendMessageW(clutchCombo_, CB_GETCURSEL, 0, 0)};
             for (int& v : p) v = std::max(v, 0);
             if (p == kAuto) cur_.erase(car); else cur_[car] = p;
             ListView_RedrawItems(list_, sel, sel);
@@ -144,9 +149,11 @@ protected:
             case 3: t = yn(c.abs); break;
             case 4: t = yn(c.tc); break;
             case 5: t = yn(c.stm); break;
-            case 6: t = ovr(p[0]); break;
-            case 7: t = ovr(p[1]); break;
-            case 8: t = ovr(p[2]); break;
+            case 6: t = yn(c.clutch); break;
+            case 7: t = ovr(p[0]); break;
+            case 8: t = ovr(p[1]); break;
+            case 9: t = ovr(p[2]); break;
+            case 10: t = ovr(p[3]); break;
             }
             wcsncpy(di->item.pszText, t.c_str(), di->item.cchTextMax - 1);
             di->item.pszText[di->item.cchTextMax - 1] = 0;
@@ -163,8 +170,8 @@ protected:
 
 private:
     HWND filterLabel_ = nullptr, filter_ = nullptr, count_ = nullptr, list_ = nullptr;
-    HWND absLabel_ = nullptr, tcLabel_ = nullptr, stmLabel_ = nullptr, absCombo_ = nullptr, tcCombo_ = nullptr,
-         stmCombo_ = nullptr, hint_ = nullptr;
+    HWND absLabel_ = nullptr, tcLabel_ = nullptr, stmLabel_ = nullptr, clutchLabel_ = nullptr, absCombo_ = nullptr,
+         tcCombo_ = nullptr, stmCombo_ = nullptr, clutchCombo_ = nullptr, hint_ = nullptr;
     std::vector<const fh2::CarInfo*> shown_;
     std::map<unsigned, Triple> cur_, orig_;
 
@@ -210,11 +217,13 @@ private:
         EnableWindow(absCombo_, sel >= 0);
         EnableWindow(tcCombo_, sel >= 0);
         EnableWindow(stmCombo_, sel >= 0);
+        EnableWindow(clutchCombo_, sel >= 0);
         Triple p = kAuto;
         if (sel >= 0) { auto it = cur_.find(shown_[sel]->id); if (it != cur_.end()) p = it->second; }
         SendMessageW(absCombo_, CB_SETCURSEL, sel >= 0 ? p[0] : -1, 0);
         SendMessageW(tcCombo_, CB_SETCURSEL, sel >= 0 ? p[1] : -1, 0);
         SendMessageW(stmCombo_, CB_SETCURSEL, sel >= 0 ? p[2] : -1, 0);
+        SendMessageW(clutchCombo_, CB_SETCURSEL, sel >= 0 ? p[3] : -1, 0);
         Refresh();
     }
 
@@ -233,9 +242,11 @@ private:
                 if (end == line.c_str() || id == 0) continue;
                 std::wstring v = line.substr(eq + 1);
                 size_t c1 = v.find(L','), c2 = c1 == std::wstring::npos ? c1 : v.find(L',', c1 + 1);
-                Triple pr{parseOvr(v.substr(0, c1)), 0, 0};
+                size_t c3 = c2 == std::wstring::npos ? c2 : v.find(L',', c2 + 1);
+                Triple pr{parseOvr(v.substr(0, c1)), 0, 0, 0};
                 if (c1 != std::wstring::npos) pr[1] = parseOvr(v.substr(c1 + 1, c2 == std::wstring::npos ? c2 : c2 - c1 - 1));
-                if (c2 != std::wstring::npos) pr[2] = parseOvr(v.substr(c2 + 1));
+                if (c2 != std::wstring::npos) pr[2] = parseOvr(v.substr(c2 + 1, c3 == std::wstring::npos ? c3 : c3 - c2 - 1));
+                if (c3 != std::wstring::npos) pr[3] = parseOvr(v.substr(c3 + 1));
                 if (pr != kAuto) cur_[(unsigned)id] = pr;
             }
         }
@@ -255,7 +266,7 @@ private:
             if (n == kAuto) {
                 ok = WritePrivateProfileStringW(L"Cars", key.c_str(), nullptr, path.c_str()) && ok;     // all auto: remove
             } else {
-                std::wstring val = std::wstring(ovr(n[0])) + L"," + ovr(n[1]) + L"," + ovr(n[2]);
+                std::wstring val = std::wstring(ovr(n[0])) + L"," + ovr(n[1]) + L"," + ovr(n[2]) + L"," + ovr(n[3]);
                 ok = WritePrivateProfileStringW(L"Cars", key.c_str(), val.c_str(), path.c_str()) && ok;
             }
         }

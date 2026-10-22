@@ -52,15 +52,15 @@ def main():
         "",
         "namespace fh2 {",
         "",
-        "// abs / tc / stm: 'y' = fitted, 'n' = not fitted, 'o' = optional, 'u' = unknown.",
-        "struct CarInfo { uint32_t id; const char* media; uint16_t year; const char* name; char abs; char tc; char stm; };",
+        "// abs / tc / stm / clutch: 'y' = fitted, 'n' = not fitted, 'o' = optional, 'u' = unknown.",
+        "struct CarInfo { uint32_t id; const char* media; uint16_t year; const char* name; char abs; char tc; char stm; char clutch; };",
         "",
         "inline constexpr CarInfo kCars[] = {",
     ]
     for r in rows:
-        lines.append("    {%d, %s, %d, %s, '%s', '%s', '%s'}," % (
+        lines.append("    {%d, %s, %d, %s, '%s', '%s', '%s', '%s'}," % (
             int(r["Id"]), cstr(r["MediaName"]), int(r["Year"]), cstr(r["CarName"]),
-            code(r["ABS"], r), code(r["TC"], r), code(r["STM"], r)))
+            code(r["ABS"], r), code(r["TC"], r), code(r["STM"], r), code(r["Clutch"], r)))
     lines += [
         "};",
         "",

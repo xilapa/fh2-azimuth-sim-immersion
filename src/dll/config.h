@@ -14,6 +14,7 @@ enum class WheelUserMode { Auto, None };
 
 struct WheelConfig {
     bool        enabled = true;
+    bool        overrideAzimuthWheel = true;   // hide a wheel provided by Azimuth itself, use ours
     std::string deviceMatch = "G29";
     int         wheelRange = 900;
     WheelAxis   steeringAxis = WheelAxis::X, throttleAxis = WheelAxis::Y,
@@ -46,13 +47,13 @@ enum class AssistMode { Game, On, Off };     // Game = keep the player's game se
 
 struct CarAssistOverride {                   // from FH2SimImmersion_cars.ini
     unsigned id = 0;
-    bool     absSet = false, tcSet = false, stmSet = false;  // false = auto (use the research data)
-    AssistMode abs = AssistMode::Game, tc = AssistMode::Game, stm = AssistMode::Game;
+    bool     absSet = false, tcSet = false, stmSet = false, clutchSet = false;  // false = auto (use the research data)
+    AssistMode abs = AssistMode::Game, tc = AssistMode::Game, stm = AssistMode::Game, clutch = AssistMode::Game;  // clutch: On = has a clutch
 };
 
 struct SimConfig {
     float fovCockpit = 0, fovDriver = 0, fovHood = 0, fovBumper = 0;   // extra degrees, 0 = game default
-    bool       realisticAbs = false, realisticTc = false, realisticStm = false;
+    bool       realisticAbs = false, realisticTc = false, realisticStm = false, realisticClutch = false;
     AssistMode optionalAssists = AssistMode::Game;   // cars where the real car had it as an option
     std::vector<CarAssistOverride> carOverrides;
 };
@@ -70,6 +71,7 @@ struct Config {
     std::string  bindAddress = "127.0.0.1";
     // [General]
     bool enableOnStartup = true;
+    bool overrideAzimuthHeadTracking = true;   // false = leave the head-tracking camera to Azimuth
     bool cockpitOnly     = true;     // only DriverCam layers; false = also hood/bumper
     int  staleTimeoutMs  = 500;
     double smoothing     = 0.0;      // 0..1

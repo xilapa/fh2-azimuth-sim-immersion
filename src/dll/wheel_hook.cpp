@@ -7,6 +7,8 @@
 #include <cstring>
 #include <new>
 #include <string>
+#include <utility>
+#include <vector>
 #include "assist_hook.h"
 #include "log.h"
 #include "patch_util.h"
@@ -252,13 +254,12 @@ struct SeenLog {
 SeenLog g_listSeen;
 
 // ---- ListProxy -----------------------------------------------------------------------------
-struct ListProxy { const void* const* vtbl; void* realView; LONG refs; bool withFake; };
+// The index map is built once per get_Controllers call: the real indices that are exposed (in order),
+// then the fake wheel at the end. Real controllers that answer IWheel are left out when
+// OverrideAzimuthWheel is on.
+struct ListProxy { const void* const* vtbl; void* realView; LONG refs; bool withFake; std::vector<uint32_t> map; };
 
-uint32_t realCount(ListProxy* p) {
-    uint32_t n = 0;
-    if (FAILED(viewSize(p->realView, &n))) n = 0;
-    return n;
-}
+uint32_t proxyCount(ListProxy* p) { return (uint32_t)p->map.size() + (p->withFake ? 1 : 0); }
 
 HRESULT lp_QI(void* self, const GUID* riid, void** ppv) {
     ListProxy* p = static_cast<ListProxy*>(self);
@@ -282,9 +283,8 @@ template <int N> HRESULT lpForward(void* self, void* a, void* b) {   // slots 3.
 HRESULT lp_GetAt(void* self, uint32_t i, void** out) {
     ListProxy* p = static_cast<ListProxy*>(self);
     if (!out) return S_OK;
-    uint32_t n = realCount(p);
-    if (i < n) return viewGetAt(p->realView, i, out);
-    if (i == n && p->withFake) {
+    if (i < p->map.size()) return viewGetAt(p->realView, p->map[i], out);
+    if (i == p->map.size() && p->withFake) {
         void* c = VirtualWheel_Controller();
         comAddRef(c);
         *out = c;
@@ -294,23 +294,31 @@ HRESULT lp_GetAt(void* self, uint32_t i, void** out) {
     return kEBounds;
 }
 HRESULT lp_Size(void* self, uint32_t* out) {
-    ListProxy* p = static_cast<ListProxy*>(self);
-    if (out) *out = realCount(p) + (p->withFake ? 1 : 0);
+    if (out) *out = proxyCount(static_cast<ListProxy*>(self));
     return S_OK;
 }
 HRESULT lp_IndexOf(void* self, void* item, uint32_t* idx, uint8_t* found) {
     ListProxy* p = static_cast<ListProxy*>(self);
     if (p->withFake && item == VirtualWheel_Controller()) {
-        if (idx) *idx = realCount(p);
+        if (idx) *idx = (uint32_t)p->map.size();
         if (found) *found = 1;
         return S_OK;
     }
-    return reinterpret_cast<HRESULT (*)(void*, void*, uint32_t*, uint8_t*)>(vtblOf(p->realView)[8])(
-        p->realView, item, idx, found);
+    uint32_t ri = 0;
+    uint8_t f = 0;
+    HRESULT hr = reinterpret_cast<HRESULT (*)(void*, void*, uint32_t*, uint8_t*)>(vtblOf(p->realView)[8])(
+        p->realView, item, &ri, &f);
+    if (FAILED(hr)) return hr;
+    uint32_t pi = 0;
+    bool ok = false;
+    if (f) for (uint32_t k = 0; k < p->map.size(); ++k) if (p->map[k] == ri) { pi = k; ok = true; break; }
+    if (idx) *idx = ok ? pi : 0;
+    if (found) *found = ok ? 1 : 0;
+    return hr;
 }
 HRESULT lp_GetMany(void* self, uint32_t start, uint32_t cap, void** items, uint32_t* actual) {
     ListProxy* p = static_cast<ListProxy*>(self);
-    uint32_t size = realCount(p) + (p->withFake ? 1 : 0);
+    uint32_t size = proxyCount(p);
     uint32_t got = 0;
     while (items && start + got < size && got < cap) {
         void* e = nullptr;
@@ -358,25 +366,34 @@ HRESULT sp_GetControllers(void* self, void** out) {
     if (g_azimuthHasWheel.load()) return hr;
     uint32_t n = 0;
     if (FAILED(viewSize(view, &n))) n = 0;
+    std::vector<uint32_t> keep;
+    bool hidAny = false;
     for (uint32_t i = 0; i < n; ++i) {
         void* c = nullptr;
-        if (FAILED(viewGetAt(view, i, &c)) || !c) continue;
+        if (FAILED(viewGetAt(view, i, &c)) || !c) { keep.push_back(i); continue; }
         void* w = nullptr;
         bool isWheel = SUCCEEDED(comQI(c, kIidWheel, &w)) && w;
         if (w) comRelease(w);
         comRelease(c);
-        if (isWheel) {
+        if (!isWheel) { keep.push_back(i); continue; }
+        if (!g_wc.overrideAzimuthWheel) {
             g_azimuthHasWheel = true;
             LOG("wheel: Azimuth already provides a wheel; virtual wheel disabled");
             return hr;
         }
+        hidAny = true;
+    }
+    if (hidAny) {
+        static std::atomic<bool> hiddenLogged{false};
+        if (!hiddenLogged.exchange(true))
+            LOG("wheel: Azimuth provides a wheel; hidden, using the plugin's wheel instead");
     }
 
     if (g_wc.userMode == WheelUserMode::Auto) {
         void* user = nullptr;
-        if (n >= 1) {
+        if (!keep.empty()) {
             void* c = nullptr;
-            if (SUCCEEDED(viewGetAt(view, 0, &c)) && c) {
+            if (SUCCEEDED(viewGetAt(view, keep[0], &c)) && c) {
                 HRESULT uh = reinterpret_cast<HRESULT (*)(void*, void**)>(vtblOf(c)[8])(c, &user);
                 if (FAILED(uh)) user = nullptr;
                 comRelease(c);
@@ -400,10 +417,10 @@ HRESULT sp_GetControllers(void* self, void** out) {
         if (u) comRelease(u);
     }
 
-    ListProxy* lp = new (std::nothrow) ListProxy{g_listVtbl, view, 1, true};
+    ListProxy* lp = new (std::nothrow) ListProxy{g_listVtbl, view, 1, true, std::move(keep)};
     if (!lp) return hr;
     static std::atomic<bool> addedLogged{false};
-    if (!addedLogged.exchange(true)) LOG("wheel: virtual wheel added to the controller list (index %u)", n);
+    if (!addedLogged.exchange(true)) LOG("wheel: virtual wheel added to the controller list (index %u)", (unsigned)lp->map.size());
     *out = lp;
     return hr;
 }

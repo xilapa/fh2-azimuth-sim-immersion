@@ -343,7 +343,9 @@ bool installWhenReady(const Config& cfg) {
                 LOG("this game build is not recognised; head tracking and wheel support stay dormant, the game runs unmodified");
                 return false;
             }
-            bool patched = patch(base);
+            bool patched = false;
+            if (cfg.overrideAzimuthHeadTracking) patched = patch(base);
+            else LOG("head tracking: left to Azimuth (OverrideAzimuthHeadTracking=0)");
             WheelHook_Install(base, cfg);
             FovHook_Install(base, cfg);
             AssistHook_Install(base, cfg);

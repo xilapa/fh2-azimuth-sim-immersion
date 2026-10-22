@@ -112,6 +112,7 @@ static const char* wheelAxisName(WheelAxis a) {
 }
 static void readWheel(const wchar_t* ini, WheelConfig& w) {
     w.enabled        = readI(ini, "Wheel", "Enabled", 1) != 0;
+    w.overrideAzimuthWheel = readI(ini, "Wheel", "OverrideAzimuthWheel", 1) != 0;
     w.deviceMatch    = readStr(ini, "Wheel", "DeviceMatch", "G29");
     w.wheelRange     = readI(ini, "Wheel", "WheelRange", 900);
     if (w.wheelRange < 40 || w.wheelRange > 65535) {
@@ -205,12 +206,12 @@ static void readWheel(const wchar_t* ini, WheelConfig& w) {
             t.alignGain, t.alignStart, t.alignFull, t.rumbleGain);
     }
     LOG("config: wheel enabled %d match '%s' range %d axes steer %s%s thr %s brk %s clu %s pedalsInv %d dz %.2f "
-        "hshifter %d user %s rescan %d id %04x:%04x flag14 %d test %d ffb %d gain %.2f inv %d",
+        "hshifter %d user %s rescan %d id %04x:%04x flag14 %d test %d ffb %d gain %.2f inv %d overrideAzimuth %d",
         w.enabled, w.deviceMatch.c_str(), w.wheelRange, wheelAxisName(w.steeringAxis),
         w.steeringInvert ? "(inv)" : "", wheelAxisName(w.throttleAxis), wheelAxisName(w.brakeAxis),
         wheelAxisName(w.clutchAxis), w.pedalsInverted, w.pedalDeadzone, w.hShifter,
         w.userMode == WheelUserMode::Auto ? "auto" : "none", w.forceRescan, w.vendorId, w.productId,
-        w.configFlag14, w.testMode, w.ffbEnabled, w.ffbGain, w.ffbInvert);
+        w.configFlag14, w.testMode, w.ffbEnabled, w.ffbGain, w.ffbInvert, w.overrideAzimuthWheel);
 }
 
 // "on" / "off" / anything else (auto).
@@ -221,7 +222,8 @@ static AssistMode parseAssistWord(const std::string& tok, bool& set) {
     return t == "on" ? AssistMode::On : t == "off" ? AssistMode::Off : AssistMode::Game;
 }
 
-// [Cars] section: key = car Id, value = "ABS,TC,STM", each on|off|auto (two fields = old format, STM auto).
+// [Cars] section: key = car Id, value = "ABS,TC,STM,CLUTCH", each on|off|auto (missing fields = auto).
+// For CLUTCH, on = the car has a clutch, off = it has none.
 static void loadCarOverrides(const std::wstring& path, std::vector<CarAssistOverride>& out) {
     if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) return;
     std::vector<wchar_t> buf(32768);
@@ -236,12 +238,14 @@ static void loadCarOverrides(const std::wstring& path, std::vector<CarAssistOver
         std::string val;
         for (wchar_t wc : line.substr(eq + 1)) val += wc < 128 ? (char)wc : '?';
         size_t c1 = val.find(','), c2 = c1 == std::string::npos ? c1 : val.find(',', c1 + 1);
+        size_t c3 = c2 == std::string::npos ? c2 : val.find(',', c2 + 1);
         CarAssistOverride o;
         o.id = (unsigned)id;
         o.abs = parseAssistWord(val.substr(0, c1), o.absSet);
         if (c1 != std::string::npos) o.tc = parseAssistWord(val.substr(c1 + 1, c2 == std::string::npos ? c2 : c2 - c1 - 1), o.tcSet);
-        if (c2 != std::string::npos) o.stm = parseAssistWord(val.substr(c2 + 1), o.stmSet);
-        if (o.absSet || o.tcSet || o.stmSet) out.push_back(o);
+        if (c2 != std::string::npos) o.stm = parseAssistWord(val.substr(c2 + 1, c3 == std::string::npos ? c3 : c3 - c2 - 1), o.stmSet);
+        if (c3 != std::string::npos) o.clutch = parseAssistWord(val.substr(c3 + 1), o.clutchSet);
+        if (o.absSet || o.tcSet || o.stmSet || o.clutchSet) out.push_back(o);
     }
 }
 
@@ -268,6 +272,7 @@ Config loadConfig(const std::wstring& iniPath) {
     c.udpPort         = readI(ini, "Network", "UdpPort", 4242);
     c.bindAddress     = readStr(ini, "Network", "BindAddress", "127.0.0.1");
     c.enableOnStartup = readI(ini, "General", "EnableOnStartup", 1) != 0;
+    c.overrideAzimuthHeadTracking = readI(ini, "General", "OverrideAzimuthHeadTracking", 1) != 0;
     c.cockpitOnly     = readI(ini, "General", "CockpitOnly", 1) != 0;
     c.staleTimeoutMs  = readI(ini, "General", "StaleTimeoutMs", 500);
     c.smoothing       = readF(ini, "General", "Smoothing", 0.0);
@@ -295,8 +300,8 @@ Config loadConfig(const std::wstring& iniPath) {
         for (int k = 0; k < c.wheelRecenterCount; ++k) wb += (k ? "+" : "") + std::to_string(c.wheelRecenterButtons[k]);
         LOG("config: wheel recenter buttons %s", wb.empty() ? "none" : wb.c_str());
     }
-    LOG("config: port %d bind %s enabled %d cockpitOnly %d smoothing %.2f",
-        c.udpPort, c.bindAddress.c_str(), c.enableOnStartup, c.cockpitOnly, c.smoothing);
+    LOG("config: port %d bind %s enabled %d cockpitOnly %d smoothing %.2f overrideAzimuthHT %d",
+        c.udpPort, c.bindAddress.c_str(), c.enableOnStartup, c.cockpitOnly, c.smoothing, c.overrideAzimuthHeadTracking);
     LOG("config: yaw side gains left %.2f right %.2f leftIsPositive %d", c.map.yawLeftGain, c.map.yawRightGain,
         c.map.yawLeftIsPositive);
     LOG("config: yaw g%.2f i%d l%.0f  pitch g%.2f i%d l%.0f  roll g%.2f i%d l%.0f",
@@ -320,7 +325,8 @@ Config loadConfig(const std::wstring& iniPath) {
     c.sim.realisticStm     = readI(ini, "Simulation", "RealisticSTM", 0) != 0;
     if (readI(ini, "Simulation", "TieStabilityToTC", 0) != 0)
         LOG("config: TieStabilityToTC is no longer used; use RealisticSTM");
-    LOG("config: realistic abs %d tc %d stm %d optional %s", c.sim.realisticAbs, c.sim.realisticTc, c.sim.realisticStm,
+    c.sim.realisticClutch  = readI(ini, "Simulation", "RealisticClutch", 0) != 0;
+    LOG("config: realistic abs %d tc %d stm %d clutch %d optional %s", c.sim.realisticAbs, c.sim.realisticTc, c.sim.realisticStm, c.sim.realisticClutch,
         c.sim.optionalAssists == AssistMode::On ? "on" : c.sim.optionalAssists == AssistMode::Off ? "off" : "game");
     {
         DrawDistConfig& d = c.drawDist;

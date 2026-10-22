@@ -112,10 +112,31 @@ static HRESULT MSABI h_QI(void* self, const GUID* iid, void** out) {
 static ULONG MSABI h_AddRef(void*) { return 2; }
 static ULONG MSABI h_Release(void*) { return 1; }
 static HRESULT MSABI h_Stub(void*) { return S_OK; }
-static HRESULT MSABI h_ViewGetAt(void*, uint32_t, void** out) { if (out) *out = nullptr; return (HRESULT)0x8000000BL; }
-static HRESULT MSABI h_ViewSize(void*, uint32_t* n) { *n = 0; return S_OK; }
-static HRESULT MSABI h_ViewIndexOf(void*, void*, uint32_t* i, uint8_t* f) { *i = 0; *f = 0; return S_OK; }
+// Two real controllers in the fake list: a plain pad (does not answer IWheel) and a wheel that Azimuth
+// "provides" (answers IWheel). OverrideAzimuthWheel=1 (default) must hide the second one.
+static HRESULT MSABI h_CtlQI(void* self, const GUID* iid, void** out);
+static HRESULT MSABI h_GetUserNull(void*, void** out) { if (out) *out = nullptr; return S_OK; }
+static void* g_hPadVtbl[16], *g_hWheelVtbl[16];
+static HObj g_hPad = {g_hPadVtbl}, g_hWheelCtl = {g_hWheelVtbl};
+static HRESULT MSABI h_ViewGetAt(void*, uint32_t i, void** out) {
+    if (out) *out = nullptr;
+    if (i > 1) return (HRESULT)0x8000000BL;
+    if (out) *out = i == 0 ? (void*)&g_hPad : (void*)&g_hWheelCtl;
+    return S_OK;
+}
+static HRESULT MSABI h_ViewSize(void*, uint32_t* n) { *n = 2; return S_OK; }
+static HRESULT MSABI h_ViewIndexOf(void*, void* item, uint32_t* i, uint8_t* f) {
+    *i = item == (void*)&g_hWheelCtl ? 1 : 0;
+    *f = item == (void*)&g_hPad || item == (void*)&g_hWheelCtl;
+    return S_OK;
+}
 static HRESULT MSABI h_ViewGetMany(void*, uint32_t, uint32_t, void**, uint32_t* a) { *a = 0; return S_OK; }
+static HRESULT MSABI h_CtlQI(void* self, const GUID* iid, void** out) {
+    if (!out) return E_POINTER;
+    if (IsEqualGUID(*iid, kIidUnknownH) || (self == (void*)&g_hWheelCtl && IsEqualGUID(*iid, kIidWheelH))) { *out = self; return S_OK; }
+    *out = nullptr;
+    return E_NOINTERFACE;
+}
 static void* g_hViewVtbl[10] = {(void*)h_QI, (void*)h_AddRef, (void*)h_Release, (void*)h_Stub, (void*)h_Stub,
                                 (void*)h_Stub, (void*)h_ViewGetAt, (void*)h_ViewSize, (void*)h_ViewIndexOf,
                                 (void*)h_ViewGetMany};
@@ -167,10 +188,29 @@ static void wheelTests(uint8_t* base, const uint8_t origFrame[5], FnWCS createSt
     if (!view) return;
     uint32_t size = 99;
     ((FnU32Out)slotOf(view, 7))(view, &size);
-    CHECK(size == 1, "list size == 1 (got %u)", size);
+    CHECK(size == 2, "OverrideAzimuthWheel: list size == real count (2) - 1 + 1 (got %u)", size);
+    {
+        bool sawHarnessWheel = false;
+        for (uint32_t i = 0; i < size; ++i) {
+            void* c = nullptr;
+            if (SUCCEEDED(((FnGetAt)slotOf(view, 6))(view, i, &c)) && c == (void*)&g_hWheelCtl) sawHarnessWheel = true;
+        }
+        CHECK(!sawHarnessWheel, "GetAt never returns the harness's (Azimuth's) wheel");
+        void* c0 = nullptr; void* w0 = nullptr;
+        ((FnGetAt)slotOf(view, 6))(view, 0, &c0);
+        CHECK(c0 == (void*)&g_hPad && FAILED(((FnQI)slotOf(c0, 0))(c0, &kIidWheelH, &w0)), "GetAt(0) is the real pad");
+        void* c2 = (void*)1;
+        CHECK(((FnGetAt)slotOf(view, 6))(view, 2, &c2) == (HRESULT)0x8000000BL && c2 == nullptr, "GetAt(2) out of bounds");
+        uint32_t idx = 9; uint8_t found = 0;
+        typedef HRESULT (MSABI *FnIndexOf)(void*, void*, uint32_t*, uint8_t*);
+        ((FnIndexOf)slotOf(view, 8))(view, &g_hWheelCtl, &idx, &found);
+        CHECK(!found, "IndexOf(Azimuth's wheel) -> not found");
+        ((FnIndexOf)slotOf(view, 8))(view, &g_hPad, &idx, &found);
+        CHECK(found && idx == 0, "IndexOf(pad) == 0");
+    }
     void* ctrl = nullptr;
-    HRESULT hr = ((FnGetAt)slotOf(view, 6))(view, 0, &ctrl);
-    CHECK(hr == S_OK && ctrl, "GetAt(0) succeeds");
+    HRESULT hr = ((FnGetAt)slotOf(view, 6))(view, 1, &ctrl);
+    CHECK(hr == S_OK && ctrl && ctrl != (void*)&g_hWheelCtl, "GetAt(1) is the plugin's wheel");
     if (!ctrl) return;
     void* gp = (void*)1;
     hr = ((FnQI)slotOf(ctrl, 0))(ctrl, &kIidGamepadH, &gp);
@@ -323,6 +363,15 @@ static void ffbTests(uint8_t* base, HMODULE plugin) {
 typedef uint8_t (MSABI *FnGetter)(void*);
 
 // abs / stm '*' = any
+// clutch car, skipping the cars used by the assist override lines
+static const fh2::CarInfo* findClutch(char clutch, int skip, const fh2::CarInfo* x1 = nullptr, const fh2::CarInfo* x2 = nullptr) {
+    for (size_t i = 0; i < fh2::kCarCount; ++i) {
+        const fh2::CarInfo& c = fh2::kCars[i];
+        if (c.clutch == clutch && &c != x1 && &c != x2 && skip-- == 0) return &c;
+    }
+    return nullptr;
+}
+
 static const fh2::CarInfo* findCarBy(char abs, char tc, char stm, int skip) {
     for (size_t i = 0; i < fh2::kCarCount; ++i)
         if ((abs == '*' || fh2::kCars[i].abs == abs) && fh2::kCars[i].tc == tc && (stm == '*' || fh2::kCars[i].stm == stm) && skip-- == 0)
@@ -330,7 +379,7 @@ static const fh2::CarInfo* findCarBy(char abs, char tc, char stm, int skip) {
     return nullptr;
 }
 
-static void assistTests(uint8_t* base, uint64_t absOrig, uint64_t stmOrig, uint64_t tcOrig) {
+static void assistTests(uint8_t* base, uint64_t absOrig, uint64_t stmOrig, uint64_t tcOrig, uint64_t clutchOrig) {
     printf("realistic assists:\n");
     const uintptr_t kVt[2] = {0x2c5bfc8, 0x2cf39c0};
     bool patched = false;
@@ -342,6 +391,7 @@ static void assistTests(uint8_t* base, uint64_t absOrig, uint64_t stmOrig, uint6
         CHECK(*(uint64_t*)(base + kVt[v] + 0xd8) != absOrig && *(uint64_t*)(base + kVt[v] + 0xd8) != 0, "vtable %d ABS slot re-pointed", v);
         CHECK(*(uint64_t*)(base + kVt[v] + 0xf0) != tcOrig && *(uint64_t*)(base + kVt[v] + 0xf0) != 0, "vtable %d TC slot re-pointed", v);
         CHECK(*(uint64_t*)(base + kVt[v] + 0xe8) != stmOrig && *(uint64_t*)(base + kVt[v] + 0xe8) != 0, "vtable %d STM slot re-pointed", v);
+        CHECK(*(uint64_t*)(base + kVt[v] + 0xf8) != clutchOrig && *(uint64_t*)(base + kVt[v] + 0xf8) != 0, "vtable %d clutch slot re-pointed", v);
     }
     if (!patched) return;
 
@@ -433,6 +483,47 @@ static void assistTests(uint8_t* base, uint64_t absOrig, uint64_t stmOrig, uint6
     void* badElem = (void*)(uintptr_t)16;
     callWithRsi(target, slot, in, &badElem);
     CHECK(true, "garbage rsi values tolerated");
+
+    // ---- realistic clutch: shifting mode 0 automatic, 1 manual, 2 manual with clutch ----
+    {
+        FnGetter clG  = (FnGetter)*(uint64_t*)(base + kVt[0] + 0xf8);
+        FnGetter clG1 = (FnGetter)*(uint64_t*)(base + kVt[1] + 0xf8);
+        const fh2::CarInfo* a1 = findCarBy('y', 'y', 'y', 1);
+        const fh2::CarInfo* a2 = findCarBy('y', 'y', 'y', 2);
+        const fh2::CarInfo* cyOv = findClutch('y', 0, a1, a2);       // same picks as the 4-field lines written at start-up
+        const fh2::CarInfo* cnOv = findClutch('n', 0, a1, a2);
+        const fh2::CarInfo* cy = findClutch('y', 1, a1, a2);         // plain cars: no clutch override
+        const fh2::CarInfo* cn = findClutch('n', 1, a1, a2);
+        const fh2::CarInfo* co = findClutch('o', 0, a1, a2);
+        CHECK(cy && cn && co && cyOv && cnOv, "clutch test cars found: yes %u, no %u, optional %u, override yes->off %u, override no->on %u",
+              cy ? cy->id : 0, cn ? cn->id : 0, co ? co->id : 0, cyOv ? cyOv->id : 0, cnOv ? cnOv->id : 0);
+        if (cy && cn && co && cyOv && cnOv) {
+            auto setCar = [&](uint32_t id) {
+                *(uint32_t*)(carObj + 0x118) = id;
+                callWithRsi(target, slot, in, &elem);
+            };
+            auto mode = [&](FnGetter g, uint8_t real) { choices[0x2b5] = real; return (unsigned)g(choices); };
+            setCar(999999);
+            CHECK(mode(clG, 0) == 0 && mode(clG, 1) == 1 && mode(clG, 2) == 2, "unknown car: shifting mode unchanged");
+            setCar(cy->id);
+            CHECK(mode(clG, 1) == 2 && mode(clG, 2) == 2 && mode(clG, 0) == 0,
+                  "car %u (clutch yes): manual 1 -> 2, 2 -> 2, automatic 0 -> 0 (got %u %u %u)", cy->id, mode(clG, 1), mode(clG, 2), mode(clG, 0));
+            CHECK(mode(clG1, 1) == 2, "second vtable behaves the same (clutch yes, 1 -> 2)");
+            setCar(cn->id);
+            CHECK(mode(clG, 2) == 1 && mode(clG, 1) == 1 && mode(clG, 0) == 0,
+                  "car %u (clutch no): 2 -> 1, 1 -> 1, 0 -> 0 (got %u %u %u)", cn->id, mode(clG, 2), mode(clG, 1), mode(clG, 0));
+            CHECK(mode(clG1, 2) == 1, "second vtable behaves the same (clutch no, 2 -> 1)");
+            setCar(co->id);
+            CHECK(mode(clG, 0) == 0 && mode(clG, 1) == 1 && mode(clG, 2) == 2, "car %u (clutch optional, OptionalAssists=game): unchanged", co->id);
+            setCar(cyOv->id);              // <id>=auto,auto,auto,off
+            CHECK(mode(clG, 2) == 1 && mode(clG, 1) == 1 && mode(clG, 0) == 0,
+                  "car %u (clutch yes, 4-field override clutch off): 2 -> 1, 1 -> 1, 0 -> 0", cyOv->id);
+            setCar(cnOv->id);              // <id>=auto,auto,auto,on
+            CHECK(mode(clG, 1) == 2 && mode(clG, 2) == 2 && mode(clG, 0) == 0,
+                  "car %u (clutch no, 4-field override clutch on): 1 -> 2, 2 -> 2, 0 -> 0", cnOv->id);
+            choices[0x2b5] = 0;
+        }
+    }
 }
 
 static void fovTests(uint8_t* base) {
@@ -527,6 +618,11 @@ int wmain(int argc, wchar_t** argv) {
     if (!rawBuf || !createString) { printf("combase string functions missing\n"); return 2; }
     for (int i = 0; i < 3; ++i) g_hStaticsVtbl[i] = g_hViewVtbl[i];
     g_hStaticsVtbl[3] = g_hStaticsVtbl[4] = g_hStaticsVtbl[5] = (void*)h_Stub;
+    for (int i = 0; i < 16; ++i) g_hPadVtbl[i] = g_hWheelVtbl[i] = (void*)h_Stub;
+    g_hPadVtbl[0] = g_hWheelVtbl[0] = (void*)h_CtlQI;
+    g_hPadVtbl[1] = g_hWheelVtbl[1] = (void*)h_AddRef;
+    g_hPadVtbl[2] = g_hWheelVtbl[2] = (void*)h_Release;
+    g_hPadVtbl[8] = g_hWheelVtbl[8] = (void*)h_GetUserNull;
     g_hStaticsVtbl[6] = (void*)h_GetControllers;
     for (int i = 7; i < 16; ++i) g_hStaticsVtbl[i] = (void*)h_Stub;
     *(void**)(base + 0x1dd1330) = (void*)&fakeGetActivationFactory;
@@ -546,6 +642,7 @@ int wmain(int argc, wchar_t** argv) {
         WritePrivateProfileStringW(L"Simulation", L"RealisticABS", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealisticTC", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealisticSTM", L"1", iniPath.c_str());
+        WritePrivateProfileStringW(L"Simulation", L"RealisticClutch", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"DrawDistance", L"ShadowDistance", L"200", iniPath.c_str());
         WritePrivateProfileStringW(L"DrawDistance", L"WorldDistance", L"800", iniPath.c_str());
         WritePrivateProfileStringW(L"DrawDistance", L"TrafficDistance", L"300", iniPath.c_str());
@@ -555,6 +652,11 @@ int wmain(int argc, wchar_t** argv) {
         if (ov) WritePrivateProfileStringW(L"Cars", std::to_wstring(ov->id).c_str(), L"off,on", carsPath.c_str());
         const fh2::CarInfo* ov3 = findCarBy('y', 'y', 'y', 2);
         if (ov3) WritePrivateProfileStringW(L"Cars", std::to_wstring(ov3->id).c_str(), L"auto,off,on", carsPath.c_str());
+        // 4-field overrides: a clutch-yes car forced to "no clutch", a clutch-no car forced to "has a clutch"
+        const fh2::CarInfo* cy = findClutch('y', 0, ov, ov3);
+        const fh2::CarInfo* cn = findClutch('n', 0, ov, ov3);
+        if (cy) WritePrivateProfileStringW(L"Cars", std::to_wstring(cy->id).c_str(), L"auto,auto,auto,off", carsPath.c_str());
+        if (cn) WritePrivateProfileStringW(L"Cars", std::to_wstring(cn->id).c_str(), L"auto,auto,auto,on", carsPath.c_str());
     }
     struct RestoreIni {
         std::wstring p, cars;
@@ -564,6 +666,7 @@ int wmain(int argc, wchar_t** argv) {
             WritePrivateProfileStringW(L"Simulation", L"RealisticABS", L"0", p.c_str());
             WritePrivateProfileStringW(L"Simulation", L"RealisticTC", L"0", p.c_str());
             WritePrivateProfileStringW(L"Simulation", L"RealisticSTM", L"0", p.c_str());
+            WritePrivateProfileStringW(L"Simulation", L"RealisticClutch", L"0", p.c_str());
             for (const wchar_t* k : {L"ShadowDistance", L"WorldDistance", L"TrafficDistance", L"RacerDistance"})
                 WritePrivateProfileStringW(L"DrawDistance", k, L"0", p.c_str());
             DeleteFileW(cars.c_str());
@@ -573,6 +676,8 @@ int wmain(int argc, wchar_t** argv) {
     const uintptr_t kVt0 = 0x2c5bfc8;
     const uint64_t absOrig = *(uint64_t*)(base + kVt0 + 0xd8), stmOrig = *(uint64_t*)(base + kVt0 + 0xe8),
                    tcOrig = *(uint64_t*)(base + kVt0 + 0xf0);
+    const uint64_t clutchOrig = *(uint64_t*)(base + kVt0 + 0xf8);
+    if (clutchOrig != (uint64_t)(base + 0xfbcb70)) { printf("clutch getter slot does not hold the expected pointer\n"); return 2; }
 
     HMODULE plugin = LoadLibraryW(argv[2]);
     if (!plugin) { printf("LoadLibrary failed %lu\n", GetLastError()); return 2; }
@@ -656,7 +761,7 @@ int wmain(int argc, wchar_t** argv) {
 
     wheelTests(base, origFrame, createString);
     ffbTests(base, plugin);
-    assistTests(base, absOrig, stmOrig, tcOrig);
+    assistTests(base, absOrig, stmOrig, tcOrig, clutchOrig);
     fovTests(base);
     drawDistTests(base, plugin);
 

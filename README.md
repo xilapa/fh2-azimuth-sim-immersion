@@ -1,6 +1,6 @@
 # FH2 Sim Immersion for Azimuth
 
-**Status: 0.9.3. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
+**Status: 0.9.4. Head tracking tested in-game with Beam Eye Tracker (FreeTrack input).
 Steering wheel support is experimental.**
 
 Realism and immersion add-ons for Forza Horizon 2 running in Azimuth:
@@ -83,7 +83,7 @@ keep them). Hover a setting for its explanation.
   its axes and the numbers of the pressed buttons, to find the right button numbers.
 * **Simulation:** field of view per camera, realistic assists and a list of all known cars with
   what the real car had. Select a car and choose how its ABS / traction control is forced
-  (auto, on or off); Apply saves `FH2SimImmersion_cars.ini` (a car with both on auto is removed).
+  (auto, on or off), including whether it has a clutch; Apply saves `FH2SimImmersion_cars.ini` (a car with both on auto is removed).
 * **Draw distance:** a slider per distance (see [Draw distance](#draw-distance)), with a
   top-down picture of the distances to scale.
 * **Main:** the path of `azimuth.exe`, Start Azimuth, the diagnostics switch, and a status box
@@ -207,7 +207,7 @@ unchanged` and that part does nothing.
 
 Forza lets you switch ABS, traction control and stability control on or off for every car. With
 this option each car gets what its real counterpart had: a 1960s Ferrari drives without any of
-them, a modern supercar with all three. The three assists are independent: each has its own
+them, a modern supercar with all three. The assists are independent: each has its own
 switch and its own research data. The plugin overrides the game's assist settings for the car you are
 driving, so your menu choices stay untouched for everything it does not decide.
 
@@ -217,7 +217,11 @@ The `[Simulation]` section has the keys:
   control and stability control, each on its own (default `0`: the game setting is used for every car).
 - `OptionalAssists=game|on|off` is what to do for cars where the real car had the aid only as an
   option: `game` keeps your game setting (default), `on` or `off` forces it. It applies to all
-  three assists.
+  three assists and the clutch.
+- `RealisticClutch=1` (default `0`) gives cars that had a clutch the game's "manual with clutch"
+  shifting and cars without one (sequential or dual-clutch gearboxes) "manual without clutch". It
+  only changes the choice of a player who drives manual: if you drive with automatic gears in the
+  game, the car stays automatic. Cars where the clutch was optional follow `OptionalAssists`.
 
 `TieStabilityToTC` from version 0.9.0 is no longer used (the log says so); use `RealisticSTM`.
 
@@ -225,27 +229,37 @@ Per-car overrides go in an optional file `FH2SimImmersion_cars.ini` next to the 
 
 ```
 [Cars]
-; car Id = ABS,TC,STM    each on, off or auto (auto = use the research data)
-1105=on,auto,off
+; car Id = ABS,TC,STM,CLUTCH    each on, off or auto (auto = use the research data)
+; for CLUTCH, on = the car has a clutch, off = it has none
+1105=on,auto,off,on
 ```
 
-Old lines with two fields (`Id=ABS,TC`) still work; the stability control is then `auto`.
+Old lines with two or three fields (`Id=ABS,TC`, `Id=ABS,TC,STM`) still work; the missing ones are `auto`.
 
 The data comes from research of each real car and is in `data/car_assists.csv` (Id, name, year, ABS,
-TC, STM, confidence and notes for every car). It can contain mistakes: corrections are welcome. Cars
+TC, STM, clutch, confidence and notes for every car). It can contain mistakes: corrections are welcome. Cars
 marked unknown, and cars that are not in the list, keep your game setting.
 
-To check that it works, look in `FH2SimImmersion.log` for `car: <id> <name> (ABS ..., TC ..., STM ...)` when
-a race starts, and `assists: ABS forced ... for <name>` (likewise `TC` and `stability control`) when the plugin changes a setting. With
+To check that it works, look in `FH2SimImmersion.log` for `car: <id> <name> (ABS ..., TC ..., STM ..., clutch ...)` when
+a race starts, and `assists: ABS forced ... for <name>` (likewise `TC`, `stability control` and `clutch`) when the plugin changes a setting. With
 `Diagnostics=1` the log also shows `assists diag:` lines with how often the game asked for the
 settings.
+
+## If Azimuth adds wheel or head-tracking support
+
+Azimuth 0.9.10 has neither. If a later version of Azimuth provides its own steering wheel, the
+plugin hides it and uses its own wheel with force feedback (`OverrideAzimuthWheel=1` in `[Wheel]`,
+the default); set it to `0` to use Azimuth's wheel and turn this plugin's wheel off. In the same way
+`OverrideAzimuthHeadTracking=1` in `[General]` (default) keeps this plugin in charge of the game's
+head-tracking camera; with `0` the plugin leaves that camera to Azimuth and its own head tracking
+is off. Both switches are also in the settings window (Wheel tab, group Advanced; Head tracking tab).
 
 ## Checking that it works
 
 `FH2SimImmersion.log` is written next to the DLL. A good run looks like this:
 
 ```
-FH2 Sim Immersion 0.9.3 loaded into pid ... (...\azimuth.exe)
+FH2 Sim Immersion 0.9.4 loaded into pid ... (...\azimuth.exe)
 waiting for the Forza Horizon 2 image to be mapped...
 game image found at 0000...
 patch: 5 head-tracking inputs redirected (thunks at ...)

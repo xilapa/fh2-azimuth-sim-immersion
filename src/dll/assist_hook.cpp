@@ -1,4 +1,4 @@
-// Replaces the ABS / traction control / stability control getters of LocalPlayerChoices so that
+// Replaces the ABS / traction control / stability control / shifting-mode getters of LocalPlayerChoices so that
 // each car gets the assists its real counterpart had (data/car_assists.csv), or a per-car override.
 #include "assist_hook.h"
 #include <windows.h>
@@ -12,17 +12,20 @@ namespace {
 
 constexpr uintptr_t kVtableRva[2]  = {0x2c5bfc8, 0x2cf39c0};   // LocalPlayerChoices, TRefCountedObject<ForzaLocalPlayerChoices>
 constexpr size_t    kAbsSlotOff    = 0xd8;                      // braking mode: 0 assisted, 1 ABS on, 2 ABS off
+constexpr size_t    kClutchSlotOff = 0xf8;                   // shifting mode: 0 automatic, 1 manual, 2 manual with clutch
 constexpr size_t    kStmSlotOff    = 0xe8;                      // stability control: 0 on, 1 off
 constexpr size_t    kTcSlotOff     = 0xf0;                      // traction control: 0 on, 1 off
 constexpr uintptr_t kAbsGetterRva  = 0xfbcb50;
 constexpr uintptr_t kStmGetterRva  = 0xfbcb80;
 constexpr uintptr_t kTcGetterRva   = 0x1391660;
+constexpr uintptr_t kClutchGetterRva = 0xfbcb70;
 constexpr size_t    kAbsFieldOff   = 0x2b1;
 constexpr size_t    kStmFieldOff   = 0x2b3;
 constexpr size_t    kTcFieldOff    = 0x2b4;
+constexpr size_t    kClutchFieldOff = 0x2b5;
 
 uintptr_t g_base = 0;
-bool      g_absOn = false, g_tcOn = false, g_stmOn = false;
+bool      g_absOn = false, g_tcOn = false, g_stmOn = false, g_clutchOn = false;
 AssistMode g_optional = AssistMode::Game;
 std::vector<CarAssistOverride> g_overrides;
 
@@ -30,9 +33,9 @@ std::atomic<bool>     g_installed{false};
 std::atomic<int64_t>  g_carId{-1};
 std::atomic<uint64_t> g_carTick{0};
 std::atomic<const char*> g_carName{nullptr};
-std::atomic<int>      g_absMode{0}, g_tcMode{0}, g_stmMode{0};              // AssistMode of the current car
-std::atomic<bool>     g_loggedAbs{false}, g_loggedTc{false}, g_loggedStm{false};
-std::atomic<uint32_t> g_callsAbs{0}, g_callsTc{0}, g_callsStm{0};
+std::atomic<int>      g_absMode{0}, g_tcMode{0}, g_stmMode{0}, g_clutchMode{0};   // AssistMode of the current car (clutch: On = has one)
+std::atomic<bool>     g_loggedAbs{false}, g_loggedTc{false}, g_loggedStm{false}, g_loggedClutch{false};
+std::atomic<uint32_t> g_callsAbs{0}, g_callsTc{0}, g_callsStm{0}, g_callsClutch{0};
 
 const char* word(char c) {
     switch (c) { case 'y': return "yes"; case 'n': return "no"; case 'o': return "optional"; default: return "unknown"; }
@@ -91,46 +94,67 @@ uint8_t stmGetter(void* self) {
     return tcLike(self, kStmFieldOff, g_stmMode, g_loggedStm, "stability control");
 }
 
+uint8_t clutchGetter(void* self) {
+    uint8_t real = *(reinterpret_cast<uint8_t*>(self) + kClutchFieldOff);
+    g_callsClutch.fetch_add(1, std::memory_order_relaxed);
+    uint8_t out = real;
+    switch (static_cast<AssistMode>(g_clutchMode.load(std::memory_order_relaxed))) {
+        case AssistMode::On:  if (real == 1) out = 2; break;           // automatic stays automatic
+        case AssistMode::Off: if (real == 2) out = 1; break;
+        default: break;
+    }
+    if (out != real && !g_loggedClutch.exchange(true)) {
+        const char* n = g_carName.load();
+        LOG("assists: clutch forced %s for %s", out == 2 ? "on" : "off", n ? n : "unknown car");
+    }
+    return out;
+}
+
 // ---- decision per car ----------------------------------------------------------------------------
 void decide(uint32_t id, const CarInfo* car) {
-    AssistMode a = AssistMode::Game, t = AssistMode::Game, s = AssistMode::Game;
+    AssistMode a = AssistMode::Game, t = AssistMode::Game, s = AssistMode::Game, c = AssistMode::Game;
     if (car) {
         if (g_absOn) a = carValue(car->abs);
         if (g_tcOn)  t = carValue(car->tc);
         if (g_stmOn) s = carValue(car->stm);
+        if (g_clutchOn) c = carValue(car->clutch);
     }
     for (const auto& o : g_overrides) {
         if (o.id != id) continue;
         if (o.absSet && g_absOn) a = o.abs;
         if (o.tcSet && g_tcOn)   t = o.tc;
         if (o.stmSet && g_stmOn) s = o.stm;
+        if (o.clutchSet && g_clutchOn) c = o.clutch;
         break;
     }
     g_absMode = static_cast<int>(a);
     g_tcMode  = static_cast<int>(t);
     g_stmMode = static_cast<int>(s);
+    g_clutchMode = static_cast<int>(c);
 }
 
 DWORD WINAPI diagThread(void*) {
     for (;;) {
         Sleep(5000);
         int64_t id = g_carId.load();
-        LOG("assists diag: car %u getters abs %u tc %u stm %u (calls since last)", id < 0 ? 0u : (unsigned)id,
-            g_callsAbs.exchange(0), g_callsTc.exchange(0), g_callsStm.exchange(0));
+        LOG("assists diag: car %u getters abs %u tc %u stm %u clutch %u (calls since last)", id < 0 ? 0u : (unsigned)id,
+            g_callsAbs.exchange(0), g_callsTc.exchange(0), g_callsStm.exchange(0), g_callsClutch.exchange(0));
     }
 }
 
-bool patchVtable(int which, void* absFn, void* stmFn, void* tcFn) {
+bool patchVtable(int which, void* absFn, void* stmFn, void* tcFn, void* clutchFn) {
     uint64_t* vt = reinterpret_cast<uint64_t*>(g_base + kVtableRva[which]);
     uint64_t* sAbs = vt + kAbsSlotOff / 8;
     uint64_t* sStm = vt + kStmSlotOff / 8;
     uint64_t* sTc  = vt + kTcSlotOff / 8;
-    if (*sAbs != g_base + kAbsGetterRva || *sStm != g_base + kStmGetterRva || *sTc != g_base + kTcGetterRva) {
+    uint64_t* sClutch = vt + kClutchSlotOff / 8;
+    if (*sAbs != g_base + kAbsGetterRva || *sStm != g_base + kStmGetterRva || *sTc != g_base + kTcGetterRva ||
+        *sClutch != g_base + kClutchGetterRva) {
         LOG("assists: vtable %d mismatch; unchanged", which);
         return false;
     }
     struct Job { uint64_t* slot; void* fn; };
-    const Job jobs[3] = {{sAbs, absFn}, {sStm, stmFn}, {sTc, tcFn}};
+    const Job jobs[4] = {{sAbs, absFn}, {sStm, stmFn}, {sTc, tcFn}, {sClutch, clutchFn}};
     for (const Job& j : jobs) {
         if (!j.fn) continue;
         DWORD prot;
@@ -153,28 +177,31 @@ void AssistHook_SetPlayerCar(uint32_t ordinal) {
     const CarInfo* car = FindCar(ordinal);
     decide(ordinal, car);
     g_carName.store(car ? car->name : nullptr);
-    g_loggedAbs = false; g_loggedTc = false; g_loggedStm = false;
+    g_loggedAbs = false; g_loggedTc = false; g_loggedStm = false; g_loggedClutch = false;
     g_carId.store(static_cast<int64_t>(ordinal));
-    LOG("car: %u %s (ABS %s, TC %s, STM %s)", ordinal, car ? car->name : "unknown car", car ? word(car->abs) : "unknown",
-        car ? word(car->tc) : "unknown", car ? word(car->stm) : "unknown");
+    LOG("car: %u %s (ABS %s, TC %s, STM %s, clutch %s)", ordinal, car ? car->name : "unknown car",
+        car ? word(car->abs) : "unknown", car ? word(car->tc) : "unknown", car ? word(car->stm) : "unknown",
+        car ? word(car->clutch) : "unknown");
 }
 
 void AssistHook_Install(uintptr_t base, const Config& cfg) {
     g_absOn = cfg.sim.realisticAbs;
     g_tcOn  = cfg.sim.realisticTc;
     g_stmOn = cfg.sim.realisticStm;
-    if (!g_absOn && !g_tcOn && !g_stmOn) return;
+    g_clutchOn = cfg.sim.realisticClutch;
+    if (!g_absOn && !g_tcOn && !g_stmOn && !g_clutchOn) return;
     g_base = base;
     g_optional = cfg.sim.optionalAssists;
     g_overrides = cfg.sim.carOverrides;
     void* absFn = g_absOn ? reinterpret_cast<void*>(&absGetter) : nullptr;
     void* tcFn  = g_tcOn ? reinterpret_cast<void*>(&tcGetter) : nullptr;
     void* stmFn = g_stmOn ? reinterpret_cast<void*>(&stmGetter) : nullptr;
+    void* clutchFn = g_clutchOn ? reinterpret_cast<void*>(&clutchGetter) : nullptr;
     int ok = 0;
-    for (int i = 0; i < 2; ++i) if (patchVtable(i, absFn, stmFn, tcFn)) ++ok;
+    for (int i = 0; i < 2; ++i) if (patchVtable(i, absFn, stmFn, tcFn, clutchFn)) ++ok;
     if (!ok) { LOG("assists: no vtable verified; realistic assists inactive"); return; }
-    LOG("assists: getters installed in %d vtable(s) (ABS %d, TC %d, STM %d, optional %s)", ok, g_absOn, g_tcOn,
-        g_stmOn, modeName(g_optional));
+    LOG("assists: getters installed in %d vtable(s) (ABS %d, TC %d, STM %d, clutch %d, optional %s)", ok, g_absOn, g_tcOn,
+        g_stmOn, g_clutchOn, modeName(g_optional));
     g_installed.store(true, std::memory_order_release);
     if (cfg.diagnostics)
         if (HANDLE t = CreateThread(nullptr, 0, diagThread, nullptr, 0, nullptr)) CloseHandle(t);
