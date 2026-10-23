@@ -418,7 +418,6 @@ void Page::Tick() {
     POINT pt; GetCursorPos(&pt);
     HWND hov = WindowFromPoint(pt);
     Ctl* c = FindByWnd(hov);
-    bool hovering = c != nullptr;
     if (!c) {
         c = FindByWnd(f);
         if (!c && f) c = FindByWnd(GetParent(f));          // the edit part of a combo box
@@ -429,7 +428,6 @@ void Page::Tick() {
         if (!fc && f) fc = FindByWnd(GetParent(f));
         if (fc) EnsureVisible(fc->main);
     }
-    (void)hovering;
     std::string part = c && c->s->part ? c->s->part : "";
     if (part != part_) {
         part_ = part;

@@ -4,7 +4,7 @@
 #include <windows.h>
 #include <string>
 #include <vector>
-#include "ini_parse.h"
+#include "../common/ini_parse.h"
 
 namespace app {
 
@@ -20,8 +20,8 @@ std::wstring DllPath();        // FH2SimImmersion.dll
 const std::vector<IniEntry>& Defaults();                           // parsed kDefaultIni
 const IniEntry* FindDefault(const char* section, const char* key);
 
-// Writes the default file when missing; moves an older-version file to .old.bak first
-// (same rule as the plugin, src/dll/config.cpp).
+// Writes the default file when missing; an older-version file is moved to .old.bak and its values carried over
+// (fh2::EnsureCurrentIni, shared with the plugin).
 void EnsureIni();
 
 std::string ReadSetting(const char* section, const char* key);     // INI value, else the default

@@ -200,7 +200,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT m, WPARAM w, LPARAM l) {
     }
     case WM_COPYDATA: {          // a second instance forwarded "azimuth.exe" to start
         auto* cds = (COPYDATASTRUCT*)l;
-        if (cds->dwData == 1 && cds->lpData) startWithPath(std::wstring((const wchar_t*)cds->lpData, cds->cbData / sizeof(wchar_t)));
+        if (cds->dwData == 1 && cds->lpData) startWithPath(std::wstring((const wchar_t*)cds->lpData, wcsnlen((const wchar_t*)cds->lpData, cds->cbData / sizeof(wchar_t))));
         return TRUE;
     }
     case WM_CLOSE:
@@ -223,12 +223,13 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     G.inst = inst;
 
     HANDLE mutex = CreateMutexW(nullptr, TRUE, L"Local\\FH2SimImmersionApp");
+    bool already = GetLastError() == ERROR_ALREADY_EXISTS;
     int argc = 0;
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     std::wstring arg = argc > 1 ? argv[1] : L"";
     if (argv) LocalFree(argv);
 
-    if (GetLastError() == ERROR_ALREADY_EXISTS) {            // another instance: bring it to the front and exit
+    if (already) {            // another instance: bring it to the front and exit
         if (HWND other = FindWindowW(kClass, nullptr)) {
             if (IsIconic(other)) ShowWindow(other, SW_RESTORE);
             SetForegroundWindow(other);

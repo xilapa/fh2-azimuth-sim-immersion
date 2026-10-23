@@ -206,7 +206,6 @@ private:
         if (tail.empty()) t += L"  (no log yet: it is written by the plugin when the game runs)\r\n";
         for (auto& l : tail) t += L"  " + l + L"\r\n";
         if (!force && t == lastText_) return;
-        if (t == lastText_) return;
         lastText_ = t;
         SetWindowTextW(box_, t.c_str());
         int n = GetWindowTextLengthW(box_);

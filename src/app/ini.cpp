@@ -2,7 +2,7 @@
 // Settings file access for the settings window (FH2SimImmersion.ini).
 #include "ini.h"
 #include "../common/default_ini.h"
-#include <cstdio>
+#include "../common/ini_migrate.h"
 
 namespace app {
 
@@ -42,17 +42,7 @@ const IniEntry* FindDefault(const char* section, const char* key) {
     return nullptr;
 }
 
-void EnsureIni() {
-    std::wstring ini = IniPath();
-    if (GetFileAttributesW(ini.c_str()) != INVALID_FILE_ATTRIBUTES &&
-        GetPrivateProfileIntW(L"Input", L"ConfigVersion", 0, ini.c_str()) < fh2::kConfigVersion) {
-        std::wstring bak = ini + L".old.bak";
-        MoveFileExW(ini.c_str(), bak.c_str(), MOVEFILE_REPLACE_EXISTING);
-    }
-    if (GetFileAttributesW(ini.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        if (FILE* f = _wfopen(ini.c_str(), L"w")) { fputs(fh2::kDefaultIni, f); fclose(f); }
-    }
-}
+void EnsureIni() { fh2::EnsureCurrentIni(IniPath()); }
 
 std::string ReadSetting(const char* section, const char* key) {
     const IniEntry* d = FindDefault(section, key);

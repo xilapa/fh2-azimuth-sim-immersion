@@ -8,13 +8,8 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   message(FATAL_ERROR "Build for x64: Azimuth is a 64-bit process.")
 endif()
 
-if(MSVC)
-  add_compile_options(/W4 /utf-8)
-  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-else()
-  add_compile_options(-Wall -Wextra -Wno-unused-parameter -Wno-cast-function-type)
-  add_link_options(-static -static-libgcc -static-libstdc++)
-endif()
+add_compile_options(-Wall -Wextra -Wno-unused-parameter -Wno-cast-function-type)
+add_link_options(-static -static-libgcc -static-libstdc++)
 
 # The plugin loaded into azimuth.exe
 add_library(FH2SimImmersion SHARED
@@ -30,7 +25,7 @@ add_library(FH2SimImmersion SHARED
   src/dll/assist_hook.cpp
   src/dll/drawdist_hook.cpp
   src/dll/cockpit_hook.cpp
-    src/dll/wheel_ffb.cpp)
+  src/dll/wheel_ffb.cpp)
 target_link_libraries(FH2SimImmersion PRIVATE ws2_32 dinput8 dxguid ole32)
 target_compile_definitions(FH2SimImmersion PRIVATE FH2SI_VERSION="${PROJECT_VERSION}")
 set_target_properties(FH2SimImmersion PROPERTIES PREFIX "")
@@ -51,13 +46,9 @@ add_executable(FH2SimImmersionApp WIN32
 set_target_properties(FH2SimImmersionApp PROPERTIES OUTPUT_NAME FH2SimImmersion)
 target_compile_definitions(FH2SimImmersionApp PRIVATE FH2SI_VERSION="${PROJECT_VERSION}" UNICODE _UNICODE)
 target_link_libraries(FH2SimImmersionApp PRIVATE comctl32 psapi shlwapi ole32 shell32 uuid gdi32 dinput8 dxguid)
-if(NOT MSVC)
-  target_link_options(FH2SimImmersionApp PRIVATE -municode -mwindows)
-endif()
+target_link_options(FH2SimImmersionApp PRIVATE -municode -mwindows)
 
 # Integration test (needs your own copy of the game executable to run)
 add_executable(harness tests/harness.cpp)
 target_link_libraries(harness PRIVATE ws2_32)
-if(NOT MSVC)
-  target_link_options(harness PRIVATE -municode)
-endif()
+target_link_options(harness PRIVATE -municode)

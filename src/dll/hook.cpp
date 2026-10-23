@@ -49,9 +49,9 @@ enum LayerClass : uint8_t { kNone, kRotCockpit, kRotOther, kPosCockpit, kPosOthe
 
 struct LayerEntry {
     uint8_t*   layer;
-    float      orig[4];
     float      written[4];
     LayerClass cls;
+    ULONGLONG  seen;   // GetTickCount64 of the last lookup, for pruning
 };
 
 constexpr int kTableSize = 1024;
@@ -84,30 +84,54 @@ LayerClass classify(uint8_t* L) {
     return kNone;
 }
 
+// Open-addressing probe shared by lookup, rememberWritten and prune: the entry holding L, else
+// the first empty slot on its chain (nullptr if the table has no empty slot).
+LayerEntry* probeLayer(uint8_t* L) {
+    size_t h = (reinterpret_cast<uintptr_t>(L) >> 4) * 0x9E3779B97F4A7C15ull;
+    int idx = int(h >> 54) & (kTableSize - 1);
+    for (int probe = 0; probe < kTableSize; ++probe) {
+        LayerEntry& c = g_table[(idx + probe) & (kTableSize - 1)];
+        if (c.layer == L || c.layer == nullptr) return &c;
+    }
+    return nullptr;
+}
+
+// Drops layers not looked up for 5 s (camera layers re-created at new addresses). Caller holds the lock.
+void pruneTable(ULONGLONG now) {
+    static LayerEntry keep[kTableSize];   // static: too big for the game thread's stack
+    int before = g_tableCount, kept = 0;
+    for (const LayerEntry& c : g_table)
+        if (c.layer && now - c.seen <= 5000) keep[kept++] = c;
+    std::memset(g_table, 0, sizeof(g_table));
+    g_tableCount = 0;
+    for (int i = 0; i < kept; ++i) { *probeLayer(keep[i].layer) = keep[i]; ++g_tableCount; }
+    LOG("layers: table pruned, %d live of %d", kept, before);
+}
+
 // Returns a copy of the entry for this layer, creating/refreshing it as needed.
 LayerClass lookupLayer(uint8_t* L, bool& isNew) {
     isNew = false;
     while (g_tableLock.test_and_set(std::memory_order_acquire)) {}
-    size_t h = (reinterpret_cast<uintptr_t>(L) >> 4) * 0x9E3779B97F4A7C15ull;
-    int idx = int(h >> 54) & (kTableSize - 1);
-    LayerEntry* e = nullptr;
-    for (int probe = 0; probe < kTableSize; ++probe) {
-        LayerEntry& c = g_table[(idx + probe) & (kTableSize - 1)];
-        if (c.layer == L) { e = &c; break; }
-        if (c.layer == nullptr) {
-            if (g_tableCount < kTableSize * 3 / 4) {
-                c.layer = L; ++g_tableCount; e = &c; isNew = true;
-            }
-            break;
+    ULONGLONG now = GetTickCount64();
+    LayerEntry* e = probeLayer(L);
+    if (e && e->layer == nullptr) {   // not present: insert, pruning dead layers first if over 3/4
+        if (g_tableCount >= kTableSize * 3 / 4) {
+            pruneTable(now);
+            e = probeLayer(L);
+        }
+        if (e && e->layer == nullptr && g_tableCount < kTableSize * 3 / 4) {
+            e->layer = L; ++g_tableCount; isNew = true;
+        } else if (e && e->layer == nullptr) {
+            e = nullptr;   // all entries live: fall back below
         }
     }
     LayerClass cls = kNone;
     if (e) {
+        e->seen = now;
         float* param = &at<float>(L, layer::kParam);
         // A layer we have not written, or one whose Param no longer holds what we
         // wrote (camera data reloaded at the same address), is fingerprinted afresh.
         if (isNew || std::memcmp(param, e->written, sizeof(e->written)) != 0) {
-            std::memcpy(e->orig, param, sizeof(e->orig));
             std::memcpy(e->written, param, sizeof(e->written));
             e->cls = classify(L);
             isNew = true;
@@ -122,13 +146,8 @@ LayerClass lookupLayer(uint8_t* L, bool& isNew) {
 
 void rememberWritten(uint8_t* L) {
     while (g_tableLock.test_and_set(std::memory_order_acquire)) {}
-    size_t h = (reinterpret_cast<uintptr_t>(L) >> 4) * 0x9E3779B97F4A7C15ull;
-    int idx = int(h >> 54) & (kTableSize - 1);
-    for (int probe = 0; probe < kTableSize; ++probe) {
-        LayerEntry& c = g_table[(idx + probe) & (kTableSize - 1)];
-        if (c.layer == L) { std::memcpy(c.written, &at<float>(L, layer::kParam), sizeof(c.written)); break; }
-        if (c.layer == nullptr) break;
-    }
+    LayerEntry* c = probeLayer(L);
+    if (c && c->layer == L) std::memcpy(c->written, &at<float>(L, layer::kParam), sizeof(c->written));
     g_tableLock.clear(std::memory_order_release);
 }
 

@@ -20,135 +20,25 @@
 // ---- forwarding thunks for the statics proxy ---------------------------------------------------
 // fwd_thunk_N: swap `this` for the real object and jump into the real vtable slot N. Other
 // registers and the stack are untouched, so any signature forwards correctly.
-extern "C" void fwd_thunk_0();
-extern "C" void fwd_thunk_1();
-extern "C" void fwd_thunk_2();
-extern "C" void fwd_thunk_3();
-extern "C" void fwd_thunk_4();
-extern "C" void fwd_thunk_5();
-extern "C" void fwd_thunk_6();
-extern "C" void fwd_thunk_7();
-extern "C" void fwd_thunk_8();
-extern "C" void fwd_thunk_9();
-extern "C" void fwd_thunk_10();
-extern "C" void fwd_thunk_11();
-extern "C" void fwd_thunk_12();
-extern "C" void fwd_thunk_13();
-extern "C" void fwd_thunk_14();
-extern "C" void fwd_thunk_15();
-extern "C" void fwd_thunk_16();
-extern "C" void fwd_thunk_17();
-extern "C" void fwd_thunk_18();
-extern "C" void fwd_thunk_19();
-extern "C" void fwd_thunk_20();
-extern "C" void fwd_thunk_21();
-extern "C" void fwd_thunk_22();
-extern "C" void fwd_thunk_23();
-extern "C" void fwd_thunk_24();
-extern "C" void fwd_thunk_25();
-extern "C" void fwd_thunk_26();
-extern "C" void fwd_thunk_27();
-extern "C" void fwd_thunk_28();
-extern "C" void fwd_thunk_29();
-extern "C" void fwd_thunk_30();
-extern "C" void fwd_thunk_31();
-extern "C" void fwd_thunk_32();
-extern "C" void fwd_thunk_33();
-extern "C" void fwd_thunk_34();
-extern "C" void fwd_thunk_35();
-extern "C" void fwd_thunk_36();
-extern "C" void fwd_thunk_37();
-extern "C" void fwd_thunk_38();
-extern "C" void fwd_thunk_39();
-extern "C" void fwd_thunk_40();
-extern "C" void fwd_thunk_41();
-extern "C" void fwd_thunk_42();
-extern "C" void fwd_thunk_43();
-extern "C" void fwd_thunk_44();
-extern "C" void fwd_thunk_45();
-extern "C" void fwd_thunk_46();
-extern "C" void fwd_thunk_47();
-extern "C" void fwd_thunk_48();
-extern "C" void fwd_thunk_49();
-extern "C" void fwd_thunk_50();
-extern "C" void fwd_thunk_51();
-extern "C" void fwd_thunk_52();
-extern "C" void fwd_thunk_53();
-extern "C" void fwd_thunk_54();
-extern "C" void fwd_thunk_55();
-extern "C" void fwd_thunk_56();
-extern "C" void fwd_thunk_57();
-extern "C" void fwd_thunk_58();
-extern "C" void fwd_thunk_59();
-extern "C" void fwd_thunk_60();
-extern "C" void fwd_thunk_61();
-extern "C" void fwd_thunk_62();
-extern "C" void fwd_thunk_63();
+extern "C" const void* const fwd_thunk_table[64];
 asm(".text\n.intel_syntax noprefix\n"
-    ".globl fwd_thunk_0\n" "fwd_thunk_0:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+0]\n"
-    ".globl fwd_thunk_1\n" "fwd_thunk_1:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+8]\n"
-    ".globl fwd_thunk_2\n" "fwd_thunk_2:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+16]\n"
-    ".globl fwd_thunk_3\n" "fwd_thunk_3:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+24]\n"
-    ".globl fwd_thunk_4\n" "fwd_thunk_4:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+32]\n"
-    ".globl fwd_thunk_5\n" "fwd_thunk_5:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+40]\n"
-    ".globl fwd_thunk_6\n" "fwd_thunk_6:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+48]\n"
-    ".globl fwd_thunk_7\n" "fwd_thunk_7:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+56]\n"
-    ".globl fwd_thunk_8\n" "fwd_thunk_8:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+64]\n"
-    ".globl fwd_thunk_9\n" "fwd_thunk_9:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+72]\n"
-    ".globl fwd_thunk_10\n" "fwd_thunk_10:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+80]\n"
-    ".globl fwd_thunk_11\n" "fwd_thunk_11:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+88]\n"
-    ".globl fwd_thunk_12\n" "fwd_thunk_12:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+96]\n"
-    ".globl fwd_thunk_13\n" "fwd_thunk_13:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+104]\n"
-    ".globl fwd_thunk_14\n" "fwd_thunk_14:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+112]\n"
-    ".globl fwd_thunk_15\n" "fwd_thunk_15:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+120]\n"
-    ".globl fwd_thunk_16\n" "fwd_thunk_16:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+128]\n"
-    ".globl fwd_thunk_17\n" "fwd_thunk_17:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+136]\n"
-    ".globl fwd_thunk_18\n" "fwd_thunk_18:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+144]\n"
-    ".globl fwd_thunk_19\n" "fwd_thunk_19:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+152]\n"
-    ".globl fwd_thunk_20\n" "fwd_thunk_20:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+160]\n"
-    ".globl fwd_thunk_21\n" "fwd_thunk_21:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+168]\n"
-    ".globl fwd_thunk_22\n" "fwd_thunk_22:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+176]\n"
-    ".globl fwd_thunk_23\n" "fwd_thunk_23:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+184]\n"
-    ".globl fwd_thunk_24\n" "fwd_thunk_24:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+192]\n"
-    ".globl fwd_thunk_25\n" "fwd_thunk_25:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+200]\n"
-    ".globl fwd_thunk_26\n" "fwd_thunk_26:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+208]\n"
-    ".globl fwd_thunk_27\n" "fwd_thunk_27:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+216]\n"
-    ".globl fwd_thunk_28\n" "fwd_thunk_28:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+224]\n"
-    ".globl fwd_thunk_29\n" "fwd_thunk_29:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+232]\n"
-    ".globl fwd_thunk_30\n" "fwd_thunk_30:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+240]\n"
-    ".globl fwd_thunk_31\n" "fwd_thunk_31:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+248]\n"
-    ".globl fwd_thunk_32\n" "fwd_thunk_32:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+256]\n"
-    ".globl fwd_thunk_33\n" "fwd_thunk_33:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+264]\n"
-    ".globl fwd_thunk_34\n" "fwd_thunk_34:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+272]\n"
-    ".globl fwd_thunk_35\n" "fwd_thunk_35:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+280]\n"
-    ".globl fwd_thunk_36\n" "fwd_thunk_36:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+288]\n"
-    ".globl fwd_thunk_37\n" "fwd_thunk_37:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+296]\n"
-    ".globl fwd_thunk_38\n" "fwd_thunk_38:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+304]\n"
-    ".globl fwd_thunk_39\n" "fwd_thunk_39:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+312]\n"
-    ".globl fwd_thunk_40\n" "fwd_thunk_40:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+320]\n"
-    ".globl fwd_thunk_41\n" "fwd_thunk_41:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+328]\n"
-    ".globl fwd_thunk_42\n" "fwd_thunk_42:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+336]\n"
-    ".globl fwd_thunk_43\n" "fwd_thunk_43:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+344]\n"
-    ".globl fwd_thunk_44\n" "fwd_thunk_44:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+352]\n"
-    ".globl fwd_thunk_45\n" "fwd_thunk_45:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+360]\n"
-    ".globl fwd_thunk_46\n" "fwd_thunk_46:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+368]\n"
-    ".globl fwd_thunk_47\n" "fwd_thunk_47:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+376]\n"
-    ".globl fwd_thunk_48\n" "fwd_thunk_48:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+384]\n"
-    ".globl fwd_thunk_49\n" "fwd_thunk_49:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+392]\n"
-    ".globl fwd_thunk_50\n" "fwd_thunk_50:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+400]\n"
-    ".globl fwd_thunk_51\n" "fwd_thunk_51:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+408]\n"
-    ".globl fwd_thunk_52\n" "fwd_thunk_52:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+416]\n"
-    ".globl fwd_thunk_53\n" "fwd_thunk_53:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+424]\n"
-    ".globl fwd_thunk_54\n" "fwd_thunk_54:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+432]\n"
-    ".globl fwd_thunk_55\n" "fwd_thunk_55:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+440]\n"
-    ".globl fwd_thunk_56\n" "fwd_thunk_56:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+448]\n"
-    ".globl fwd_thunk_57\n" "fwd_thunk_57:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+456]\n"
-    ".globl fwd_thunk_58\n" "fwd_thunk_58:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+464]\n"
-    ".globl fwd_thunk_59\n" "fwd_thunk_59:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+472]\n"
-    ".globl fwd_thunk_60\n" "fwd_thunk_60:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+480]\n"
-    ".globl fwd_thunk_61\n" "fwd_thunk_61:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+488]\n"
-    ".globl fwd_thunk_62\n" "fwd_thunk_62:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+496]\n"
-    ".globl fwd_thunk_63\n" "fwd_thunk_63:\n" "mov rcx, qword ptr [rcx+8]\n" "mov rax, qword ptr [rcx]\n" "jmp qword ptr [rax+504]\n"
+    ".macro FWD n\n"
+    ".globl fwd_thunk_\\n\n"
+    "fwd_thunk_\\n:\n"
+    "mov rcx, qword ptr [rcx+8]\n"
+    "mov rax, qword ptr [rcx]\n"
+    "jmp qword ptr [rax+8*\\n]\n"
+    ".endm\n"
+    ".irp n, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,"
+    "32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63\n"
+    "FWD \\n\n"
+    ".endr\n"
+    ".data\n.globl fwd_thunk_table\nfwd_thunk_table:\n"
+    ".irp n, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,"
+    "32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63\n"
+    ".quad fwd_thunk_\\n\n"
+    ".endr\n"
+    ".text\n"
     ".att_syntax prefix\n");
 
 namespace fh2 {
@@ -340,7 +230,7 @@ const void* const g_listVtbl[10] = {
 
 // ---- StaticsProxy -----------------------------------------------------------------------------------
 struct StaticsProxy { const void* const* vtbl; void* real; LONG refs; };
-extern const void* const g_staticsVtbl[64];
+extern const void* g_staticsVtbl[64];
 StaticsProxy g_proxy = {g_staticsVtbl, nullptr, 0};
 CRITICAL_SECTION g_proxyCs;
 
@@ -427,27 +317,7 @@ HRESULT sp_GetControllers(void* self, void** out) {
     return hr;
 }
 
-const void* const g_staticsVtbl[64] = {
-    reinterpret_cast<const void*>(&sp_QI), reinterpret_cast<const void*>(&sp_AddRef),
-    reinterpret_cast<const void*>(&sp_Release), (const void*)&fwd_thunk_3, (const void*)&fwd_thunk_4,
-    (const void*)&fwd_thunk_5, reinterpret_cast<const void*>(&sp_GetControllers),
-    (const void*)&fwd_thunk_7, (const void*)&fwd_thunk_8, (const void*)&fwd_thunk_9, (const void*)&fwd_thunk_10,
-    (const void*)&fwd_thunk_11, (const void*)&fwd_thunk_12, (const void*)&fwd_thunk_13, (const void*)&fwd_thunk_14,
-    (const void*)&fwd_thunk_15, (const void*)&fwd_thunk_16, (const void*)&fwd_thunk_17, (const void*)&fwd_thunk_18,
-    (const void*)&fwd_thunk_19, (const void*)&fwd_thunk_20, (const void*)&fwd_thunk_21, (const void*)&fwd_thunk_22,
-    (const void*)&fwd_thunk_23, (const void*)&fwd_thunk_24, (const void*)&fwd_thunk_25, (const void*)&fwd_thunk_26,
-    (const void*)&fwd_thunk_27, (const void*)&fwd_thunk_28, (const void*)&fwd_thunk_29, (const void*)&fwd_thunk_30,
-    (const void*)&fwd_thunk_31, (const void*)&fwd_thunk_32, (const void*)&fwd_thunk_33, (const void*)&fwd_thunk_34,
-    (const void*)&fwd_thunk_35, (const void*)&fwd_thunk_36, (const void*)&fwd_thunk_37, (const void*)&fwd_thunk_38,
-    (const void*)&fwd_thunk_39, (const void*)&fwd_thunk_40, (const void*)&fwd_thunk_41, (const void*)&fwd_thunk_42,
-    (const void*)&fwd_thunk_43, (const void*)&fwd_thunk_44, (const void*)&fwd_thunk_45, (const void*)&fwd_thunk_46,
-    (const void*)&fwd_thunk_47, (const void*)&fwd_thunk_48, (const void*)&fwd_thunk_49, (const void*)&fwd_thunk_50,
-    (const void*)&fwd_thunk_51, (const void*)&fwd_thunk_52, (const void*)&fwd_thunk_53, (const void*)&fwd_thunk_54,
-    (const void*)&fwd_thunk_55, (const void*)&fwd_thunk_56, (const void*)&fwd_thunk_57, (const void*)&fwd_thunk_58,
-    (const void*)&fwd_thunk_59, (const void*)&fwd_thunk_60, (const void*)&fwd_thunk_61, (const void*)&fwd_thunk_62,
-    (const void*)&fwd_thunk_63,
-};
-
+const void* g_staticsVtbl[64];   // filled in installWheel
 // ---- activation factory hook ---------------------------------------------------------------------
 HRESULT hookGetActivationFactory(const wchar_t* name, const GUID* iid, void** out) {
     HRESULT hr = g_origGetActivation(name, iid, out);
@@ -583,6 +453,11 @@ DWORD WINAPI diagThread(void*) {
 static bool installWheel(uintptr_t base, const Config& cfg) {
     g_wc = cfg.wheel;
     g_diag = cfg.diagnostics;
+    std::memcpy(g_staticsVtbl, fwd_thunk_table, sizeof(g_staticsVtbl));
+    g_staticsVtbl[0] = reinterpret_cast<const void*>(&sp_QI);
+    g_staticsVtbl[1] = reinterpret_cast<const void*>(&sp_AddRef);
+    g_staticsVtbl[2] = reinterpret_cast<const void*>(&sp_Release);
+    g_staticsVtbl[6] = reinterpret_cast<const void*>(&sp_GetControllers);
     InitializeCriticalSection(&g_proxyCs);
     VirtualWheel_Configure(cfg);
     VirtualWheel_SetGameBase(base);
@@ -663,8 +538,6 @@ void WheelHook_Install(uintptr_t base, const Config& cfg) {
     if (!cfg.wheel.enabled) {
         LOG("wheel: disabled in settings");
     } else {
-        g_wc = cfg.wheel;
-        g_diag = cfg.diagnostics;
         wheelOk = installWheel(base, cfg);
     }
     g_wheelActive = wheelOk && cfg.wheel.ffbEnabled;

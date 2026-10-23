@@ -8,6 +8,7 @@
 #include "ini.h"
 #include "settings_tables.h"
 #include "../common/car_db.h"
+#include "../common/cars_ini.h"
 
 namespace app {
 
@@ -27,11 +28,6 @@ const wchar_t* gearboxText(char c) {
         case 'c': return L"CVT"; case 'e': return L"electric"; case 'q': return L"sequential"; default: return L"unknown";
     }
 }
-int parseOvr(const std::wstring& s) {
-    std::wstring t;
-    for (wchar_t c : s) if (c != L' ' && c != L'\t') t += (wchar_t)towlower(c);
-    return t == L"on" ? 1 : t == L"off" ? 2 : t == L"automatic" ? 3 : 0;
-}
 std::wstring lowerW(std::wstring s) { for (auto& c : s) c = (wchar_t)towlower(c); return s; }
 }
 
@@ -49,13 +45,6 @@ public:
     bool Save() override {
         bool ok = Page::Save();
         return SaveCars() && ok;
-    }
-    void Defaults() override {
-        Page::Defaults();
-        cur_.clear();
-        lockCur_.clear();
-        Refresh();
-        UpdateCombos();
     }
 
 protected:
@@ -145,7 +134,7 @@ protected:
             wchar_t buf[16];
             GetWindowTextW(lockEdit_, buf, 16);
             unsigned long v = wcstoul(buf, nullptr, 10);
-            if (buf[0] == 0 || v == 0) lockCur_.erase(car); else lockCur_[car] = (unsigned)std::min(v, 3600ul);
+            if (buf[0] == 0 || v == 0) lockCur_.erase(car); else lockCur_[car] = (unsigned)std::min(std::max(v, 90ul), 3600ul);   // what Apply saves
             ListView_RedrawItems(list_, sel, sel);
             Refresh();
             SetStatus(L"Changes not saved yet. Press Apply.");
@@ -290,20 +279,10 @@ private:
             DWORD n = GetPrivateProfileSectionW(L"Cars", buf.data(), (DWORD)buf.size(), path.c_str());
             for (const wchar_t* p = buf.data(); n && *p; p += wcslen(p) + 1) {
                 std::wstring line = p;
-                size_t eq = line.find(L'=');
-                if (eq == std::wstring::npos) continue;
-                wchar_t* end = nullptr;
-                unsigned long id = wcstoul(line.c_str(), &end, 10);
-                if (end == line.c_str() || id == 0) continue;
-                std::wstring v = line.substr(eq + 1);
-                size_t c1 = v.find(L','), c2 = c1 == std::wstring::npos ? c1 : v.find(L',', c1 + 1);
-                size_t c3 = c2 == std::wstring::npos ? c2 : v.find(L',', c2 + 1);
-                Triple pr{parseOvr(v.substr(0, c1)), 0, 0, 0};
-                if (c1 != std::wstring::npos) pr[1] = parseOvr(v.substr(c1 + 1, c2 == std::wstring::npos ? c2 : c2 - c1 - 1));
-                if (c2 != std::wstring::npos) pr[2] = parseOvr(v.substr(c2 + 1, c3 == std::wstring::npos ? c3 : c3 - c2 - 1));
-                if (c3 != std::wstring::npos) pr[3] = parseOvr(v.substr(c3 + 1));
-                for (int k = 0; k < 3; ++k) if (pr[k] == 3) pr[k] = 0;      // "automatic" only exists for the clutch
-                if (pr != kAuto) cur_[(unsigned)id] = pr;
+                fh2::CarAssistLine l;
+                if (!fh2::ParseCarAssistLine(line, l)) continue;
+                Triple pr{(int)l.abs, (int)l.tc, (int)l.stm, (int)l.clutch};   // CarOvr values = page ints (0 auto, 1 on, 2 off, 3 automatic)
+                if (pr != kAuto) cur_[l.id] = pr;
             }
         }
         orig_ = cur_;
@@ -313,13 +292,9 @@ private:
             DWORD n = GetPrivateProfileSectionW(L"SteeringLock", buf.data(), (DWORD)buf.size(), path.c_str());
             for (const wchar_t* p = buf.data(); n && *p; p += wcslen(p) + 1) {
                 std::wstring line = p;
-                size_t eq = line.find(L'=');
-                if (eq == std::wstring::npos) continue;
-                wchar_t* end = nullptr;
-                unsigned long id = wcstoul(line.c_str(), &end, 10);
-                unsigned long deg = wcstoul(line.c_str() + eq + 1, nullptr, 10);
-                if (end == line.c_str() || id == 0 || deg < 90 || deg > 3600) continue;
-                lockCur_[(unsigned)id] = (unsigned)deg;
+                unsigned id = 0, deg = 0;
+                if (!fh2::ParseSteeringLockLine(line, id, deg)) continue;
+                lockCur_[id] = deg;
             }
         }
         lockOrig_ = lockCur_;

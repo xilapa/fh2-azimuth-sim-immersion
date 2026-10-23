@@ -23,10 +23,7 @@ elif [ ! -f src/common/car_db.h ]; then
     echo "error: src/common/car_db.h is missing and python3 is not available to generate it (tools/gen_car_db.py)" >&2
     exit 1
 fi
-g++ -std=c++17 -O1 -Wall tests/test_pose.cpp -o build/test_pose && ./build/test_pose
-g++ -std=c++17 -O1 -Wall tests/test_ffb.cpp src/dll/wheel_ffb.cpp -o build/test_ffb && ./build/test_ffb
-g++ -std=c++17 -O1 -Wall tests/test_ini.cpp -o build/test_ini && ./build/test_ini
-g++ -std=c++17 -O1 -Wall tests/test_lock.cpp src/dll/wheel_ffb.cpp -o build/test_lock && ./build/test_lock
+bash tests/run_tests.sh
 
 $CXX $FLAGS -DFH2SI_VERSION="\"$VERSION\"" -shared -o build/FH2SimImmersion.dll \
     src/dll/dllmain.cpp src/dll/config.cpp src/dll/tracker.cpp src/dll/hook.cpp \

@@ -3,6 +3,8 @@
 #include "config.h"
 #include "log.h"
 #include "../common/default_ini.h"
+#include "../common/ini_migrate.h"
+#include "../common/cars_ini.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cctype>
@@ -55,12 +57,14 @@ static int parseWheelButtons(const std::string& spec, int* out) {
 }
 
 static std::string readStr(const wchar_t* ini, const char* sec, const char* key, const char* def) {
-    char buf[256];
-    // ANSI path variant is fine for the key/section names; convert path once.
-    char path[MAX_PATH * 3];
-    WideCharToMultiByte(CP_ACP, 0, ini, -1, path, sizeof(path), nullptr, nullptr);
-    GetPrivateProfileStringA(sec, key, def, buf, sizeof(buf), path);
-    return buf;
+    wchar_t buf[256];
+    auto wide = [](const char* a) { return std::wstring(a, a + strlen(a)); };   // section/key/default are ASCII
+    GetPrivateProfileStringW(wide(sec).c_str(), wide(key).c_str(), wide(def).c_str(), buf, 256, ini);
+    int n = WideCharToMultiByte(CP_UTF8, 0, buf, -1, nullptr, 0, nullptr, nullptr);
+    std::string out(n > 0 ? n : 1, char(0));
+    if (n > 0) WideCharToMultiByte(CP_UTF8, 0, buf, -1, &out[0], n, nullptr, nullptr);
+    out.resize(strlen(out.c_str()));
+    return out;
 }
 static double readF(const wchar_t* ini, const char* sec, const char* key, double def) {
     char d[64]; snprintf(d, sizeof(d), "%g", def);
@@ -218,12 +222,9 @@ static void readWheel(const wchar_t* ini, WheelConfig& w) {
         w.configFlag14, w.testMode, w.ffbEnabled, w.ffbGain, w.ffbInvert, w.overrideAzimuthWheel);
 }
 
-// "on" / "off" / anything else (auto).
-static AssistMode parseAssistWord(const std::string& tok, bool& set) {
-    std::string t;
-    for (char ch : tok) if (ch != ' ' && ch != '\t') t += (char)tolower((unsigned char)ch);
-    set = (t == "on" || t == "off");
-    return t == "on" ? AssistMode::On : t == "off" ? AssistMode::Off : AssistMode::Game;
+static AssistMode toMode(CarOvr o, bool& set) {
+    set = (o == CarOvr::On || o == CarOvr::Off);
+    return o == CarOvr::On ? AssistMode::On : o == CarOvr::Off ? AssistMode::Off : AssistMode::Game;
 }
 
 // [Cars] section: key = car Id, value = "ABS,TC,STM,CLUTCH", each on|off|auto (missing fields = auto).
@@ -234,26 +235,16 @@ static void loadCarOverrides(const std::wstring& path, std::vector<CarAssistOver
     DWORD n = GetPrivateProfileSectionW(L"Cars", buf.data(), (DWORD)buf.size(), path.c_str());
     for (const wchar_t* p = buf.data(); n && *p; p += wcslen(p) + 1) {
         std::wstring line = p;
-        size_t eq = line.find(L'=');
-        if (eq == std::wstring::npos) continue;
-        wchar_t* end = nullptr;
-        unsigned long id = wcstoul(line.c_str(), &end, 10);
-        if (end == line.c_str() || id == 0) { LOG("config: bad car id in %ls", line.c_str()); continue; }
-        std::string val;
-        for (wchar_t wc : line.substr(eq + 1)) val += wc < 128 ? (char)wc : '?';
-        size_t c1 = val.find(','), c2 = c1 == std::string::npos ? c1 : val.find(',', c1 + 1);
-        size_t c3 = c2 == std::string::npos ? c2 : val.find(',', c2 + 1);
+        if (line.find(L'=') == std::wstring::npos) continue;
+        CarAssistLine l;
+        if (!ParseCarAssistLine(line, l)) { LOG("config: bad car id in %ls", line.c_str()); continue; }
         CarAssistOverride o;
-        o.id = (unsigned)id;
-        o.abs = parseAssistWord(val.substr(0, c1), o.absSet);
-        if (c1 != std::string::npos) o.tc = parseAssistWord(val.substr(c1 + 1, c2 == std::string::npos ? c2 : c2 - c1 - 1), o.tcSet);
-        if (c2 != std::string::npos) o.stm = parseAssistWord(val.substr(c2 + 1, c3 == std::string::npos ? c3 : c3 - c2 - 1), o.stmSet);
-        if (c3 != std::string::npos) {
-            std::string tok;
-            for (char ch : val.substr(c3 + 1)) if (ch != ' ' && ch != '\t') tok += (char)tolower((unsigned char)ch);
-            if (tok == "automatic") { o.clutchSet = true; o.clutch = AssistMode::Off; o.forceAutomatic = true; }
-            else o.clutch = parseAssistWord(tok, o.clutchSet);
-        }
+        o.id = l.id;
+        o.abs = toMode(l.abs, o.absSet);
+        o.tc = toMode(l.tc, o.tcSet);
+        o.stm = toMode(l.stm, o.stmSet);
+        if (l.clutch == CarOvr::Automatic) { o.clutchSet = true; o.clutch = AssistMode::Off; o.forceAutomatic = true; }
+        else o.clutch = toMode(l.clutch, o.clutchSet);
         if (o.absSet || o.tcSet || o.stmSet || o.clutchSet) out.push_back(o);
     }
 }
@@ -265,51 +256,41 @@ static void loadSteeringLocks(const std::wstring& path, std::vector<std::pair<un
     DWORD n = GetPrivateProfileSectionW(L"SteeringLock", buf.data(), (DWORD)buf.size(), path.c_str());
     for (const wchar_t* p = buf.data(); n && *p; p += wcslen(p) + 1) {
         std::wstring line = p;
-        size_t eq = line.find(L'=');
-        wchar_t* end = nullptr;
-        unsigned long id = eq == std::wstring::npos ? 0 : wcstoul(line.c_str(), &end, 10);
-        unsigned long deg = 0;
-        bool ok = id != 0 && end && end != line.c_str();
-        if (ok) {
-            const wchar_t* v = line.c_str() + eq + 1;
-            wchar_t* e2 = nullptr;
-            deg = wcstoul(v, &e2, 10);
-            while (e2 && (*e2 == L' ' || *e2 == L'\t')) ++e2;
-            ok = e2 != v && *e2 == 0 && deg >= 90 && deg <= 3600;
-        }
+        unsigned id = 0, deg = 0;
+        bool ok = ParseSteeringLockLine(line, id, deg);
         if (!ok) { LOG("config: bad [SteeringLock] line '%ls' (want CarId=90..3600); ignored", line.c_str()); continue; }
         bool dup = false;
-        for (auto& e : out) if (e.first == (unsigned)id) { e.second = (unsigned)deg; dup = true; }
-        if (!dup) out.push_back({(unsigned)id, (unsigned)deg});
+        for (auto& e : out) if (e.first == id) { e.second = deg; dup = true; }
+        if (!dup) out.push_back({id, deg});
     }
 }
 
 Config loadConfig(const std::wstring& iniPath) {
-    if (GetFileAttributesW(iniPath.c_str()) != INVALID_FILE_ATTRIBUTES &&
-        GetPrivateProfileIntW(L"Input", L"ConfigVersion", 0, iniPath.c_str()) < kConfigVersion) {
-        // Settings from an older version: keep a backup, start from the new defaults.
-        std::wstring bak = iniPath + L".old.bak";
-        MoveFileExW(iniPath.c_str(), bak.c_str(), MOVEFILE_REPLACE_EXISTING);
-        LOG("config: settings from an older version saved as FH2SimImmersion.ini.old.bak, writing new defaults");
-    }
-    if (GetFileAttributesW(iniPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        if (FILE* f = _wfopen(iniPath.c_str(), L"w")) {
-            fputs(kDefaultIni, f);
-            fclose(f);
-            LOG("config: wrote default settings file");
-        }
-    }
+    int kept = 0;
+    bool created = false;
+    if (EnsureCurrentIni(iniPath, &kept, &created))
+        LOG("config: settings from an older version saved as FH2SimImmersion.ini.old.bak; %d values carried over", kept);
+    if (created) LOG("config: wrote default settings file");
     const wchar_t* ini = iniPath.c_str();
     Config c;
     std::string src = readStr(ini, "Input", "Source", "auto");
     c.source = src == "udp" ? Source::Udp : src == "freetrack" ? Source::FreeTrack : Source::Auto;
     c.diagnostics     = readI(ini, "Input", "Diagnostics", 0) != 0;
     c.udpPort         = readI(ini, "Network", "UdpPort", 4242);
+    if (c.udpPort < 1 || c.udpPort > 65535) {
+        LOG("config: UdpPort=%d out of range 1..65535; using 4242", c.udpPort);
+        c.udpPort = 4242;
+    }
     c.bindAddress     = readStr(ini, "Network", "BindAddress", "127.0.0.1");
     c.enableOnStartup = readI(ini, "General", "EnableOnStartup", 1) != 0;
     c.overrideAzimuthHeadTracking = readI(ini, "General", "OverrideAzimuthHeadTracking", 1) != 0;
     c.cockpitOnly     = readI(ini, "General", "CockpitOnly", 1) != 0;
     c.staleTimeoutMs  = readI(ini, "General", "StaleTimeoutMs", 500);
+    if (c.staleTimeoutMs < 50 || c.staleTimeoutMs > 60000) {
+        int v = c.staleTimeoutMs < 50 ? 50 : 60000;
+        LOG("config: StaleTimeoutMs=%d out of range 50..60000; using %d", c.staleTimeoutMs, v);
+        c.staleTimeoutMs = v;
+    }
     c.smoothing       = readF(ini, "General", "Smoothing", 0.0);
     c.toggleKey        = readI(ini, "Hotkeys", "ToggleKey", VK_END);
     c.recenterKey      = readI(ini, "Hotkeys", "RecenterKey", 0);

@@ -2,7 +2,7 @@
 // Unit test for the default-INI parser used by the settings window and for the settings tables.
 // Build natively: g++ -std=c++17 tests/test_ini.cpp -o build/test_ini
 #include "../src/common/default_ini.h"
-#include "../src/app/ini_parse.h"
+#include "../src/common/ini_parse.h"
 #include "../src/app/settings_tables.h"
 #include <cstdio>
 #include <cstdlib>

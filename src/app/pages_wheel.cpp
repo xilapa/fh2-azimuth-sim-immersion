@@ -157,12 +157,12 @@ private:
         di_->EnumDevices(DI8DEVCLASS_GAMECTRL, enumCb, &devs, DIEDFL_ATTACHEDONLY);
         std::wstring match;
         if (Ctl* c = Find("Wheel", "DeviceMatch")) match = lowerW(Widen(GetValue(*c)));
+        // same rule as the plugin (wheel_device.cpp): name match, else the first wheel
         const FoundDev* pick = nullptr;
-        for (auto& d : devs) {
-            if (match.empty() ? d.driving : lowerW(d.name).find(match) != std::wstring::npos) { pick = &d; break; }
-        }
-        if (!pick && match.empty() && !devs.empty()) pick = &devs[0];
-        if (!pick) { Fail(devs.empty() ? L"no game controller found" : L"no controller matches the device name"); return; }
+        if (!match.empty())
+            for (auto& d : devs) if (lowerW(d.name).find(match) != std::wstring::npos) { pick = &d; break; }
+        if (!pick) for (auto& d : devs) if (d.driving) { pick = &d; break; }
+        if (!pick) { Fail(devs.empty() ? L"no game controller found" : L"no wheel found (the plugin would not use one either)"); return; }
         hr = di_->CreateDevice(pick->guid, &dev_, nullptr);
         if (FAILED(hr) || !dev_) { Fail(L"could not open the device"); return; }
         dev_->SetDataFormat(&c_dfDIJoystick2);

@@ -3,6 +3,7 @@
 #include "injector.h"
 #include <tlhelp32.h>
 #include <psapi.h>
+#include <algorithm>
 #include <set>
 #include <vector>
 
@@ -44,21 +45,27 @@ static bool inject(DWORD pid, const std::wstring& dllPath, const Injector::Statu
     size_t bytes = (dllPath.size() + 1) * sizeof(wchar_t);
     void* remote = VirtualAllocEx(proc, nullptr, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     bool ok = false;
+    bool stillLoading = false;   // timed out: the remote LoadLibraryW may still read the path, so keep it allocated
     if (remote && WriteProcessMemory(proc, remote, dllPath.c_str(), bytes, nullptr)) {
         auto loadLib = reinterpret_cast<LPTHREAD_START_ROUTINE>(
             GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "LoadLibraryW"));
         HANDLE t = CreateRemoteThread(proc, nullptr, 0, loadLib, remote, 0, nullptr);
         if (t) {
-            WaitForSingleObject(t, 15000);
-            DWORD code = 0; GetExitCodeThread(t, &code);
-            ok = code != 0;
+            DWORD w = WaitForSingleObject(t, 15000);
+            if (w == WAIT_OBJECT_0) {
+                DWORD code = 0; GetExitCodeThread(t, &code);
+                ok = code != 0;
+            } else {
+                stillLoading = true;
+            }
             CloseHandle(t);
         }
     }
-    if (remote) VirtualFreeEx(proc, remote, 0, MEM_RELEASE);
+    if (remote && !stillLoading) VirtualFreeEx(proc, remote, 0, MEM_RELEASE);
     CloseHandle(proc);
-    say(ok ? fmt(L"FH2 Sim Immersion loaded into azimuth.exe (injected into pid %lu)", pid)
-           : fmt(L"FAILED to load into azimuth.exe (pid %lu) - antivirus? run as the same user as Azimuth", pid));
+    if (stillLoading) say(fmt(L"loading into azimuth.exe (pid %lu) did not finish within 15 s", pid));
+    else say(ok ? fmt(L"FH2 Sim Immersion loaded into azimuth.exe (injected into pid %lu)", pid)
+                : fmt(L"FAILED to load into azimuth.exe (pid %lu) - antivirus? run as the same user as Azimuth", pid));
     return ok;
 }
 
@@ -89,7 +96,12 @@ void Injector::Run() {
     status_(L"Watching for azimuth.exe...");
     std::set<DWORD> done;
     for (;;) {
-        for (DWORD pid : findAzimuth()) {
+        std::vector<DWORD> pids = findAzimuth();
+        for (auto it = done.begin(); it != done.end();) {   // forget exited processes so a reused PID is injected
+            if (std::find(pids.begin(), pids.end(), *it) == pids.end()) it = done.erase(it);
+            else ++it;
+        }
+        for (DWORD pid : pids) {
             if (done.count(pid)) continue;
             if (WaitForSingleObject(stop_, 1000) == WAIT_OBJECT_0) return;   // let the new process finish starting up
             inject(pid, dll_, status_);

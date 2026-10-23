@@ -412,9 +412,9 @@ bool WheelDevice_Start(const WheelConfig& cfg, bool diagnostics) {
 
     int pick = -1;
     if (!cfg.deviceMatch.empty()) {
-        int n = MultiByteToWideChar(CP_ACP, 0, cfg.deviceMatch.c_str(), -1, nullptr, 0);
+        int n = MultiByteToWideChar(CP_UTF8, 0, cfg.deviceMatch.c_str(), -1, nullptr, 0);
         std::wstring m(n > 0 ? n : 1, L'\0');
-        if (n > 0) MultiByteToWideChar(CP_ACP, 0, cfg.deviceMatch.c_str(), -1, &m[0], n);
+        if (n > 0) MultiByteToWideChar(CP_UTF8, 0, cfg.deviceMatch.c_str(), -1, &m[0], n);
         m.resize(wcslen(m.c_str()));
         m = lower(m);
         for (size_t i = 0; i < devs.size() && pick < 0; ++i)

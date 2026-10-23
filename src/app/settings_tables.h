@@ -12,7 +12,7 @@ inline constexpr Setting kHeadSettings[] = {
     ST_BOOL ("General", "OverrideAzimuthHeadTracking", "Override Azimuth head tracking if it adds its own", "Head tracking", "rot"),
     ST_BOOL ("General", "CockpitOnly", "Cockpit camera only", "Head tracking", "rot"),
     ST_FLOAT("General", "Smoothing", "Smoothing (0 - 1)", "Head tracking", "rot", 0, 1, 0.05),
-    ST_INT  ("General", "StaleTimeoutMs", "Lost-signal timeout (ms)", "Head tracking", "rot", 0, 10000, 50),
+    ST_INT  ("General", "StaleTimeoutMs", "Lost-signal timeout (ms)", "Head tracking", "rot", 50, 60000, 50),
 
     ST_INT  ("Network", "UdpPort", "UDP port", "Network (OpenTrack UDP)", nullptr, 1, 65535, 1),
     ST_TEXT ("Network", "BindAddress", "Bind address", "Network (OpenTrack UDP)", nullptr),
