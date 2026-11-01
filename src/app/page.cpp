@@ -401,6 +401,14 @@ void Page::LayoutRows() {
     RedrawWindow(scroller_, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
 }
 
+void Page::ScrollTo(int pos) {
+    RECT rc; GetClientRect(scroller_, &rc);
+    pos = std::min(std::max(pos, 0), std::max(0, rowsHeight_ - (int)rc.bottom));
+    if (pos == scrollY_) return;   // already at the limit: repainting here is what flickers
+    scrollY_ = pos;
+    LayoutRows();
+}
+
 void Page::EnsureVisible(HWND w) {
     if (!scroller_ || !w || GetParent(w) != scroller_) return;
     RECT r, c; GetWindowRect(w, &r); MapWindowPoints(nullptr, scroller_, (POINT*)&r, 2);
@@ -408,7 +416,7 @@ void Page::EnsureVisible(HWND w) {
     int d = 0;
     if (r.top < 0) d = r.top - S(30);
     else if (r.bottom > c.bottom) d = r.bottom - c.bottom + S(8);
-    if (d) { scrollY_ += d; LayoutRows(); }
+    if (d) ScrollTo(scrollY_ + d);
 }
 
 // ---------------------------------------------------------------- focus / hover tracking
@@ -506,16 +514,14 @@ LRESULT Page::PanelProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             case SB_TOP: pos = 0; break;
             case SB_BOTTOM: pos = si.nMax; break;
             }
-            scrollY_ = pos;
-            LayoutRows();
+            ScrollTo(pos);
             return 0;
         }
         break;
     case WM_MOUSEWHEEL:
         if (h == scroller_) {
             int d = GET_WHEEL_DELTA_WPARAM(w);
-            scrollY_ -= d * S(28) * 3 / WHEEL_DELTA;
-            LayoutRows();
+            ScrollTo(scrollY_ - d * S(28) * 3 / WHEEL_DELTA);
             return 0;
         }
         break;

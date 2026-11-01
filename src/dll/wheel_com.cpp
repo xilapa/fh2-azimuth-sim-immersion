@@ -509,7 +509,6 @@ bool VirtualWheel_LastGameFfbInput(GameFfbInput& out) {
 float VirtualWheel_GameAngle(float steering) { return GameSteer(lockInputs(g_rotation.load()), steering); }
 
 float VirtualWheel_PhysicalLockDeg() { return PhysicalLock(lockInputs(g_rotation.load())); }
-float VirtualWheel_DisplayLockDeg() { return DisplayLock(lockInputs(g_rotation.load())); }
 
 void SteerLock_SetPlayerCar(uint32_t id) {
     if (g_lockCar.load(std::memory_order_relaxed) == (int64_t)id) return;
@@ -525,8 +524,8 @@ void SteerLock_SetPlayerCar(uint32_t id) {
     g_carLock.store(lock);
     g_lockCar.store((int64_t)id);
     const LockInputs in = lockInputs(g_rotation.load());
-    LOG("steering lock: car %u %s real %u deg -> wheel %u deg (display %u, %s)", id, car ? car->name : "unknown car", lock,
-        (unsigned)std::lround(PhysicalLock(in)), (unsigned)std::lround(DisplayLock(in)), src);
+    LOG("steering lock: car %u %s real %u deg -> wheel %u deg (%s)", id, car ? car->name : "unknown car", lock,
+        (unsigned)std::lround(PhysicalLock(in)), src);
 }
 
 float VirtualWheel_GameRotation() { return (float)g_rotation.load(); }

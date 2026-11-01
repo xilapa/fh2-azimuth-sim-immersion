@@ -13,10 +13,11 @@ namespace {
 constexpr uintptr_t kGetFovRva = 0x10340f0;
 constexpr size_t    kFovSlot   = 14;
 
-enum Cls { kCockpit, kDriver, kHood, kBumper, kClsCount };
+enum Cls { kCockpit, kDriver, kHood, kBumper, kRearView, kWheelCam, kSide, kClsCount };
 struct ClsInfo { const char* name; uintptr_t vtableRva; };
 const ClsInfo kCls[kClsCount] = {
     {"cockpit", 0x2e77c30}, {"driver", 0x2e78120}, {"hood", 0x2e77ea8}, {"bumper", 0x2e703b0},
+    {"rear view", 0x2e70628}, {"wheel", 0x2e708a0}, {"side", 0x2e70b18},
 };
 
 uintptr_t         g_base = 0;
@@ -27,7 +28,7 @@ std::atomic<uint64_t> g_cockpitTick{0};
 float applyFov(int cls, void* cam) {
     float f = reinterpret_cast<float (*)(void*)>(g_base + kGetFovRva)(cam);
     if (!g_logged[cls].exchange(true)) LOG("fov: %s base %.3f", kCls[cls].name, f);
-    if (cls == kCockpit) g_cockpitTick.store(GetTickCount64(), std::memory_order_relaxed);
+    if (cls == kCockpit || cls == kDriver) g_cockpitTick.store(GetTickCount64(), std::memory_order_relaxed);
     if (g_addDeg[cls] == 0.0f) return f;        // wrapper only installed for the cockpit timestamp
     const float kPi = 3.14159265358979f;
     bool deg = f > 3.2f;
@@ -45,6 +46,9 @@ float fovCockpit(void* cam) { return applyFov(kCockpit, cam); }
 float fovDriver(void* cam)  { return applyFov(kDriver, cam); }
 float fovHood(void* cam)    { return applyFov(kHood, cam); }
 float fovBumper(void* cam)  { return applyFov(kBumper, cam); }
+float fovRearView(void* cam) { return applyFov(kRearView, cam); }
+float fovWheelCam(void* cam) { return applyFov(kWheelCam, cam); }
+float fovSide(void* cam)     { return applyFov(kSide, cam); }
 
 } // namespace
 
@@ -57,9 +61,10 @@ void FovHook_Install(uintptr_t base, const Config& cfg) {
     void* const fns[kClsCount] = {
         reinterpret_cast<void*>(&fovCockpit), reinterpret_cast<void*>(&fovDriver),
         reinterpret_cast<void*>(&fovHood), reinterpret_cast<void*>(&fovBumper),
+        reinterpret_cast<void*>(&fovRearView), reinterpret_cast<void*>(&fovWheelCam), reinterpret_cast<void*>(&fovSide),
     };
     for (int i = 0; i < kClsCount; ++i) {
-        if (g_addDeg[i] == 0.0f && !(i == kCockpit && cfg.sim.hideDriverInCockpit)) continue;
+        if (g_addDeg[i] == 0.0f && !cfg.diagnostics && !((i == kCockpit || i == kDriver) && cfg.sim.hideDriverInCockpit)) continue;
         uint64_t* slot = reinterpret_cast<uint64_t*>(base + kCls[i].vtableRva + kFovSlot * 8);
         if (*slot != static_cast<uint64_t>(base + kGetFovRva)) {
             LOG("fov: %s vtable mismatch; unchanged", kCls[i].name);

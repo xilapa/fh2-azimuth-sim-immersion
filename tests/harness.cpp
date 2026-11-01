@@ -400,6 +400,7 @@ static void ffbTests(uint8_t* base, HMODULE plugin) {
 }
 
 typedef void (*FnTestCockpit)(uint8_t*, float);
+typedef void (*FnTestCarAssist)(uint8_t*, int, int, int, int, bool);
 
 static void cockpitTests(uint8_t* base, HMODULE plugin, uint64_t slotOrig, const std::wstring& logPath) {
     printf("cockpit wheel and driver:\n");
@@ -423,7 +424,12 @@ static void cockpitTests(uint8_t* base, HMODULE plugin, uint64_t slotOrig, const
     memset(car, 0, sizeof(car));
     fn(car, 0.5f);
     float a; memcpy(&a, car + 0x4f30, 4);
-    CHECK(std::fabs(a - 3.92699f) < 1e-4f, "steering 0.5 at display lock 900 -> %f rad (3.92699)", a);
+    CHECK(std::fabs(a - 3.92699f) < 1e-4f, "steering 0.5 at lock 900 -> %f rad (3.92699)", a);
+    const float one = 1.0f;
+    memcpy(car + 0x4f38, &one, 4);
+    fn(car, 0.5f);
+    memcpy(&a, car + 0x4f38, 4);
+    CHECK(a == 0.0f, "animation offset (0x4f38) cleared: %f", a);
     fn(car, -1.0f);
     memcpy(&a, car + 0x4f30, 4);
     CHECK(std::fabs(a + 7.85398f) < 1e-4f, "steering -1 -> %f rad (-7.85398)", a);
@@ -432,6 +438,117 @@ static void cockpitTests(uint8_t* base, HMODULE plugin, uint64_t slotOrig, const
     fn(car, 0.25f);
     memcpy(&a, car + 0x4f30, 4);
     CHECK(a == before, "frozen car (0x4f11 != 0): angle untouched");
+
+    FnTestCarAssist assist = (FnTestCarAssist)GetProcAddress(plugin, "FH2SI_TestCarAssistBytes");
+    CHECK(assist != nullptr, "FH2SI_TestCarAssistBytes exported");
+    if (!assist) return;
+    enum { Game = 0, On = 1, Off = 2 };      // AssistMode
+    static uint8_t buf[0x5000];
+    auto run = [&](uint8_t autobrake, uint8_t abs, uint8_t tc, uint8_t stm, int32_t shift, int absMode, int tcMode, int stmMode, int clutchMode,
+                   bool forceAuto, int times = 1) {
+        memset(buf, 0, sizeof(buf));
+        buf[0x328] = autobrake; buf[0x329] = abs; buf[0x32a] = tc; buf[0x32b] = stm;
+        memcpy(buf + 0x330, &shift, 4);
+        for (int i = 0; i < times; ++i) assist(buf, absMode, tcMode, stmMode, clutchMode, forceAuto);
+    };
+    auto shiftOf = [&]() { int32_t v; memcpy(&v, buf + 0x330, 4); return v; };
+    run(0, 1, 1, 1, 0, Off, Game, Game, Game, false);
+    CHECK(buf[0x329] == 0 && buf[0x328] == 0, "ABS on in game settings, mode off: ABS %u autobrake %u", buf[0x329], buf[0x328]);
+    run(0, 0, 1, 1, 0, On, Game, Game, Game, false);
+    CHECK(buf[0x329] == 1 && buf[0x328] == 0, "ABS off in game settings, mode on: ABS %u autobrake %u", buf[0x329], buf[0x328]);
+    run(1, 1, 1, 1, 0, On, Game, Game, Game, false, 2);
+    CHECK(buf[0x329] == 1 && buf[0x328] == 1, "assisted braking, mode on, applied twice: ABS %u autobrake %u", buf[0x329], buf[0x328]);
+    run(1, 1, 1, 1, 0, Game, Game, Game, Game, false);
+    CHECK(buf[0x329] == 1 && buf[0x328] == 1, "assisted braking, mode game: ABS %u autobrake %u", buf[0x329], buf[0x328]);
+    run(0, 0, 1, 0, 0, Game, Off, Off, Game, false);
+    CHECK(buf[0x32a] == 0 && buf[0x32b] == 0, "TC and STM on in game settings, mode off: TC %u STM %u", buf[0x32a], buf[0x32b]);
+    run(0, 0, 0, 0, 0, Game, On, On, Game, false);
+    CHECK(buf[0x32a] == 1 && buf[0x32b] == 1, "TC and STM off in game settings, mode on: TC %u STM %u", buf[0x32a], buf[0x32b]);
+    run(0, 0, 0, 0, 1, Game, Game, Game, On, false);
+    CHECK(shiftOf() == 2, "manual, clutch on: shifting %d (2)", shiftOf());
+    run(0, 0, 0, 0, 2, Game, Game, Game, Off, false);
+    CHECK(shiftOf() == 1, "manual with clutch, clutch off: shifting %d (1)", shiftOf());
+    run(0, 0, 0, 0, 0, Game, Game, Game, On, false);
+    CHECK(shiftOf() == 0, "automatic, clutch on: shifting %d (0)", shiftOf());
+    run(0, 0, 0, 0, 1, Game, Game, Game, Game, true);
+    CHECK(shiftOf() == 0, "manual, forced automatic: shifting %d (0)", shiftOf());
+    run(0, 0, 0, 0, 7, Game, Game, Game, On, true);
+    CHECK(shiftOf() == 7, "unknown shifting value stays: %d (7)", shiftOf());
+
+    // assist state the pause menu writes (car + 0x4abc ABS, 0x4ac0 TC, 0x4ac4 STM, 0x4ab0 shifting)
+    auto i32At = [&](const uint8_t* p, size_t off) { int32_t v; memcpy(&v, p + off, 4); return v; };
+    auto setI32 = [&](uint8_t* p, size_t off, int32_t v) { memcpy(p + off, &v, 4); };
+    auto stateRun = [&](int32_t absV, int32_t tcV, int32_t stmV, int32_t shiftV, int absMode, int tcMode, int stmMode, int clutchMode, bool forceAuto) {
+        memset(buf, 0, sizeof(buf));
+        setI32(buf, 0x4abc, absV); setI32(buf, 0x4ac0, tcV); setI32(buf, 0x4ac4, stmV); setI32(buf, 0x4ab0, shiftV);
+        assist(buf, absMode, tcMode, stmMode, clutchMode, forceAuto);
+    };
+    stateRun(1, 1, 1, 0, Off, Off, Off, Game, false);
+    CHECK(i32At(buf, 0x4abc) == 0 && i32At(buf, 0x4ac0) == 0 && i32At(buf, 0x4ac4) == 0, "state fields, modes off: ABS %d TC %d STM %d (0)", i32At(buf, 0x4abc), i32At(buf, 0x4ac0), i32At(buf, 0x4ac4));
+    stateRun(0, 0, 0, 0, On, On, On, Game, false);
+    CHECK(i32At(buf, 0x4abc) == 1 && i32At(buf, 0x4ac0) == 1 && i32At(buf, 0x4ac4) == 1, "state fields, modes on: ABS %d TC %d STM %d (1)", i32At(buf, 0x4abc), i32At(buf, 0x4ac0), i32At(buf, 0x4ac4));
+    stateRun(7, 7, 7, 0, Game, Game, Game, Game, false);
+    CHECK(i32At(buf, 0x4abc) == 7 && i32At(buf, 0x4ac0) == 7 && i32At(buf, 0x4ac4) == 7, "state fields, modes game: ABS %d TC %d STM %d (7)", i32At(buf, 0x4abc), i32At(buf, 0x4ac0), i32At(buf, 0x4ac4));
+    stateRun(0, 0, 0, 1, Game, Game, Game, On, false);
+    CHECK(i32At(buf, 0x4ab0) == 2, "state shifting 1, clutch on: %d (2)", i32At(buf, 0x4ab0));
+    stateRun(0, 0, 0, 2, Game, Game, Game, Off, false);
+    CHECK(i32At(buf, 0x4ab0) == 1, "state shifting 2, clutch off: %d (1)", i32At(buf, 0x4ab0));
+    stateRun(0, 0, 0, 1, Game, Game, Game, On, true);
+    CHECK(i32At(buf, 0x4ab0) == 0, "state shifting 1, forced automatic: %d (0)", i32At(buf, 0x4ab0));
+    stateRun(0, 0, 0, 1, Game, Game, Game, Game, false);
+    CHECK(i32At(buf, 0x4ab0) == 1, "state shifting 1, clutch game: %d (1)", i32At(buf, 0x4ab0));
+
+    // physics fields of a fake car dynamics object (the vtable sits at obj + 0x3a0, the car points there)
+    static uint8_t obj[0x2000];
+    auto dynRun = [&](uint64_t vtable, int absMode, int tcMode, int stmMode) {
+        memset(buf, 0, sizeof(buf)); memset(obj, 0, sizeof(obj));
+        memcpy(obj + 0x3a0, &vtable, 8);
+        uint8_t* dyn = obj + 0x3a0;
+        memcpy(buf + 0x4c08, &dyn, 8);
+        setI32(obj, 0x1364, 7); setI32(obj, 0x1360, 7); setI32(obj, 0x135c, 7);
+        assist(buf, absMode, tcMode, stmMode, Game, false);
+    };
+    dynRun((uint64_t)(base + 0x2eb4bb8), On, Off, On);
+    CHECK(i32At(obj, 0x1364) == 1 && i32At(obj, 0x1360) == 0 && i32At(obj, 0x135c) == 1, "physics fields, ABS on TC off STM on: %d %d %d (1 0 1)", i32At(obj, 0x1364), i32At(obj, 0x1360), i32At(obj, 0x135c));
+    dynRun((uint64_t)(base + 0x2eb5e18), Off, On, Off);
+    CHECK(i32At(obj, 0x1364) == 0 && i32At(obj, 0x1360) == 1 && i32At(obj, 0x135c) == 0, "physics fields (refcounted vtable), ABS off TC on STM off: %d %d %d (0 1 0)", i32At(obj, 0x1364), i32At(obj, 0x1360), i32At(obj, 0x135c));
+    dynRun((uint64_t)(base + 0x2eb4bb8), Game, Game, Game);
+    CHECK(i32At(obj, 0x1364) == 7 && i32At(obj, 0x1360) == 7 && i32At(obj, 0x135c) == 7, "physics fields, modes game stay: %d %d %d (7)", i32At(obj, 0x1364), i32At(obj, 0x1360), i32At(obj, 0x135c));
+    dynRun(0x1234, On, On, On);
+    CHECK(i32At(obj, 0x1364) == 7 && i32At(obj, 0x1360) == 7 && i32At(obj, 0x135c) == 7, "physics fields, unknown dynamics vtable stay: %d %d %d (7)", i32At(obj, 0x1364), i32At(obj, 0x1360), i32At(obj, 0x135c));
+
+    // player car detection (state persists between steps; freshness is 1000 ms)
+    typedef uint8_t* (*FnDetect)(uint8_t*, bool);
+    FnDetect detect = (FnDetect)GetProcAddress(plugin, "FH2SI_TestDetectPlayer");
+    CHECK(detect != nullptr, "FH2SI_TestDetectPlayer exported");
+    if (!detect) return;
+    static uint8_t carA[0x4f40], carB[0x4f40];
+    memset(carA, 0, sizeof(carA)); memset(carB, 0, sizeof(carB));
+    static void** g_fakeResult;
+    struct FakeDriver { void** vtbl; };
+    static void* table[0xb0 / 8];
+    struct Getter { static void** get(void*) { return g_fakeResult; } };
+    table[0xa8 / 8] = (void*)&Getter::get;
+    static FakeDriver driver = {table};
+    static void* pDriver = &driver;
+    uint32_t idA = 1234, idB = 5678;
+    memcpy(carA + 0x118, &idA, 4); memcpy(carB + 0x118, &idB, 4);
+    static void* nullQ = nullptr, *setQ = (void*)1;
+    Sleep(1100);
+    CHECK(detect(carA, false) != carA, "player detection: car without a driver is not the player");
+    memcpy(carA + 0x4d00, &pDriver, 8);
+    g_fakeResult = nullptr;
+    CHECK(detect(carA, false) != carA, "player detection: getter returning null is not the player");
+    g_fakeResult = &nullQ;
+    CHECK(detect(carA, false) != carA, "player detection: getter returning a null qword is not the player");
+    g_fakeResult = &setQ;
+    CHECK(detect(carA, false) == carA, "player detection: non-null qword makes car A the player");
+    memcpy(carB + 0x4d00, &pDriver, 8);
+    CHECK(detect(carB, false) == carA, "player detection: first match kept while fresh");
+    Sleep(1100);
+    CHECK(detect(carB, false) == carB, "player detection: old match expired, car B is the player");
+    CHECK(detect(carA, true) == carA, "player detection: FFB site sets the player car");
+    CHECK(detect(carB, false) == carA, "player detection: FFB authority keeps car A");
 }
 
 typedef uint8_t (MSABI *FnGetter)(void*);
@@ -499,6 +616,12 @@ static void assistTests(uint8_t* base, uint64_t absOrig, uint64_t stmOrig, uint6
         CHECK(*(uint64_t*)(base + kVt[v] + 0xe8) != stmOrig && *(uint64_t*)(base + kVt[v] + 0xe8) != 0, "vtable %d STM slot re-pointed", v);
         CHECK(*(uint64_t*)(base + kVt[v] + 0xf8) != clutchOrig && *(uint64_t*)(base + kVt[v] + 0xf8) != 0, "vtable %d clutch slot re-pointed", v);
     }
+    const struct { size_t slot; uintptr_t orig; const char* what; } kReal[4] = {
+        {0xd8, 0x291f40, "ABS"}, {0xe8, 0x292024, "STM"}, {0xf0, 0x292134, "TC"}, {0xf8, 0x291fd4, "clutch"}};
+    for (const auto& r : kReal)
+        CHECK(*(uint64_t*)(base + 0x2c5de38 + r.slot) != (uint64_t)(base + r.orig), "real vtable %s slot re-pointed", r.what);
+    CHECK(*(uint64_t*)(base + 0x2eb4df0) != (uint64_t)(base + 0x12da500) && *(uint64_t*)(base + 0x2eb6050) != (uint64_t)(base + 0x12da500),
+          "dynamics apply slot re-pointed");
     if (!patched) return;
 
     // fake LocalPlayerChoices: ABS off and TC off in the game settings
@@ -727,6 +850,7 @@ static void drawDistTests(uint8_t* base, HMODULE plugin) {
 }
 
 int wmain(int argc, wchar_t** argv) {
+    if (HANDLE h = OpenFileMappingW(FILE_MAP_READ, FALSE, L"FT_SharedMem")) { printf("note: a head tracker is running (FT_SharedMem exists); the tracker checks will fail because it overrides the test pose\n"); CloseHandle(h); }
     if (argc < 3) { printf("usage: harness <game.exe> <FH2SimImmersion.dll> [--deep]\n"); return 2; }
     bool deep = argc > 3 && wcscmp(argv[3], L"--deep") == 0;
     uint8_t* base = mapImage(argv[1], deep ? 0x230000 : 0);

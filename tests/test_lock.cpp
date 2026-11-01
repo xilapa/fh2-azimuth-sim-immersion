@@ -16,22 +16,22 @@ int main() {
 
     // per-car 540, cap: the wheel turns 540
     in.carLock = 540;
-    CHECK(near(PhysicalLock(in), 540) && near(DisplayLock(in), 540));
-    // per-car 1080, cap, max 900: wheel 900, display 1080
+    CHECK(near(PhysicalLock(in), 540));
+    // per-car 1080, cap, max 900: wheel 900
     in.carLock = 1080;
-    CHECK(near(PhysicalLock(in), 900) && near(DisplayLock(in), 1080));
+    CHECK(near(PhysicalLock(in), 900));
     // scale: 540 -> 300, 1620 -> 900
     in.scale = true;
-    in.carLock = 540;  CHECK(near(PhysicalLock(in), 300) && near(DisplayLock(in), 540));
-    in.carLock = 1620; CHECK(near(PhysicalLock(in), 900) && near(DisplayLock(in), 1620));
+    in.carLock = 540;  CHECK(near(PhysicalLock(in), 300));
+    in.carLock = 1620; CHECK(near(PhysicalLock(in), 900));
     in.maxCarLock = 0; in.carLock = 1080; CHECK(near(PhysicalLock(in), 900));       // no list maximum: cap
     in.maxCarLock = 1620; in.scale = false;
     // per-car off: the game's rotation, limited by the maximum
     in.perCar = false; in.carLock = 540; in.gameRotation = 900; in.maxRotation = 720;
-    CHECK(near(PhysicalLock(in), 720) && near(DisplayLock(in), 720));
+    CHECK(near(PhysicalLock(in), 720));
     // max 0 -> WheelRange (per-car on, car unknown)
     in.perCar = true; in.carLock = 0; in.maxRotation = 0; in.gameRotation = 1500;
-    CHECK(near(PhysicalLock(in), 900) && near(DisplayLock(in), 900));
+    CHECK(near(PhysicalLock(in), 900));
     // nothing configured: exactly the game's rotation (0.9.5 behaviour), even above WheelRange
     in.perCar = false; in.gameRotation = 1080;
     CHECK(near(PhysicalLock(in), 1080));

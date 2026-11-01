@@ -219,7 +219,7 @@ Every real car turns its steering wheel a different amount from lock to lock: ab
 1105=720
 ```
 
-Unknown cars use the game's own rotation. In the log, `steering lock: car <id> <name> real <deg> deg -> wheel <deg> deg (display <deg>, <source>)` shows what was chosen for the car you drive.
+Unknown cars use the game's own rotation. In the log, `steering lock: car <id> <name> real <deg> deg -> wheel <deg> deg (<source>)` shows what was chosen for the car you drive.
 
 ### Maximum wheel rotation
 
@@ -241,7 +241,7 @@ It also damps the wheel inside the end stop and works in menus too. It does not 
 
 ### In-game wheel
 
-`RealCockpitWheel=1` makes the steering wheel of the cockpit model turn as far as the real one (the display lock of the car, up to its real lock) instead of at most 90 degrees each way. The driver's arms are only animated for 90 degrees each way, so use `HideDriverInCockpit=1` with it: the driver (arms and hands) is hidden while the cockpit camera is active and shown again in the other cameras. `CockpitWheelDirection` (`1` or `-1`, default `1`) reverses the in-game wheel if it turns the wrong way.
+`RealCockpitWheel=1` makes the steering wheel of the cockpit model turn the same number of degrees as your real wheel instead of at most 90 degrees each way. The driver's arms are only animated for 90 degrees each way, so use `HideDriverInCockpit=1` with it: the driver (arms and hands) is hidden while the cockpit camera is active and shown again in the other cameras. `CockpitWheelDirection` (`1` or `-1`, default `1`) reverses the in-game wheel if it turns the wrong way.
 
 These need the wheel and the plugin's car tracking; the log shows `cockpit: in-game wheel follows the real wheel`, `cockpit: driver hidden` and `cockpit: driver shown`.
 

@@ -30,11 +30,6 @@ inline float PhysicalLock(const LockInputs& in) {
     return std::max(p, 40.0f);
 }
 
-// Lock shown by the in-game wheel at full steering.
-inline float DisplayLock(const LockInputs& in) {
-    return (in.perCar && in.carLock > 0) ? in.carLock : PhysicalLock(in);
-}
-
 // Game steering value (-1..1) for a -1..1 physical steering input
 // (= clamp(physDeg / (PhysicalLock / 2), -1, 1) with physDeg = steering * wheelRange / 2).
 inline float GameSteer(const LockInputs& in, float steering) {

@@ -65,6 +65,7 @@ protected:
     Ctl&  MakeCtl(HWND parent, const Setting& s, bool withLabel);
     void  AddTip(HWND w, const std::wstring& text);
     void  LayoutRows();                              // positions the rows inside scroller_
+    void  ScrollTo(int pos);
     int   RowsHeight() const { return rowsHeight_; }
     Ctl*  Find(const char* section, const char* key);
     Ctl*  FindByWnd(HWND w);

@@ -21,10 +21,9 @@ void  VirtualWheel_SetUser(void* user);
 void  VirtualWheel_FfbSnapshot(FfbParams& out);
 // The steering value the game sees for a -1..1 physical steering input (rotation-scaled, clamped).
 float VirtualWheel_GameAngle(float steering);
-// Physical lock (degrees lock to lock) the player turns the real wheel through for full steering, and the
-// lock shown by the in-game wheel (see steer_lock.h). Use the current car and settings.
+// Physical lock (degrees lock to lock) the player turns the real wheel through for full steering, also the lock
+// of the in-game wheel (see steer_lock.h). Use the current car and settings.
 float VirtualWheel_PhysicalLockDeg();
-float VirtualWheel_DisplayLockDeg();
 // Records the local player's car (called from the FFB call-site hook, game thread): selects its steering lock.
 void  SteerLock_SetPlayerCar(uint32_t id);
 // Stores the game's per-frame UpdateFFB input (called from the game thread; stamps qpc itself).

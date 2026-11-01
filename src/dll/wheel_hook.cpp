@@ -531,9 +531,7 @@ static void installFfbSite(uintptr_t base, bool wheelFfb, bool track) {
 
 void WheelHook_Install(uintptr_t base, const Config& cfg) {
     g_base = base;
-    const bool assists = cfg.sim.realisticAbs || cfg.sim.realisticTc || cfg.sim.realisticStm || cfg.sim.realisticClutch ||
-                         cfg.sim.realisticAutomatic || cfg.sim.realisticSteeringLock ||
-                         cfg.sim.realCockpitWheel || cfg.sim.hideDriverInCockpit;
+    const bool assists = CockpitHook_NeedsCarTracking(cfg);
     bool wheelOk = false;
     if (!cfg.wheel.enabled) {
         LOG("wheel: disabled in settings");
