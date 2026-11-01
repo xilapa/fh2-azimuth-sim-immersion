@@ -89,8 +89,7 @@ void hookCarUpdate(uint8_t* car, float a, float b, int c) {
 } // namespace
 
 void CockpitHook_SetPlayerCar(uint8_t* car) {
-    uint8_t* old = g_playerCar.exchange(car, std::memory_order_relaxed);
-    (void)old;
+    g_playerCar.store(car, std::memory_order_relaxed);
     g_playerTick.store(GetTickCount64(), std::memory_order_relaxed);
 }
 

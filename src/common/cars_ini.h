@@ -18,13 +18,16 @@ inline CarOvr word(const std::wstring& s, bool clutch) {
     for (wchar_t c : s) if (c != L' ' && c != L'\t') t += (wchar_t)((c >= L'A' && c <= L'Z') ? c + 32 : c);
     return t == L"on" ? CarOvr::On : t == L"off" ? CarOvr::Off : (clutch && t == L"automatic") ? CarOvr::Automatic : CarOvr::Auto;
 }
-// Position of '=' and the leading id (> 0), or npos.
+// Position of '=' and the leading id (> 0: only digits, spaces/tabs around it, then '='), or npos.
 inline size_t idAndEq(const std::wstring& line, unsigned& id) {
     size_t eq = line.find(L'=');
     if (eq == std::wstring::npos) return eq;
+    size_t s = line.find_first_not_of(L" \t");
+    if (s == eq || line[s] < L'0' || line[s] > L'9') return std::wstring::npos;
     wchar_t* end = nullptr;
-    unsigned long v = wcstoul(line.c_str(), &end, 10);
-    if (end == line.c_str() || v == 0) return std::wstring::npos;
+    unsigned long v = wcstoul(line.c_str() + s, &end, 10);
+    while (*end == L' ' || *end == L'\t') ++end;
+    if (end != line.c_str() + eq || v == 0) return std::wstring::npos;
     id = (unsigned)v;
     return eq;
 }

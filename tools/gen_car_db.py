@@ -12,6 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CODES = {"yes": "y", "no": "n", "optional": "o", "unknown": "u"}
 GEARBOX = {"manual": "m", "mixed": "x", "at": "a", "atm": "t", "dct": "d", "amt": "s", "cvt": "c", "ev": "e",
            "seq": "q", "unknown": "u"}
+CLUTCH_FOR_GEARBOX = {"manual": "yes", "mixed": "optional", "at": "no", "atm": "no", "dct": "no", "amt": "no", "cvt": "no", "ev": "no", "seq": "no"}
 
 
 def cstr(s):
@@ -41,10 +42,10 @@ def gearbox(v, row):
     v = v.strip().lower()
     if v not in GEARBOX:
         sys.exit("gen_car_db: bad Gearbox value %r for car %s" % (v, row["Id"]))
+    want = CLUTCH_FOR_GEARBOX.get(v)   # unknown gearbox: nothing to compare
+    if want and row["Clutch"].strip().lower() != want:
+        sys.exit("gen_car_db: Clutch %r does not fit Gearbox %r for car %s" % (row["Clutch"], v, row["Id"]))
     return GEARBOX[v]
-
-
-LOCK_BASIS = {"source": "s", "known": "k", "estimate": "e"}
 
 
 def lock(row):
@@ -52,12 +53,9 @@ def lock(row):
         deg = int(row["SteeringLockDeg"])
     except (KeyError, ValueError):
         sys.exit("gen_car_db: bad SteeringLockDeg for car %s" % row["Id"])
-    if not 650 <= deg <= 1620:
+    if not 500 <= deg <= 2000:
         sys.exit("gen_car_db: SteeringLockDeg %d out of range for car %s" % (deg, row["Id"]))
-    b = row["LockBasis"].strip().lower()
-    if b not in LOCK_BASIS:
-        sys.exit("gen_car_db: bad LockBasis %r for car %s" % (b, row["Id"]))
-    return deg, LOCK_BASIS[b]
+    return deg
 
 
 def main():
@@ -83,20 +81,20 @@ def main():
         "// gearbox: 'm' manual, 'x' mixed (manual and a non-manual option), 'a' automatic without manual mode,",
         "// 't' automatic with manual mode, 'd' dual-clutch, 's' automated manual, 'c' CVT, 'e' single-speed electric,",
         "// 'q' race sequential, 'u' unknown.",
-        "// lockDeg: steering wheel rotation lock to lock in degrees; lockBasis: 's' source, 'k' known, 'e' estimate.",
-        "struct CarInfo { uint32_t id; const char* media; uint16_t year; const char* name; char abs; char tc; char stm; char clutch; char gearbox; uint16_t lockDeg; char lockBasis; };",
+        "// lockDeg: steering wheel rotation lock to lock in degrees.",
+        "struct CarInfo { uint32_t id; const char* media; uint16_t year; const char* name; char abs; char tc; char stm; char clutch; char gearbox; uint16_t lockDeg; };",
         "",
         "inline constexpr CarInfo kCars[] = {",
     ]
     for r in rows:
-        lines.append("    {%d, %s, %d, %s, '%s', '%s', '%s', '%s', '%s', %d, '%s'}," % (
+        lines.append("    {%d, %s, %d, %s, '%s', '%s', '%s', '%s', '%s', %d}," % (
             int(r["Id"]), cstr(r["MediaName"]), int(r["Year"]), cstr(r["CarName"]),
             code(r["ABS"], r), code(r["TC"], r), code(r["STM"], r), code(r["Clutch"], r), gearbox(r["Gearbox"], r),
-            lock(r)[0], lock(r)[1]))
+            lock(r)))
     lines += [
         "};",
         "",
-        "inline constexpr uint16_t kMaxCarLockDeg = %d;" % max(lock(r)[0] for r in rows),
+        "inline constexpr uint16_t kMaxCarLockDeg = %d;" % max(lock(r) for r in rows),
         "",
         "inline constexpr size_t kCarCount = sizeof(kCars) / sizeof(kCars[0]);",
         "",

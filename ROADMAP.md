@@ -92,7 +92,7 @@ Add screenshots to `docs/screenshots/` to document the settings window.
 - [x] Gearbox column in car list
 
 ### Version 0.9.6
-- [x] Per-car steering lock (8 sourced, 6 known, 340 estimated by car type)
+- [x] Per-car steering lock (354 cars, checked by hand)
 - [x] Max wheel rotation with cap/scale modes
 - [x] Soft lock FFB end-stop with damping
 - [x] In-game wheel turns like the real one

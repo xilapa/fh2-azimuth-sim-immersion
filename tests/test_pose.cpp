@@ -22,6 +22,15 @@ static MapCfg defaults() {
 
 int main() {
     RawPose zero;
+    {
+        RawPose p;
+        assert(poseFinite(p));
+        p.yaw = std::nan("");
+        assert(!poseFinite(p));
+        RawPose q;
+        q.x = HUGE_VAL;
+        assert(!poseFinite(q));
+    }
     // identity mapping: degrees pass through, cm -> m
     {
         RawPose p{10, -5, 3, 30, -10, 4};

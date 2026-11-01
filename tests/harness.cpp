@@ -397,7 +397,6 @@ static void ffbTests(uint8_t* base, HMODULE plugin) {
         st = readSteer();
         CHECK(std::fabs(st - 0.5f) < 1e-4f, "unknown car: the game's rotation (450) -> steering %f, expected 0.5", st);
     }
-    CHECK(fh2::kMaxCarLockDeg == 1620, "kMaxCarLockDeg %u", (unsigned)fh2::kMaxCarLockDeg);
 }
 
 typedef void (*FnTestCockpit)(uint8_t*, float);

@@ -87,4 +87,6 @@ inline void smoothPose(RawPose& state, const RawPose& in, double alpha) {
     state.roll  += (in.roll - state.roll) * alpha;
 }
 
+inline bool poseFinite(const RawPose& p) { return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z) && std::isfinite(p.yaw) && std::isfinite(p.pitch) && std::isfinite(p.roll); }
+
 } // namespace fh2

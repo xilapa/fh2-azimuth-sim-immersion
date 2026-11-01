@@ -136,7 +136,7 @@ inline constexpr Setting kSimSettings[] = {
      0, 65535, 10, nullptr, "Steering wheel", nullptr, false},
     {"Simulation", "SteeringLockMode", SType::Enum, "Steering lock mode (cap / scale)",
      "cap: only cars with a lock above the maximum use the maximum, the others stay 1:1 (maximum 900: a 1080 degree truck uses 900, a 540 degree race car stays 540). "
-     "scale: every car is scaled so the car with the largest lock uses the maximum (maximum 900: 1620 becomes 900, 540 becomes 300).",
+     "scale: every car is scaled so the car with the largest lock uses the maximum (maximum 900: 1908 becomes 900, 540 becomes 255).",
      0, 0, 0, "cap|scale", "Steering wheel", nullptr, false},
     {"Simulation", "RealCockpitWheel", SType::Bool, "In-game wheel turns like the real one",
      "The steering wheel of the cockpit model turns as far as the real car's wheel (instead of at most 90 degrees each way). Use it with hiding the driver's arms.",

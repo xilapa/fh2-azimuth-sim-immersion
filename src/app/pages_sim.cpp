@@ -85,7 +85,7 @@ protected:
         SendMessageW(lockEdit_, EM_SETCUEBANNER, FALSE, (LPARAM)L"degrees");
         hint_ = MakeStatic(host_, L"auto = car data");
         AddTip(list_, L"Real ABS / TC / STM / clutch: what the real car had (yes, no, optional, unknown). Gearbox: the real car's gearbox. ovr. = override. "
-                      L"Lock: lock-to-lock steering wheel rotation of the real car. * = estimated from the car type. \"ovr\" = your lock override. "
+                      L"Lock: lock-to-lock steering wheel rotation of the real car. \"ovr\" = your lock override. "
                       L"Overrides are saved in FH2SimImmersion_cars.ini ([Cars] and [SteeringLock], key = car Id).");
         AddTip(lockEdit_, L"Lock-to-lock steering wheel rotation of the selected car in degrees (90 - 3600); empty = use the research data. Saved as [SteeringLock] Id=degrees in FH2SimImmersion_cars.ini.");
         AddTip(absCombo_, L"auto = use the research data (and the settings above); on / off = force it for this car.");
@@ -176,7 +176,7 @@ protected:
             case 8: {
                 auto lo = lockCur_.find(c.id);
                 if (lo != lockCur_.end()) t = std::to_wstring(lo->second) + L" ovr";
-                else t = std::to_wstring(c.lockDeg) + (c.lockBasis == 'e' ? L"*" : L"");
+                else t = std::to_wstring(c.lockDeg);
                 break;
             }
             case 9: t = ovr(p[0]); break;
@@ -282,7 +282,7 @@ private:
                 fh2::CarAssistLine l;
                 if (!fh2::ParseCarAssistLine(line, l)) continue;
                 Triple pr{(int)l.abs, (int)l.tc, (int)l.stm, (int)l.clutch};   // CarOvr values = page ints (0 auto, 1 on, 2 off, 3 automatic)
-                if (pr != kAuto) cur_[l.id] = pr;
+                if (pr != kAuto) cur_.emplace(l.id, pr);   // first line of a duplicated id wins, as in the plugin
             }
         }
         orig_ = cur_;
@@ -294,7 +294,7 @@ private:
                 std::wstring line = p;
                 unsigned id = 0, deg = 0;
                 if (!fh2::ParseSteeringLockLine(line, id, deg)) continue;
-                lockCur_[id] = deg;
+                lockCur_.emplace(id, deg);
             }
         }
         lockOrig_ = lockCur_;
@@ -324,7 +324,6 @@ private:
         for (auto& kv : allLock) {
             auto a = lockOrig_.find(kv.first), b = lockCur_.find(kv.first);
             unsigned o = a == lockOrig_.end() ? 0 : a->second, n = b == lockCur_.end() ? 0 : b->second;
-            if (n != 0) n = std::min(std::max(n, 90u), 3600u);
             if (o == n) continue;
             std::wstring key = std::to_wstring(kv.first);
             if (n == 0) lockOk = WritePrivateProfileStringW(L"SteeringLock", key.c_str(), nullptr, path.c_str()) && lockOk;

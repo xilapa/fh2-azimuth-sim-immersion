@@ -260,7 +260,7 @@ static void loadSteeringLocks(const std::wstring& path, std::vector<std::pair<un
         bool ok = ParseSteeringLockLine(line, id, deg);
         if (!ok) { LOG("config: bad [SteeringLock] line '%ls' (want CarId=90..3600); ignored", line.c_str()); continue; }
         bool dup = false;
-        for (auto& e : out) if (e.first == id) { e.second = deg; dup = true; }
+        for (auto& e : out) if (e.first == id) dup = true;   // first line of a duplicated id wins, as for [Cars]
         if (!dup) out.push_back({id, deg});
     }
 }
@@ -339,8 +339,6 @@ Config loadConfig(const std::wstring& iniPath) {
     for (char& ch : opt) ch = (char)tolower((unsigned char)ch);
     c.sim.optionalAssists  = opt == "on" ? AssistMode::On : opt == "off" ? AssistMode::Off : AssistMode::Game;
     c.sim.realisticStm     = readI(ini, "Simulation", "RealisticSTM", 0) != 0;
-    if (readI(ini, "Simulation", "TieStabilityToTC", 0) != 0)
-        LOG("config: TieStabilityToTC is no longer used; use RealisticSTM");
     c.sim.realisticClutch  = readI(ini, "Simulation", "RealisticClutch", 0) != 0;
     c.sim.realisticAutomatic = readI(ini, "Simulation", "RealisticAutomatic", 0) != 0;
     LOG("config: realistic abs %d tc %d stm %d clutch %d automatic %d optional %s", c.sim.realisticAbs, c.sim.realisticTc, c.sim.realisticStm,

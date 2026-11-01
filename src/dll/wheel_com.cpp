@@ -520,7 +520,7 @@ void SteerLock_SetPlayerCar(uint32_t id) {
         if (o.first == id) { lock = o.second; src = "override"; }
     if (!lock && car) {
         lock = car->lockDeg;
-        src = car->lockBasis == 's' ? "source" : car->lockBasis == 'k' ? "known" : "estimate";
+        src = "car data";
     }
     g_carLock.store(lock);
     g_lockCar.store((int64_t)id);

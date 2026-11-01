@@ -44,6 +44,7 @@ void publish(const CameraOffsets& o, bool valid) {
 }
 
 void onSample(const RawPose& p, bool fromFreeTrack) {
+    if (!poseFinite(p)) return;   // a NaN would stick in the smoothed pose and the centre, and reach the camera
     double t = nowSeconds();
     if (fromFreeTrack) g_lastFreeTrackT = t;
     // In auto mode FreeTrack wins while it is live, so two sources never fight.

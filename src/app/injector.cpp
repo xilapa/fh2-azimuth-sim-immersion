@@ -24,6 +24,7 @@ static std::vector<DWORD> findAzimuth() {
 static bool hasModule(HANDLE proc, const std::wstring& dllPath) {
     HMODULE mods[1024]; DWORD need = 0;
     if (!EnumProcessModulesEx(proc, mods, sizeof(mods), &need, LIST_MODULES_64BIT)) return false;
+    need = std::min<DWORD>(need, sizeof(mods));   // more modules than fit: check the ones returned
     for (DWORD i = 0; i < need / sizeof(HMODULE); ++i) {
         wchar_t name[MAX_PATH];
         if (GetModuleFileNameExW(proc, mods[i], name, MAX_PATH) && _wcsicmp(name, dllPath.c_str()) == 0) return true;

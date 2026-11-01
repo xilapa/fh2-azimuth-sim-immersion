@@ -22,11 +22,15 @@ int main() {
     CHECK(!ParseCarAssistLine(L"0=on", l));
     CHECK(!ParseCarAssistLine(L"=on", l));
     CHECK(!ParseCarAssistLine(L"123 on", l));
+    CHECK(!ParseCarAssistLine(L"12a=off", l));
+    CHECK(!ParseCarAssistLine(L"-5=on", l));
+    CHECK(ParseCarAssistLine(L" 5 =on", l) && l.id == 5);
 
     unsigned id = 0, deg = 0;
     CHECK(ParseSteeringLockLine(L"123=540", id, deg) && id == 123 && deg == 540);
     CHECK(ParseSteeringLockLine(L"123= 540 ", id, deg) && deg == 540);
     CHECK(!ParseSteeringLockLine(L"123=540x", id, deg));
+    CHECK(!ParseSteeringLockLine(L"12a=540", id, deg));
     CHECK(!ParseSteeringLockLine(L"123=89", id, deg));
     CHECK(!ParseSteeringLockLine(L"123=3601", id, deg));
     CHECK(ParseSteeringLockLine(L"9=90", id, deg) && ParseSteeringLockLine(L"9=3600", id, deg));

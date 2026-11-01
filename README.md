@@ -184,8 +184,6 @@ The `[Simulation]` section has the keys:
 * `RealisticClutch=1` (default `0`) gives cars that had a clutch the game's "manual with clutch" shifting and cars without one (sequential or dual-clutch gearboxes) "manual without clutch". It only changes the choice of a player who drives manual: if you drive with automatic gears in the game, the car stays automatic. Cars where the clutch was optional follow `OptionalAssists`.
 * `RealisticAutomatic=1` (default `0`) makes automatic-only cars always shift automatically, whatever you chose in the game: cars whose real gearbox was a traditional automatic without a manual mode (`at`), a CVT (`cvt`) or a single-speed electric drive (`ev`). The Gearbox column of the car list in the Simulation tab shows the real gearbox of each car. It works on its own or together with `RealisticClutch`.
 
-`TieStabilityToTC` from version 0.9.0 is no longer used (the log says so); use `RealisticSTM`.
-
 ### Per-car overrides
 
 Per-car overrides go in an optional file `FH2SimImmersion_cars.ini` next to the DLL:
@@ -199,7 +197,7 @@ Per-car overrides go in an optional file `FH2SimImmersion_cars.ini` next to the 
 
 Old lines with two or three fields (`Id=ABS,TC`, `Id=ABS,TC,STM`) still work; the missing ones are `auto`. A clutch override of `on` or `off` cancels `RealisticAutomatic` for that car.
 
-The data comes from research of each real car and is in `data/car_assists.csv` (Id, name, year, ABS, TC, STM, clutch, gearbox, steering lock, confidence and notes for every car). It can contain mistakes: corrections are welcome. Cars marked unknown, and cars that are not in the list, keep your game setting.
+The data comes from research of each real car, checked by hand, and is in `data/car_assists.csv` (Id, name, year, ABS, TC, STM, clutch, gearbox, steering lock and notes for every car). It can contain mistakes: corrections are welcome. Cars marked unknown, and cars that are not in the list, keep your game setting.
 
 To check that it works, look in `FH2SimImmersion.log` for `car: <id> <name> (ABS ..., TC ..., STM ..., clutch ..., gearbox ...)` when a race starts, and `assists: ABS forced ... for <name>` (likewise `TC`, `stability control`, `automatic shifting` and `clutch`). With `Diagnostics=1` the log also shows `assists diag:` lines with how often the game asked for the settings.
 
@@ -213,7 +211,7 @@ Every real car turns its steering wheel a different amount from lock to lock: ab
 
 ### Per-car lock
 
-`RealisticSteeringLock=1` (`[Simulation]`, default `0`) makes full in-game steering happen at the real car's lock-to-lock rotation instead of the game's own rotation setting. The data is in `data/car_assists.csv` (columns `SteeringLockDeg` and `LockBasis`) and in the **Lock** column of the car list in the Simulation tab. `LockBasis` says where a value comes from: `source` (a published figure), `known` (known from the car type or model) or `estimate`; the list marks estimates with a `*` (for example `900*`). The data can contain mistakes. To correct a car, select it in the car list and type the degrees in **Lock override**, or edit `FH2SimImmersion_cars.ini` by hand:
+`RealisticSteeringLock=1` (`[Simulation]`, default `0`) makes full in-game steering happen at the real car's lock-to-lock rotation instead of the game's own rotation setting. The data is in `data/car_assists.csv` (column `SteeringLockDeg`) and in the **Lock** column of the car list in the Simulation tab. The data can contain mistakes. To correct a car, select it in the car list and type the degrees in **Lock override**, or edit `FH2SimImmersion_cars.ini` by hand:
 
 ```
 [SteeringLock]
@@ -228,7 +226,7 @@ Unknown cars use the game's own rotation. In the log, `steering lock: car <id> <
 `MaxWheelRotation` (degrees, `0` = `WheelRange`) is the most your wheel may turn from lock to lock (the G29: 900). A car with a bigger real lock cannot be turned that far, so `SteeringLockMode` decides what happens:
 
 * `cap` (default): cars whose lock is more than `MaxWheelRotation` use `MaxWheelRotation`; the others stay 1:1. With 900: a 1080 degree truck uses 900, a 540 degree race car stays 540.
-* `scale`: every car is scaled so the car with the largest lock in the list (1620 degrees) uses `MaxWheelRotation`, and all cars keep their proportions. With 900: 1620 becomes 900, 540 becomes 300.
+* `scale`: every car is scaled so the car with the largest lock in the list (1908 degrees) uses `MaxWheelRotation`, and all cars keep their proportions. With 900: 1908 becomes 900, 540 becomes 255.
 
 With `RealisticSteeringLock=0` only the maximum applies to the game's own rotation. With both options off the steering is the same as in 0.9.5.
 
