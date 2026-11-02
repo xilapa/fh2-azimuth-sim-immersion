@@ -24,7 +24,4 @@ private:
     StatusFn status_;
 };
 
-// Starts azimuth.exe in its own folder. On failure returns false and fills `error`.
-bool StartAzimuth(const std::wstring& exe, std::wstring& error);
-
 } // namespace app

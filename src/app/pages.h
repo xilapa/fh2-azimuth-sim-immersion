@@ -15,8 +15,6 @@ Page* NewMainPage(int index);
 class MainPageApi {
 public:
     virtual void AddStatusLine(const std::wstring& line) = 0;       // injector status (any thread-safe caller: UI thread)
-    virtual void SetAzimuthPath(const std::wstring& path, bool save) = 0;
-    virtual bool StartAzimuthNow() = 0;                              // button action, also used for the command line
 protected:
     ~MainPageApi() {}
 };

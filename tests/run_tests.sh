@@ -7,6 +7,7 @@ g++ -std=c++17 -O1 -Wall tests/test_pose.cpp -o build/test_pose && ./build/test_
 g++ -std=c++17 -O1 -Wall tests/test_ffb.cpp src/dll/wheel_ffb.cpp -o build/test_ffb && ./build/test_ffb
 g++ -std=c++17 -O1 -Wall tests/test_ini.cpp -o build/test_ini && ./build/test_ini
 g++ -std=c++17 -O1 -Wall tests/test_lock.cpp src/dll/wheel_ffb.cpp -o build/test_lock && ./build/test_lock
+g++ -std=c++17 -O1 -Wall tests/test_spindle.cpp -o build/test_spindle && ./build/test_spindle
 g++ -std=c++17 -O1 -Wall tests/test_cars.cpp -o build/test_cars && ./build/test_cars
 if command -v python3 >/dev/null 2>&1; then
     python3 tools/gen_car_db.py data/car_assists.csv build/car_db.h.new

@@ -99,6 +99,7 @@ struct Config {
     // [Wheel]
     WheelConfig wheel;
     // [Simulation]
+    bool simEnabled = true;     // [Simulation] Enabled
     SimConfig sim;
     // [DrawDistance]
     DrawDistConfig drawDist;

@@ -401,6 +401,7 @@ static void ffbTests(uint8_t* base, HMODULE plugin) {
 
 typedef void (*FnTestCockpit)(uint8_t*, float);
 typedef void (*FnTestCarAssist)(uint8_t*, int, int, int, int, bool);
+typedef void* (*FnTestRig)(uint8_t*);
 
 static void cockpitTests(uint8_t* base, HMODULE plugin, uint64_t slotOrig, const std::wstring& logPath) {
     printf("cockpit wheel and driver:\n");
@@ -416,6 +417,7 @@ static void cockpitTests(uint8_t* base, HMODULE plugin, uint64_t slotOrig, const
         if (f) { char b[4096]; size_t n; while ((n = fread(b, 1, sizeof(b), f)) > 0) text.append(b, n); fclose(f); }
         CHECK(text.find("cockpit: driver hide ready") != std::string::npos, "log: cockpit: driver hide ready");
         CHECK(text.find("cockpit: car update hook installed") != std::string::npos, "log: car update hook installed");
+        CHECK(text.find("cockpit: wheel spindle hook installed") != std::string::npos, "log: wheel spindle hook installed");
     }
     FnTestCockpit fn = (FnTestCockpit)GetProcAddress(plugin, "FH2SI_TestCockpitWheel");
     CHECK(fn != nullptr, "FH2SI_TestCockpitWheel exported");
@@ -438,6 +440,29 @@ static void cockpitTests(uint8_t* base, HMODULE plugin, uint64_t slotOrig, const
     fn(car, 0.25f);
     memcpy(&a, car + 0x4f30, 4);
     CHECK(a == before, "frozen car (0x4f11 != 0): angle untouched");
+
+    // The car holds a deferred wrapper of the presentation; the rig is only found through it.
+    FnTestRig rigOf = (FnTestRig)GetProcAddress(plugin, "FH2SI_TestPlayerRig");
+    CHECK(rigOf != nullptr, "FH2SI_TestPlayerRig exported");
+    if (!rigOf) return;
+    CHECK(*(uint64_t*)(base + 0x2ebe7e0 + 0x1c8) == (uint64_t)(base + 0x134fb20), "deferred presentation vtable matches this build");
+    CHECK(*(uint64_t*)(base + 0x2ec1450 + 0x1c8) == (uint64_t)(base + 0x13ade90), "presentation vtable matches this build");
+    static uint8_t pres[0x12a0];
+    void* const rig = pres + 0x100;
+    *(uint64_t*)pres = (uint64_t)(base + 0x2ec1450);
+    memcpy(pres + 0x1298, &rig, 8);
+    uint64_t wrapper[2] = {(uint64_t)(base + 0x2ebe7e0), (uint64_t)pres};
+    auto rigThrough = [&](void* p) { memcpy(car + 0x4d38, &p, 8); return rigOf(car); };
+    CHECK(rigThrough(wrapper) == rig, "rig found through the deferred wrapper");
+    wrapper[0] = (uint64_t)(base + 0x2ebef68);
+    CHECK(rigThrough(wrapper) == rig, "rig found through the ref-counted deferred wrapper");
+    CHECK(rigThrough(pres) == rig, "rig found on a plain presentation");
+    wrapper[1] = 0;
+    CHECK(rigThrough(wrapper) == nullptr, "no rig when the wrapper is empty");
+    wrapper[0] = (uint64_t)(base + 0x2eb8570);
+    wrapper[1] = (uint64_t)pres;
+    CHECK(rigThrough(wrapper) == nullptr, "no rig behind an unknown presentation type");
+    CHECK(rigThrough(nullptr) == nullptr, "no rig without a driver model");
 
     FnTestCarAssist assist = (FnTestCarAssist)GetProcAddress(plugin, "FH2SI_TestCarAssistBytes");
     CHECK(assist != nullptr, "FH2SI_TestCarAssistBytes exported");
@@ -815,25 +840,49 @@ static void drawDistTests(uint8_t* base, HMODULE plugin) {
     CHECK(F(0x32c) == 4000.0f, "props: larger game value kept (%.0f)", F(0x32c));
     CHECK(F(0x168) == 100.0f && F(0x404) == 250.0f && F(0x164) == 0.0f && F(0x40c) == 0.0f && F(0x410) == 0.0f,
           "grass and crowd untouched with their settings at 0");
+    // D. the calls of the level selection go through a thunk that scales the squared distance by 1 / k^2 (k = 800 / 360)
+    for (uintptr_t rva : {0x11391d4, 0x1353e2e, 0x13545b3, 0x135464a}) {
+        int32_t r; memcpy(&r, base + rva + 1, 4);
+        CHECK(base[rva] == 0xE8 && base + rva + 5 + r != base + 0x1139200, "level selection call %llx re-pointed", (unsigned long long)rva);
+    }
+    int32_t selRel; memcpy(&selRel, base + 0x1353e2e + 1, 4);
+    typedef char (MSABI *FnSelect)(float, uint64_t*, int*, float, uint8_t, float, float, float, float);
+    auto select = (FnSelect)(base + 0x1353e2e + 5 + selRel);
+    uint64_t lodFlags = 0x3cULL << 48;   // the model has all four levels
+    int level = -1;
+    char culled = select(150.0f * 150.0f, &lodFlags, &level, 0.0f, 0, 900.0f, 3600.0f, 8100.0f, 10000.0f);
+    CHECK(!culled && level == 2, "150 m with distances 30/60/90/100 x2.2: level %d, culled %d (want 2, 0)", level, (int)culled);
+    culled = select(250.0f * 250.0f, &lodFlags, &level, 0.0f, 0, 900.0f, 3600.0f, 8100.0f, 10000.0f);
+    CHECK(culled && level == 4, "250 m is past the last distance: level %d, culled %d (want 4, 1)", level, (int)culled);
+
+    // E. shadow cascades: ShadowDistance 200 on the game's own tables, raised at install and never lowered
+    const auto closeTo = [](float a, float b) { return std::fabs(a - b) < 0.01f; };
+    const float* splitsA = (const float*)(base + 0x2207288);
+    const float* splitsB = (const float*)(base + 0x2207298);
+    CHECK(closeTo(splitsA[0], 9.44f) && closeTo(splitsA[1], 72.22f) && closeTo(splitsA[2], 200.0f), "shadow splits A %.2f %.2f %.2f", splitsA[0], splitsA[1], splitsA[2]);
+    CHECK(closeTo(splitsB[0], 2.22f) && closeTo(splitsB[1], 33.33f) && closeTo(splitsB[2], 150.0f), "shadow splits B %.2f %.2f %.2f", splitsB[0], splitsB[1], splitsB[2]);
+    typedef void (MSABI *FnSplits)();
+    auto raiseSplits = (FnSplits)GetProcAddress(plugin, "FH2SI_TestRaiseShadowSplits");
+    CHECK(raiseSplits != nullptr, "FH2SI_TestRaiseShadowSplits exported");
+    if (raiseSplits) raiseSplits();
+    CHECK(closeTo(splitsA[2], 200.0f), "shadow splits unchanged on a second run");
 
     // B. traffic: the game's static initializers did not run here, so lay the registry variables out first
     struct Var { uintptr_t rva; float def, max; };
-    const Var vars[] = {{0x36e8c80, 100.0f, 500.0f}, {0x36e8d88, 150.0f, 500.0f}, {0x36e8160, 30.0f, 1000.0f}, {0x36e8048, 120.0f, 1000.0f}};
+    const Var vars[] = {{0x36e8160, 30.0f, 1000.0f}, {0x36e8048, 120.0f, 1000.0f}};
     for (auto& v : vars) {
         *(float*)(base + v.rva + 0x10) = v.def;
         *(float*)(base + v.rva + 0x14) = v.def;
         *(float*)(base + v.rva + 0x20) = v.max;
     }
     applyTraffic();
-    float tmin = *(float*)(base + 0x36e8c80 + 0x10), tmax = *(float*)(base + 0x36e8d88 + 0x10),
-          thigh = *(float*)(base + 0x36e8160 + 0x10), tmed = *(float*)(base + 0x36e8048 + 0x10);
-    CHECK(tmin == 250.0f && tmax == 300.0f, "traffic fade %.0f-%.0f (want 250-300)", tmin, tmax);
+    float thigh = *(float*)(base + 0x36e8160 + 0x10), tmed = *(float*)(base + 0x36e8048 + 0x10);
     CHECK(tmed == 300.0f && thigh == 30.0f, "medium LOD %.0f (want 300), high LOD %.0f unchanged", tmed, thigh);
     // a mismatching layout is left alone
-    *(float*)(base + 0x36e8d88 + 0x14) = 999.0f;
-    *(float*)(base + 0x36e8d88 + 0x10) = 150.0f;
+    *(float*)(base + 0x36e8048 + 0x14) = 999.0f;
+    *(float*)(base + 0x36e8048 + 0x10) = 120.0f;
     applyTraffic();
-    CHECK(*(float*)(base + 0x36e8d88 + 0x10) == 150.0f, "registry mismatch: unchanged");
+    CHECK(*(float*)(base + 0x36e8048 + 0x10) == 120.0f, "registry mismatch: unchanged");
 
     // C. racer cars: CarLODTransDist parse / defaults slots
     uint64_t* slots = (uint64_t*)(base + 0x2eb9bc0);
@@ -849,7 +898,108 @@ static void drawDistTests(uint8_t* base, HMODULE plugin) {
           "default car LOD distances %.0f/%.0f/%.0f/%.0f (want 30/50/100/120: built-in defaults 15/25/50/60 x2)", lod[0], lod[1], lod[2], lod[3]);
 }
 
+typedef HRESULT (WINAPI *FnProxyCreate)(HINSTANCE, DWORD, REFIID, void**, void*);
+
+static HRESULT askProxy(FnProxyCreate create) {
+    static const GUID kIid = {0xBF798031, 0x483A, 0x4DA2, {0xAA, 0x99, 0x5D, 0x64, 0xED, 0x36, 0x97, 0x00}};  // IDirectInput8W
+    void* obj = nullptr;
+    const HRESULT hr = create(GetModuleHandleW(nullptr), 0x0800, kIid, &obj, nullptr);
+    if (SUCCEEDED(hr) && obj) (*(ULONG (WINAPI***)(void*))obj)[2](obj);    // Release
+    return hr;
+}
+
+// Run as proxy_test\FH2SimImmersion.exe by enableCheckTests: the settings window must get the real DirectInput.
+static int settingsWindowProbe() {
+    wchar_t self[MAX_PATH];
+    GetModuleFileNameW(nullptr, self, MAX_PATH);
+    std::wstring dir(self);
+    dir.resize(dir.find_last_of(L"\\/") + 1);
+    HMODULE proxy = LoadLibraryW((dir + L"dinput8.dll").c_str());
+    FnProxyCreate create = proxy ? (FnProxyCreate)GetProcAddress(proxy, "DirectInput8Create") : nullptr;
+    return create && SUCCEEDED(askProxy(create)) ? 0 : 1;
+}
+
+static void writeText(const std::wstring& path, const char* text) {
+    FILE* f = _wfopen(path.c_str(), L"wb");
+    if (f) { fputs(text, f); fclose(f); }
+}
+
+// dinput8.dll keeps Azimuth (the main exe, here the harness) from the wheel only when the mod wants it, and the tab
+// checks turn their part of the settings off. Runs in build\proxy_test, which is overwritten on each run.
+static void enableCheckTests(HMODULE plugin) {
+    printf("\ntab checks and dinput8.dll\n");
+    wchar_t self[MAX_PATH];
+    GetModuleFileNameW(plugin, self, MAX_PATH);
+    std::wstring build(self);
+    build.resize(build.find_last_of(L"\\/") + 1);
+    const std::wstring dir = build + L"proxy_test\\";
+    CreateDirectoryW(dir.c_str(), nullptr);
+    const std::wstring dll = dir + L"FH2SimImmersion.dll", ini = dir + L"FH2SimImmersion.ini", cfg = dir + L"cfg.ini";
+    DeleteFileW(dll.c_str());
+    DeleteFileW(ini.c_str());
+    CopyFileW((build + L"dinput8.dll").c_str(), (dir + L"dinput8.dll").c_str(), FALSE);
+
+    HMODULE proxy = LoadLibraryW((dir + L"dinput8.dll").c_str());
+    CHECK(proxy != nullptr, "dinput8.dll loads");
+    FnProxyCreate create = proxy ? (FnProxyCreate)GetProcAddress(proxy, "DirectInput8Create") : nullptr;
+    CHECK(create != nullptr, "dinput8.dll exports DirectInput8Create");
+    if (create) {
+        auto ask = [&]() { return askProxy(create); };
+        CHECK(SUCCEEDED(ask()), "no mod beside dinput8.dll: Azimuth keeps the wheel");
+        writeText(dll, "");
+        CHECK(ask() == E_FAIL, "mod there, no settings file yet: Azimuth is refused");
+        writeText(ini, "[Wheel]\nEnabled=1\n");
+        CHECK(ask() == E_FAIL, "Wheel Enabled=1: Azimuth is refused");
+        writeText(ini, "[Wheel]\nEnabled=0\n");
+        CHECK(SUCCEEDED(ask()), "Wheel Enabled=0: Azimuth keeps the wheel");
+        writeText(ini, "[Wheel]\nEnabled=1\nOverrideAzimuthWheel=0\n");
+        CHECK(SUCCEEDED(ask()), "OverrideAzimuthWheel=0: Azimuth keeps the wheel");
+        writeText(ini, "[Wheel]\nEnabled=1\n");
+        wchar_t me[MAX_PATH];
+        GetModuleFileNameW(nullptr, me, MAX_PATH);
+        const std::wstring window = dir + L"FH2SimImmersion.exe";
+        CopyFileW(me, window.c_str(), FALSE);
+        std::wstring cmd = L"\"" + window + L"\" --settings-window-probe";
+        STARTUPINFOW si{};
+        si.cb = sizeof(si);
+        PROCESS_INFORMATION pi{};
+        DWORD code = 1;
+        if (CreateProcessW(window.c_str(), cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, dir.c_str(), &si, &pi)) {
+            WaitForSingleObject(pi.hProcess, 10000);
+            GetExitCodeProcess(pi.hProcess, &code);
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+        }
+        CHECK(code == 0, "settings window in the same folder gets the real DirectInput (exit %lu)", code);
+    }
+
+    typedef void (MSABI *FnLoadCfg)(const wchar_t*, int*);
+    FnLoadCfg loadCfg = (FnLoadCfg)GetProcAddress(plugin, "FH2SI_TestLoadConfig");
+    CHECK(loadCfg != nullptr, "FH2SI_TestLoadConfig exported");
+    if (loadCfg) {
+        int out[5] = {};
+        writeText(cfg, "[Input]\nConfigVersion=7\nDiagnostics=1\n[General]\nOverrideAzimuthHeadTracking=1\n"
+                       "[Simulation]\nEnabled=1\nRealisticABS=1\n[DrawDistance]\nEnabled=1\nShadowDistance=200\n[Logging]\nEnabled=1\n");
+        loadCfg(cfg.c_str(), out);
+        CHECK(out[0] == 1 && out[1] == 1 && out[2] == 200 && out[3] == 1 && out[4] == 1, "checks on: settings used (%d %d %d %d %d)", out[0], out[1], out[2], out[3], out[4]);
+        writeText(cfg, "[Input]\nConfigVersion=7\nDiagnostics=1\n[General]\nOverrideAzimuthHeadTracking=0\n"
+                       "[Simulation]\nEnabled=0\nRealisticABS=1\n[DrawDistance]\nEnabled=0\nShadowDistance=200\n[Logging]\nEnabled=0\n");
+        loadCfg(cfg.c_str(), out);
+        CHECK(out[0] == 0 && out[1] == 0 && out[2] == 0 && out[3] == 0 && out[4] == 0, "checks off: settings ignored (%d %d %d %d %d)", out[0], out[1], out[2], out[3], out[4]);
+        writeText(cfg, "[Input]\nConfigVersion=6\n[Wheel]\nFFBGain=0.90\nFFBTorqueGain=2.0\nFFBSlipGain=0.7\nFFBAlignGain=0.60\n");
+        loadCfg(cfg.c_str(), out);
+        auto saved = [&](const wchar_t* key) {
+            wchar_t v[32] = L"";
+            GetPrivateProfileStringW(L"Wheel", key, L"", v, 32, cfg.c_str());
+            return std::wstring(v);
+        };
+        CHECK(saved(L"FFBTorqueGain") == L"1.0" && saved(L"FFBAlignGain") == L"0.3", "upgrade: old force defaults follow the new ones");
+        CHECK(saved(L"FFBGain") == L"0.90" && saved(L"FFBSlipGain") == L"0.7", "upgrade: changed force values stay");
+    }
+}
+
 int wmain(int argc, wchar_t** argv) {
+    if (argc == 2 && !wcscmp(argv[1], L"--settings-window-probe")) return settingsWindowProbe();
     if (HANDLE h = OpenFileMappingW(FILE_MAP_READ, FALSE, L"FT_SharedMem")) { printf("note: a head tracker is running (FT_SharedMem exists); the tracker checks will fail because it overrides the test pose\n"); CloseHandle(h); }
     if (argc < 3) { printf("usage: harness <game.exe> <FH2SimImmersion.dll> [--deep]\n"); return 2; }
     bool deep = argc > 3 && wcscmp(argv[3], L"--deep") == 0;
@@ -885,7 +1035,7 @@ int wmain(int argc, wchar_t** argv) {
         size_t sep = iniPath.find_last_of(L"\\/");
         carsPath = (sep == std::wstring::npos ? std::wstring() : iniPath.substr(0, sep + 1)) + L"FH2SimImmersion_cars.ini";
         logPath = (sep == std::wstring::npos ? std::wstring() : iniPath.substr(0, sep + 1)) + L"FH2SimImmersion.log";
-        WritePrivateProfileStringW(L"Input", L"ConfigVersion", L"4", iniPath.c_str());
+        WritePrivateProfileStringW(L"Input", L"ConfigVersion", L"7", iniPath.c_str());
         WritePrivateProfileStringW(L"Wheel", L"TestMode", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"FovCockpit", L"10", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealisticABS", L"1", iniPath.c_str());
@@ -1027,6 +1177,7 @@ int wmain(int argc, wchar_t** argv) {
     fovTests(base);
     cockpitTests(base, plugin, carUpdateSlotOrig, logPath);
     drawDistTests(base, plugin);
+    enableCheckTests(plugin);
 
     printf(failures ? "\n%d check(s) FAILED\n" : "\nall integration checks passed\n", failures);
     return failures ? 1 : 0;

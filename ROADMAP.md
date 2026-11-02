@@ -74,7 +74,7 @@ Add screenshots to `docs/screenshots/` to document the settings window.
 - [x] Steering wheel: virtual Xbox wheel from DirectInput G29, with pedals and H-shifter
 - [x] Wheel without an Xbox controller; paddle recenter buttons
 - [x] Realistic ABS / TC / stability control per car (354 cars researched)
-- [x] Settings window (all 5 tabs: Head tracking, Wheel, Simulation, Draw distance, Main)
+- [x] Settings window (all 5 tabs: Head tracking, Wheel, Simulation, Draw distance, Logging)
 
 ### Version 0.9.2
 - [x] FFB improvements: slip invert, aligning force, rumble gain, handbrake

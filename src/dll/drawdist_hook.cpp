@@ -2,10 +2,11 @@
 // Draw distance injection (no game files are edited):
 //  A. track settings (shadows, world objects, props, crowd, grass): the game's TrackSettings
 //     deserializer is wrapped and the loaded values are raised afterwards;
-//  B. traffic cars: two registry variables (fade distances) in the game's .data, written lazily
-//     on the first track-settings load, because the game's static initializers may not have run
-//     when the plugin installs;
-//  C. racer cars: the CarLODTransDist render setting (parse method and defaults method).
+//  B. traffic cars: the distance of their medium detail level, a registry variable in the game's .data, written lazily
+//     on the first track-settings load, because the game's static initializers may not have run when the plugin installs;
+//  C. racer cars: the CarLODTransDist render setting (parse method and defaults method);
+//  D. scenery level of detail (trees and everything else drawn per model): the same method as Azimuth's Scenery detail;
+//  E. shadow splits: the same tables Azimuth's Shadow distance patches.
 #include "drawdist_hook.h"
 #include <windows.h>
 #include <algorithm>
@@ -27,13 +28,11 @@ constexpr int kOffShadowEnd = 0x234, kOffShadowScreen = 0x5f4, kOffWorld = 0x5e4
               kOffCrowd = 0x404, kOffCrowdModel = 0x40c, kOffCrowdFade = 0x410,
               kOffGrassEnd = 0x168, kOffGrassStart = 0x164;
 constexpr size_t kTrackSettingsSpan = 0x600;
+constexpr int kOffGrassLod = 0x358, kOffGrassLodFade = 0x35c;
 
-// ---- B. traffic registry variables (float: +0x10 current, +0x14 default, +0x18 min, +0x1c 0, +0x20 max)
-struct RegVar { const char* name; uintptr_t rva; float def, max; };
-constexpr RegVar kTrafficMin  = {"AI/Traffic/Vehicle/MinFullAlphaDistance", 0x36e8c80, 100.0f, 500.0f};
-constexpr RegVar kTrafficMax  = {"AI/Traffic/Vehicle/MaxFullAlphaDistance", 0x36e8d88, 150.0f, 500.0f};
-constexpr RegVar kLodMedium   = {"AI/Traffic/VehiclePosition/MaxMediumLodDistance", 0x36e8048, 120.0f, 1000.0f};
-constexpr float  kTrafficDefaultMax = 150.0f, kTrafficDefaultMin = 100.0f, kLodMediumDefault = 120.0f;
+// ---- B. traffic: AI/Traffic/VehiclePosition/MaxMediumLodDistance (float: +0x10 current, +0x14 default, +0x18 min, +0x1c 0, +0x20 max)
+struct RegVar { uintptr_t rva; float def, max; };
+constexpr RegVar kLodMedium = {0x36e8048, 120.0f, 1000.0f};
 
 // ---- C. racer cars
 constexpr uintptr_t kCarVtable      = 0x2eb9bc0;    // name getter, parse, defaults
@@ -42,10 +41,20 @@ constexpr uintptr_t kParseRva       = 0x12ffa90;
 constexpr uintptr_t kDefaultsRva    = 0x130bb20;
 constexpr float     kCarFarthest    = 75.0f;
 
+// ---- D. every model has four distances. The game compares the squared distance to the camera with them, and past
+// the last one it does not draw the model. Scaling that measure moves all four, like Azimuth's Scenery detail.
+constexpr uintptr_t kLevelSelectRva = 0x1139200, kLevelSelectSize = 0x98;
+constexpr uintptr_t kLevelSelectCalls[] = {0x11391d4, 0x1353e2e, 0x13545b3, 0x135464a};
+constexpr float     kLodScaleMax = 8.0f;
+
+// ---- E. the far ends of the shadow cascades; values from Azimuth's Ultra level, scaled to the wanted distance
+constexpr uintptr_t kShadowSplitsRva[2] = {0x2207288, 0x2207298};
+
 uintptr_t      g_base = 0;
 DrawDistConfig g_cfg;
 std::atomic<bool> g_trafficDone{false};
 std::atomic<bool> g_carLogged{false};
+float*         g_lodMeasure = nullptr;      // read by the level selection thunks: 1 / scale^2
 
 typedef uint64_t (*SerializeFn)(uint8_t*, void*, void*, void*);
 typedef uint64_t (*CarFn)(void*, void*, void*, void*);
@@ -65,7 +74,12 @@ void applyTrackOverrides(uint8_t* ts) {
                 props0 = at<float>(ts, kOffProps), crowd0 = at<float>(ts, kOffCrowd),
                 grass0 = at<float>(ts, kOffGrassEnd);
     if (g_cfg.shadow > 0) { raise(ts, kOffShadowEnd, g_cfg.shadow); raise(ts, kOffShadowScreen, g_cfg.shadow); }
-    if (g_cfg.world > 0)  raise(ts, kOffWorld, g_cfg.world);
+    if (g_cfg.world > 0) {
+        raise(ts, kOffWorld, g_cfg.world);
+        const float k = world0 > 0 ? std::min(at<float>(ts, kOffWorld) / world0, kLodScaleMax) : 1.0f;
+        if (g_lodMeasure) *g_lodMeasure = 1.0f / (k * k);
+        LOG("drawdist: scenery level of detail distances x%.1f", k);
+    }
     if (g_cfg.props > 0)  raise(ts, kOffProps, g_cfg.props);
     if (g_cfg.crowd > 0) {
         raise(ts, kOffCrowd, g_cfg.crowd);
@@ -75,6 +89,12 @@ void applyTrackOverrides(uint8_t* ts) {
     if (g_cfg.grass > 0) {
         raise(ts, kOffGrassEnd, g_cfg.grass);
         raise(ts, kOffGrassStart, g_cfg.grass * 0.75f);
+        const float k = grass0 > 0 ? at<float>(ts, kOffGrassEnd) / grass0 : 1.0f;
+        for (int off : {kOffGrassLod, kOffGrassLodFade}) {
+            // A track file without these keeps the last values, so the cap stops them growing on every load.
+            float& v = at<float>(ts, off);
+            v = std::max(v, std::min(v * k, g_cfg.grass));
+        }
     }
     LOG("drawdist: track settings loaded (shadow %.0f->%.0f m, world %.0f->%.0f m, props %.0f->%.0f m, "
         "crowd %.0f->%.0f m, grass %.0f->%.0f m)",
@@ -93,21 +113,91 @@ float* verifiedVar(const RegVar& v) {
 }
 
 void applyTrafficOverrides() {
-    if (!(g_cfg.traffic > 0)) return;
-    const float maxD = std::max(kTrafficDefaultMax, g_cfg.traffic);
-    const float minD = std::max(kTrafficDefaultMin, maxD - 50.0f);
-    const bool lod = g_cfg.traffic > kTrafficDefaultMax;
-    float* pMin = verifiedVar(kTrafficMin);
-    float* pMax = verifiedVar(kTrafficMax);
-    float* pMed = lod ? verifiedVar(kLodMedium) : nullptr;
-    if (!pMin || !pMax || (lod && !pMed)) {
+    if (!(g_cfg.traffic > kLodMedium.def)) return;
+    float* p = verifiedVar(kLodMedium);
+    if (!p) {
         LOG("drawdist: traffic registry mismatch; unchanged");
         return;
     }
-    *pMin = minD;
-    *pMax = maxD;
-    if (pMed) *pMed = std::max(kLodMediumDefault, g_cfg.traffic);
-    LOG("drawdist: traffic fade %.0f-%.0f m", minD, maxD);
+    *p = g_cfg.traffic;
+    LOG("drawdist: traffic medium detail up to %.0f m", *p);
+}
+
+// ---------------------------------------------------------------------------
+// E
+// ---------------------------------------------------------------------------
+// Only ever raises, so it also works on top of Azimuth's Shadow distance, whichever of the two writes first.
+void raiseShadowSplits() {
+    const float d = g_cfg.shadow;
+    if (!(d > 0)) return;
+    const float want[2][3] = {{std::max(5.0f, 17.0f * d / 360.0f), std::max(15.0f, 130.0f * d / 360.0f), d},
+                              {std::max(1.6f, 4.0f * d / 360.0f), std::max(15.0f, 60.0f * d / 360.0f), 0.75f * d}};
+    for (int i = 0; i < 2; ++i) {
+        float* t = reinterpret_cast<float*>(g_base + kShadowSplitsRva[i]);
+        if (!readable(t, 12) || !(t[0] > 0 && t[0] < t[1] && t[1] < t[2] && t[2] <= 1000.0f)) {
+            LOG("drawdist: shadow split table mismatch; unchanged");
+            return;
+        }
+        DWORD prot;
+        if (!VirtualProtect(t, 12, PAGE_READWRITE, &prot)) {
+            LOG("drawdist: shadow split VirtualProtect failed %lu; unchanged", GetLastError());
+            return;
+        }
+        for (int j = 0; j < 3; ++j) t[j] = std::max(t[j], want[i][j]);
+        VirtualProtect(t, 12, prot, &prot);
+        LOG("drawdist: shadow splits %d: %.1f %.1f %.0f m", i, t[0], t[1], t[2]);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// D
+// ---------------------------------------------------------------------------
+// Where the call at rva goes: into the level selection, whose body Azimuth's Scenery detail rewrites and whose calls
+// it moves to a later entry. 0 if it is not such a call.
+uintptr_t levelSelectTarget(uintptr_t rva) {
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(g_base + rva);
+    if (!readable(p, 5) || p[0] != 0xE8) return 0;
+    int32_t rel;
+    std::memcpy(&rel, p + 1, sizeof(rel));
+    const uintptr_t target = rva + 5 + rel;
+    return target >= kLevelSelectRva && target < kLevelSelectRva + kLevelSelectSize ? target : 0;
+}
+
+// Every call goes through: vmulss xmm0,xmm0,[measure] ; jmp [the old target]. Wrapping the calls and not the function
+// also works on top of Azimuth's Scenery detail.
+void installLodHook() {
+    for (uintptr_t rva : kLevelSelectCalls) {
+        if (!levelSelectTarget(rva)) {
+            LOG("drawdist: level selection call mismatch; unchanged");
+            return;
+        }
+    }
+    constexpr size_t kPerCall = 48;
+    uint8_t* block = static_cast<uint8_t*>(allocNear(g_base + kLevelSelectCalls[0], 16 + kPerCall * 4));
+    if (!block) { LOG("drawdist: could not allocate level selection memory; unchanged"); return; }
+    g_lodMeasure = reinterpret_cast<float*>(block);
+    *g_lodMeasure = 1.0f;
+    uint8_t* thunk = block + 16;
+    int patched = 0;
+    for (uintptr_t rva : kLevelSelectCalls) {
+        const int32_t disp = static_cast<int32_t>(block - (thunk + 8));
+        const uint64_t target = g_base + levelSelectTarget(rva);
+        const uint8_t head[] = {0xC5, 0xFA, 0x59, 0x05};
+        const uint8_t jump[] = {0xFF, 0x25, 0, 0, 0, 0};
+        std::memcpy(thunk, head, sizeof(head));
+        std::memcpy(thunk + 4, &disp, sizeof(disp));
+        std::memcpy(thunk + 8, jump, sizeof(jump));
+        std::memcpy(thunk + 14, &target, sizeof(target));
+        if (patchCallRel32(g_base + rva, thunk, thunk + 24)) ++patched;
+        thunk += kPerCall;
+    }
+    LOG("drawdist: level selection hooked at %d of 4 calls", patched);
+}
+
+void logAzimuthScenery() {
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(g_base + kLevelSelectRva);
+    if (g_cfg.world > 0 && p[0] == 0xFF && p[1] == 0x25)
+        LOG("drawdist: Azimuth's Scenery detail is on as well; the two multiply. Set it to Default to use only WorldDistance");
 }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +205,11 @@ void applyTrafficOverrides() {
 // ---------------------------------------------------------------------------
 extern "C" uint64_t hookTrackSettings(uint8_t* ts, void* ar, void* r8, void* r9) {
     uint64_t r = reinterpret_cast<SerializeFn>(g_base + kSerializeRva)(ts, ar, r8, r9);
-    if (!g_trafficDone.exchange(true)) applyTrafficOverrides();
+    if (!g_trafficDone.exchange(true)) {
+        applyTrafficOverrides();
+        logAzimuthScenery();
+    }
+    raiseShadowSplits();
     applyTrackOverrides(ts);
     return r;
 }
@@ -183,6 +277,8 @@ void DrawDist_Install(uintptr_t base, const Config& cfg) {
     g_cfg = cfg.drawDist;
     const DrawDistConfig& d = g_cfg;
     if (d.shadow > 0 || d.world > 0 || d.props > 0 || d.crowd > 0 || d.grass > 0 || d.traffic > 0) installTrackHook();
+    if (d.world > 0) installLodHook();
+    raiseShadowSplits();
     if (d.racer > 0) installCarHook();
 }
 
@@ -192,3 +288,4 @@ void DrawDist_Install(uintptr_t base, const Config& cfg) {
 // are exercised directly.
 extern "C" __declspec(dllexport) void FH2SI_TestApplyTrackOverrides(uint8_t* ts) { fh2::applyTrackOverrides(ts); }
 extern "C" __declspec(dllexport) void FH2SI_TestApplyTrafficOverrides() { fh2::applyTrafficOverrides(); }
+extern "C" __declspec(dllexport) void FH2SI_TestRaiseShadowSplits() { fh2::raiseShadowSplits(); }

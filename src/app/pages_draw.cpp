@@ -16,7 +16,7 @@ namespace {
 struct Range { const char* key; int def; };
 const Range kRanges[] = {
     {"ShadowDistance", 85}, {"WorldDistance", 360}, {"PropsDistance", 450}, {"CrowdDistance", 250},
-    {"GrassDistance", 100}, {"TrafficDistance", 150}, {"RacerDistance", 75},
+    {"GrassDistance", 100}, {"TrafficDistance", 120}, {"RacerDistance", 75},
 };
 const wchar_t* kGameDefault = L"game default";
 
@@ -45,17 +45,17 @@ protected:
         sliderEditW_ = 84;
         BuildRows(kDrawDistSettings, sizeof(kDrawDistSettings) / sizeof(Setting));
         for (auto& c : ctls_) {         // the slider starts at the game's own value
+            if (!c.slider) continue;              // the Enabled check
             int def = gameDefault(c.s->key);
             SendMessageW(c.slider, TBM_SETRANGE, TRUE, MAKELONG(def, (int)c.s->max));
             SendMessageW(c.slider, TBM_SETPAGESIZE, 0, (LPARAM)std::max(1, ((int)c.s->max - def) / 10));
             SendMessageW(c.slider, TBM_SETLINESIZE, 0, (LPARAM)5);
         }
         hint_ = CreateWindowExW(0, L"STATIC",
-            L"The game has no separate terrain or city distances: everything in the scenery (terrain, buildings, trees) "
-            L"is culled by the one \"World objects\" distance. Props that can be knocked over (fences, signs, ...) have "
-            L"their own distance. Racer cars set the distance of their farthest detail level; the nearer levels scale with it.\r\n\r\n"
+            L"The scenery slider also moves the detail levels of buildings and trees. "
+            L"Props that can be knocked over (fences, signs, ...) have their own distance. Racer cars set the distance of their farthest detail level; the nearer levels scale with it.\r\n\r\n"
             L"Each slider starts at the game's own value. Far left = \"game default\" (the setting is not changed). "
-            L"Higher values draw more and cost frame rate; world objects and shadows cost the most. "
+            L"Higher values draw more and cost frame rate; scenery and shadows cost the most. "
             L"Values are applied the next time the game starts.",
             WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX, 0, 0, 10, 10, host_, nullptr, G.inst, nullptr);
         MakePicture();
@@ -70,6 +70,7 @@ protected:
     }
 
     std::string GetValue(Ctl& c) override {
+        if (!c.slider) return Page::GetValue(c);     // the Enabled check
         wchar_t buf[128];
         GetWindowTextW(c.main, buf, 128);
         std::string t = trimStr(Narrow(buf));
@@ -83,6 +84,7 @@ protected:
     }
 
     void SetValue(Ctl& c, const std::string& v) override {
+        if (!c.slider) { Page::SetValue(c, v); return; }
         bool was = loading_;
         loading_ = true;
         int def = gameDefault(c.s->key);
@@ -101,7 +103,7 @@ protected:
 
     void OnChanged(Ctl& c) override {
         // Slider moved to the far left: the value is the game default.
-        if (!loading_ && GetFocus() == c.slider && (int)SendMessageW(c.slider, TBM_GETPOS, 0, 0) <= gameDefault(c.s->key)) {
+        if (!loading_ && c.slider && GetFocus() == c.slider && (int)SendMessageW(c.slider, TBM_GETPOS, 0, 0) <= gameDefault(c.s->key)) {
             loading_ = true;
             SetWindowTextW(c.main, kGameDefault);
             loading_ = false;

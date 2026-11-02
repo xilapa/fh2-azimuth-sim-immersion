@@ -1,13 +1,9 @@
 // SPDX-License-Identifier: MIT
-// FH2SimImmersion.exe - settings window and launcher.
+// FH2SimImmersion.exe - settings window. While it is open, the plugin is injected into any azimuth.exe that starts.
 //
-//   FH2SimImmersion.exe                       open the window; plugin is injected into any azimuth.exe that starts
-//   FH2SimImmersion.exe "E:\...\azimuth.exe"  also start that Azimuth with the plugin
-//
-// Nothing is written to the Azimuth or game folders. Settings live in FH2SimImmersion.ini next to this program.
+// Settings live in FH2SimImmersion.ini next to this program.
 #include <windows.h>
 #include <commctrl.h>
-#include <shellapi.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -114,14 +110,6 @@ static void doApply() {
 
 static MainPageApi* mainApi() { return g_pages.size() > 4 ? AsMainApi(g_pages[4].get()) : nullptr; }
 
-static void startWithPath(const std::wstring& path) {
-    if (MainPageApi* api = mainApi()) {
-        api->SetAzimuthPath(path, true);
-        api->StartAzimuthNow();
-    }
-    showPage(4);
-}
-
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
     case WM_CREATE: {
@@ -198,11 +186,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT m, WPARAM w, LPARAM l) {
         if (MainPageApi* api = mainApi()) api->AddStatusLine(*line);
         return 0;
     }
-    case WM_COPYDATA: {          // a second instance forwarded "azimuth.exe" to start
-        auto* cds = (COPYDATASTRUCT*)l;
-        if (cds->dwData == 1 && cds->lpData) startWithPath(std::wstring((const wchar_t*)cds->lpData, wcsnlen((const wchar_t*)cds->lpData, cds->cbData / sizeof(wchar_t))));
-        return TRUE;
-    }
     case WM_CLOSE:
         DestroyWindow(hwnd);
         return 0;
@@ -224,19 +207,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
 
     HANDLE mutex = CreateMutexW(nullptr, TRUE, L"Local\\FH2SimImmersionApp");
     bool already = GetLastError() == ERROR_ALREADY_EXISTS;
-    int argc = 0;
-    wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    std::wstring arg = argc > 1 ? argv[1] : L"";
-    if (argv) LocalFree(argv);
 
     if (already) {            // another instance: bring it to the front and exit
         if (HWND other = FindWindowW(kClass, nullptr)) {
             if (IsIconic(other)) ShowWindow(other, SW_RESTORE);
             SetForegroundWindow(other);
-            if (!arg.empty()) {
-                COPYDATASTRUCT cds{1, (DWORD)((arg.size() + 1) * sizeof(wchar_t)), (PVOID)arg.c_str()};
-                SendMessageW(other, WM_COPYDATA, 0, (LPARAM)&cds);
-            }
         }
         if (mutex) CloseHandle(mutex);
         return 0;
@@ -271,7 +246,6 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     });
     ShowWindow(hwnd, show);
     UpdateWindow(hwnd);
-    if (!arg.empty()) startWithPath(arg);
 
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {

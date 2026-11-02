@@ -196,17 +196,17 @@ static void readWheel(const wchar_t* ini, WheelConfig& w) {
     w.ffbInvert    = readI(ini, "Wheel", "FFBInvert", 0) != 0;
     {
         FfbTuning& t = w.ffbTuning;
-        t.torqueGain      = clampCfg(ini, "FFBTorqueGain", (float)readF(ini, "Wheel", "FFBTorqueGain", 2.0), 0.0f, 5.0f);
+        t.torqueGain      = clampCfg(ini, "FFBTorqueGain", (float)readF(ini, "Wheel", "FFBTorqueGain", 1.0), 0.0f, 5.0f);
         t.springGain      = clampCfg(ini, "FFBSpringGain", (float)readF(ini, "Wheel", "FFBSpringGain", 1.0), 0.0f, 5.0f);
         t.slipSpringFloor = clampCfg(ini, "FFBSlipSpringFloor", (float)readF(ini, "Wheel", "FFBSlipSpringFloor", 0.4), 0.0f, 1.0f);
-        t.slipGain        = clampCfg(ini, "FFBSlipGain", (float)readF(ini, "Wheel", "FFBSlipGain", 0.5), 0.0f, 5.0f);
+        t.slipGain        = clampCfg(ini, "FFBSlipGain", (float)readF(ini, "Wheel", "FFBSlipGain", 0.25), 0.0f, 5.0f);
         t.slipStart       = clampCfg(ini, "FFBSlipStart", (float)readF(ini, "Wheel", "FFBSlipStart", 0.08), 0.0f, 2.0f);
         t.slipFull        = clampCfg(ini, "FFBSlipFull", (float)readF(ini, "Wheel", "FFBSlipFull", 0.55), 0.0f, 2.0f);
         t.slipInvert      = readI(ini, "Wheel", "FFBSlipInvert", 1) != 0;
-        t.alignGain       = clampCfg(ini, "FFBAlignGain", (float)readF(ini, "Wheel", "FFBAlignGain", 0.6), 0.0f, 5.0f);
+        t.alignGain       = clampCfg(ini, "FFBAlignGain", (float)readF(ini, "Wheel", "FFBAlignGain", 0.3), 0.0f, 5.0f);
         t.alignStart      = clampCfg(ini, "FFBAlignStart", (float)readF(ini, "Wheel", "FFBAlignStart", 0.05), 0.0f, 2.0f);
         t.alignFull       = clampCfg(ini, "FFBAlignFull", (float)readF(ini, "Wheel", "FFBAlignFull", 0.5), 0.0f, 2.0f);
-        t.rumbleGain      = clampCfg(ini, "FFBRumbleGain", (float)readF(ini, "Wheel", "FFBRumbleGain", 1.5), 0.0f, 5.0f);
+        t.rumbleGain      = clampCfg(ini, "FFBRumbleGain", (float)readF(ini, "Wheel", "FFBRumbleGain", 1.0), 0.0f, 5.0f);
         w.ffbLockStrength = clampCfg(ini, "FFBLockStrength", (float)readF(ini, "Wheel", "FFBLockStrength", 1.0), 0.0f, 1.0f);
         w.ffbLockRampDeg  = clampCfg(ini, "FFBLockRampDeg", (float)readF(ini, "Wheel", "FFBLockRampDeg", 3.0), 0.5f, 30.0f);
         LOG("config: ffb torque %.2f spring %.2f floor %.2f slip %.2f [%.2f..%.2f] inv %d align %.2f [%.2f..%.2f] rumble %.2f lock %.2f ramp %.1f",
@@ -275,7 +275,7 @@ Config loadConfig(const std::wstring& iniPath) {
     Config c;
     std::string src = readStr(ini, "Input", "Source", "auto");
     c.source = src == "udp" ? Source::Udp : src == "freetrack" ? Source::FreeTrack : Source::Auto;
-    c.diagnostics     = readI(ini, "Input", "Diagnostics", 0) != 0;
+    c.diagnostics     = readI(ini, "Input", "Diagnostics", 0) != 0 && readI(ini, "Logging", "Enabled", 1) != 0;
     c.udpPort         = readI(ini, "Network", "UdpPort", 4242);
     if (c.udpPort < 1 || c.udpPort > 65535) {
         LOG("config: UdpPort=%d out of range 1..65535; using 4242", c.udpPort);
@@ -369,7 +369,7 @@ Config loadConfig(const std::wstring& iniPath) {
         LOG("config: steering lock realistic %d max %d mode %s cockpitWheel %d dir %d hideDriver %d", m.realisticSteeringLock,
             m.maxWheelRotation, m.lockScale ? "scale" : "cap", m.realCockpitWheel, m.cockpitWheelDirection, m.hideDriverInCockpit);
     }
-    {
+    if (readI(ini, "DrawDistance", "Enabled", 1) != 0) {
         DrawDistConfig& d = c.drawDist;
         d.shadow  = clampCfg(ini, "ShadowDistance", (float)readF(ini, "DrawDistance", "ShadowDistance", 0.0), 0.0f, 1000.0f);
         d.world   = clampCfg(ini, "WorldDistance", (float)readF(ini, "DrawDistance", "WorldDistance", 0.0), 0.0f, 3000.0f);
@@ -390,7 +390,22 @@ Config loadConfig(const std::wstring& iniPath) {
         loadSteeringLocks(cars, c.sim.steeringLocks);
         LOG("config: %d per-car steering lock overrides", (int)c.sim.steeringLocks.size());
     }
+    c.simEnabled = readI(ini, "Simulation", "Enabled", 1) != 0;
+    if (!c.simEnabled) {
+        c.sim = SimConfig();
+        LOG("config: simulation features off ([Simulation] Enabled=0)");
+    }
     return c;
 }
 
 } // namespace fh2
+
+// Test hook for tests/harness.cpp: what the tab checks leave of the settings.
+extern "C" __declspec(dllexport) void FH2SI_TestLoadConfig(const wchar_t* ini, int* out) {
+    const fh2::Config c = fh2::loadConfig(ini);
+    out[0] = c.simEnabled;
+    out[1] = c.sim.realisticAbs;
+    out[2] = (int)c.drawDist.shadow;
+    out[3] = c.overrideAzimuthHeadTracking;
+    out[4] = c.diagnostics;
+}

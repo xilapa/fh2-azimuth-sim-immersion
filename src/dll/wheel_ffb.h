@@ -25,18 +25,19 @@ struct FfbParams {
 };
 
 struct FfbTuning {
-    float torqueGain = 2.0f, springGain = 1.0f, slipSpringFloor = 0.4f, slipGain = 0.5f,
+    // The extra forces (spring floor, slip, align) are sized to the game's own torque, which peaks around 0.21.
+    float torqueGain = 1.0f, springGain = 1.0f, slipSpringFloor = 0.4f, slipGain = 0.25f,
           slipStart = 0.08f, slipFull = 0.55f;
     bool slipInvert = true;
-    float alignGain = 0.6f, alignStart = 0.05f, alignFull = 0.5f;   // front-slip aligning force
-    float rumbleGain = 1.5f;
+    float alignGain = 0.3f, alignStart = 0.05f, alignFull = 0.5f;   // front-slip aligning force
+    float rumbleGain = 1.0f;
 };
 
 struct FfbTerms { float torque, spring, damping, rumble, menu, total, slip, align; };
 
-// Returns the clamped total force in game units (-0.5..0.5). terms may be null.
+// Returns the total force in game units (1.0 = the wheel's maximum). terms may be null.
 float FfbForce(const FfbParams& p, const FfbTuning& tune, float angle, float velocity, double tMs, FfbTerms* terms);
-// Neutral tuning (torque x1, spring x1, no floor, no slip term).
+// Default tuning.
 float FfbForce(const FfbParams& p, float angle, float velocity, double tMs, FfbTerms* terms);
 // Device magnitude -10000..10000 from a force, gain and invert flag.
 long FfbDeviceMagnitude(float force, float gain, bool invert);

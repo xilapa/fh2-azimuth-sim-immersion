@@ -24,22 +24,24 @@ std::wstring moduleDir(HMODULE m) {
 DWORD WINAPI initThread(void* param) {
     HMODULE self = static_cast<HMODULE>(param);
     std::wstring dir = moduleDir(self);
-    fh2::Log::open((dir + L"\\FH2SimImmersion.log").c_str());
+    // Migrate the settings file from the old FH2HeadTracking name.
+    std::wstring ini = dir + L"\\FH2SimImmersion.ini";
+    std::wstring oldIni = dir + L"\\FH2HeadTracking.ini";
+    const bool renamed = GetFileAttributesW(ini.c_str()) == INVALID_FILE_ATTRIBUTES &&
+                         GetFileAttributesW(oldIni.c_str()) != INVALID_FILE_ATTRIBUTES &&
+                         MoveFileExW(oldIni.c_str(), ini.c_str(), 0);
+
+    const std::wstring log = dir + L"\\FH2SimImmersion.log";
+    if (GetPrivateProfileIntW(L"Logging", L"Enabled", 1, ini.c_str()) != 0) fh2::Log::open(log.c_str());
+    else DeleteFileW(log.c_str());     // the Logging tab shows this file: an old one must not pass for this run's log
 
     wchar_t exe[MAX_PATH];
     GetModuleFileNameW(nullptr, exe, MAX_PATH);
     LOG("FH2 Sim Immersion " FH2SI_VERSION " loaded into pid %lu (%ls)", GetCurrentProcessId(), exe);
-
-    // Migrate the settings file from the old FH2HeadTracking name.
-    std::wstring ini = dir + L"\\FH2SimImmersion.ini";
-    std::wstring oldIni = dir + L"\\FH2HeadTracking.ini";
-    if (GetFileAttributesW(ini.c_str()) == INVALID_FILE_ATTRIBUTES &&
-        GetFileAttributesW(oldIni.c_str()) != INVALID_FILE_ATTRIBUTES &&
-        MoveFileExW(oldIni.c_str(), ini.c_str(), 0))
-        LOG("config: renamed FH2HeadTracking.ini to FH2SimImmersion.ini");
+    if (renamed) LOG("config: renamed FH2HeadTracking.ini to FH2SimImmersion.ini");
 
     fh2::Config cfg = fh2::loadConfig(ini);
-    fh2::Tracker::start(cfg);
+    if (cfg.overrideAzimuthHeadTracking) fh2::Tracker::start(cfg);
     fh2::installWhenReady(cfg);
     return 0;
 }

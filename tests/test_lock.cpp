@@ -50,9 +50,10 @@ int main() {
     CHECK(ApplySoftLock(1234, 280, 540, 900, 1.0f, 3.0f, false) == 10000);   // k 1: full restoring force (toward centre)
     CHECK(ApplySoftLock(1234, -280, 540, 900, 1.0f, 3.0f, false) == -10000);
     CHECK(ApplySoftLock(1234, 280, 540, 900, 1.0f, 3.0f, true) == -10000);
-    CHECK(near(SoftLockK(271.5f, 540, 900, 1.0f, 3.0f), 0.5f));
-    CHECK(ApplySoftLock(0, 271.5f, 540, 900, 1.0f, 3.0f, false) == 5000);    // 0.5 * 10000
-    CHECK(ApplySoftLock(2000, 271.5f, 540, 900, 1.0f, 3.0f, false) == 6000);
+    CHECK(near(SoftLockK(270.5f, 540, 900, 1.0f, 3.0f), 0.5f));
+    CHECK(ApplySoftLock(0, 270.5f, 540, 900, 1.0f, 3.0f, false) == 5000);    // 0.5 * 10000
+    CHECK(ApplySoftLock(2000, 270.5f, 540, 900, 1.0f, 3.0f, false) == 6000);
+    CHECK(ApplySoftLock(0, 271.0f, 540, 900, 1.0f, 3.0f, false) == 10000);   // full force one degree past the lock
     CHECK(ApplySoftLock(1234, 200, 540, 900, 1.0f, 3.0f, false) == 1234);    // inside the lock
     CHECK(ApplySoftLock(1234, 280, 900, 900, 1.0f, 3.0f, false) == 1234);    // lock == wheel range: the wheel's own stop
     CHECK(ApplySoftLock(1234, 280, 540, 900, 0.0f, 3.0f, false) == 1234);    // strength 0: off

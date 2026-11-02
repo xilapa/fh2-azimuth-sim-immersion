@@ -21,15 +21,18 @@ static std::vector<DWORD> findAzimuth() {
     return out;
 }
 
-static bool hasModule(HANDLE proc, const std::wstring& dllPath) {
+// Where FH2SimImmersion.dll is loaded from in that process; empty if it is not loaded.
+static std::wstring loadedFrom(HANDLE proc) {
     HMODULE mods[1024]; DWORD need = 0;
-    if (!EnumProcessModulesEx(proc, mods, sizeof(mods), &need, LIST_MODULES_64BIT)) return false;
+    if (!EnumProcessModulesEx(proc, mods, sizeof(mods), &need, LIST_MODULES_64BIT)) return {};
     need = std::min<DWORD>(need, sizeof(mods));   // more modules than fit: check the ones returned
     for (DWORD i = 0; i < need / sizeof(HMODULE); ++i) {
         wchar_t name[MAX_PATH];
-        if (GetModuleFileNameExW(proc, mods[i], name, MAX_PATH) && _wcsicmp(name, dllPath.c_str()) == 0) return true;
+        if (!GetModuleFileNameExW(proc, mods[i], name, MAX_PATH)) continue;
+        const wchar_t* file = wcsrchr(name, L'\\');
+        if (file && _wcsicmp(file + 1, L"FH2SimImmersion.dll") == 0) return name;
     }
-    return false;
+    return {};
 }
 
 static std::wstring fmt(const wchar_t* f, DWORD a, DWORD b = 0) {
@@ -42,7 +45,14 @@ static bool inject(DWORD pid, const std::wstring& dllPath, const Injector::Statu
     HANDLE proc = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION |
                               PROCESS_VM_WRITE | PROCESS_VM_READ, FALSE, pid);
     if (!proc) { say(fmt(L"could not open azimuth.exe (pid %lu), error %lu", pid, GetLastError())); return false; }
-    if (hasModule(proc, dllPath)) { say(fmt(L"pid %lu already has FH2 Sim Immersion", pid)); CloseHandle(proc); return true; }
+    const std::wstring loaded = loadedFrom(proc);
+    if (!loaded.empty()) {
+        say(_wcsicmp(loaded.c_str(), dllPath.c_str()) == 0
+            ? fmt(L"pid %lu already has FH2 Sim Immersion", pid)
+            : L"The mod runs from " + loaded + L", with the settings file in that folder, not the one shown here. Open FH2SimImmersion.exe from that folder.");
+        CloseHandle(proc);
+        return true;
+    }
     size_t bytes = (dllPath.size() + 1) * sizeof(wchar_t);
     void* remote = VirtualAllocEx(proc, nullptr, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     bool ok = false;
@@ -110,19 +120,6 @@ void Injector::Run() {
         }
         if (WaitForSingleObject(stop_, 1000) == WAIT_OBJECT_0) return;
     }
-}
-
-bool StartAzimuth(const std::wstring& exe, std::wstring& error) {
-    std::wstring dir = exe.substr(0, exe.find_last_of(L"\\/"));
-    STARTUPINFOW si{}; si.cb = sizeof(si);
-    PROCESS_INFORMATION pi{};
-    std::wstring cmd = L"\"" + exe + L"\"";
-    if (!CreateProcessW(exe.c_str(), cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, dir.c_str(), &si, &pi)) {
-        error = fmt(L"Could not start Azimuth (error %lu)", GetLastError());
-        return false;
-    }
-    CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
-    return true;
 }
 
 } // namespace app

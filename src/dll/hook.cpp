@@ -369,8 +369,10 @@ bool installWhenReady(const Config& cfg) {
             if (cfg.overrideAzimuthHeadTracking) patched = patch(base);
             else LOG("head tracking: left to Azimuth (OverrideAzimuthHeadTracking=0)");
             WheelHook_Install(base, cfg);
-            FovHook_Install(base, cfg);
-            AssistHook_Install(base, cfg);
+            if (cfg.simEnabled) {
+                FovHook_Install(base, cfg);
+                AssistHook_Install(base, cfg);
+            }
             DrawDist_Install(base, cfg);
             CockpitHook_Install(base, cfg);
             return patched;

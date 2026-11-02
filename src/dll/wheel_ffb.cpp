@@ -28,7 +28,7 @@ float FfbForce(const FfbParams& p, const FfbTuning& tune, float angle, float vel
         if (p.race) {
             t.torque  = p.torque * tune.torqueGain;
             float scale;
-            if (p.haveGame) {
+            if (p.haveGame && tune.slipSpringFloor > 0.0f) {     // the floor needs the parts of the game's spring
                 const GameFfbInput& g = p.game;
                 float speedF = piecewise(g.speed, g.speed0, g.speedScale0, g.speed1, g.speedScale1);
                 float slipF  = piecewise(std::fabs(g.slip), g.slip0, g.slipScale0, g.slip1, g.slipScale1);
@@ -59,21 +59,17 @@ float FfbForce(const FfbParams& p, const FfbTuning& tune, float angle, float vel
             t.menu  = -p.menuSpringScale * angle;
             t.total = t.menu;
         }
-        t.total = clampf(t.total, -0.5f, 0.5f);
     }
     if (terms) *terms = t;
     return t.total;
 }
 
 float FfbForce(const FfbParams& p, float angle, float velocity, double tMs, FfbTerms* terms) {
-    FfbTuning neutral;
-    neutral.torqueGain = 1.0f; neutral.springGain = 1.0f; neutral.slipSpringFloor = 0.0f; neutral.slipGain = 0.0f;
-    neutral.alignGain = 0.0f; neutral.rumbleGain = 1.0f;
-    return FfbForce(p, neutral, angle, velocity, tMs, terms);
+    return FfbForce(p, FfbTuning(), angle, velocity, tMs, terms);
 }
 
 long FfbDeviceMagnitude(float force, float gain, bool invert) {
-    float m = clampf(force / 0.5f * gain, -1.0f, 1.0f) * 10000.0f;
+    float m = clampf(force * gain, -1.0f, 1.0f) * 10000.0f;
     if (!invert) m = -m;
     return (long)std::lround(m);
 }

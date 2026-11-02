@@ -37,12 +37,13 @@ inline float GameSteer(const LockInputs& in, float steering) {
     return s > 1.0f ? 1.0f : s < -1.0f ? -1.0f : s;
 }
 
-// Build-up factor 0..1 of the soft lock: 0 inside the lock (or when it does not apply), 1 once rampDeg past it.
+// Build-up factor 0..1 of the soft lock: 0 inside the lock (or when it does not apply), 1 once a third of rampDeg
+// past it, so the end stop already pushes with the wheel's full force about one degree past the lock.
 inline float SoftLockK(float physDeg, float physLock, float wheelRange, float strength, float rampDeg) {
     if (!(strength > 0.0f) || !(physLock < wheelRange - 1.0f) || !(rampDeg > 0.0f)) return 0.0f;
     const float over = std::fabs(physDeg) - physLock * 0.5f;
     if (!(over > 0.0f)) return 0.0f;
-    return std::min(over / rampDeg, 1.0f);
+    return std::min(3.0f * over / rampDeg, 1.0f);
 }
 
 // Blends the end-stop force into a device magnitude (-10000..10000).
@@ -50,7 +51,7 @@ inline long ApplySoftLock(long mag, float physDeg, float physLock, float wheelRa
                           bool invert) {
     const float k = SoftLockK(physDeg, physLock, wheelRange, strength, rampDeg);
     if (!(k > 0.0f)) return mag;
-    const float Fe = -(physDeg > 0 ? 1.0f : -1.0f) * 0.5f * strength;   // game units, like the spring term -scale*angle
+    const float Fe = -(physDeg > 0 ? 1.0f : -1.0f) * strength;   // game units, like the spring term -scale*angle
     const long magEnd = FfbDeviceMagnitude(Fe, 1.0f, invert);
     return std::lround((float)mag * (1.0f - k) + (float)magEnd * k);
 }

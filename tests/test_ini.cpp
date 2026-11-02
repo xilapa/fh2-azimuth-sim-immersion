@@ -43,14 +43,14 @@ int main() {
     CHECK(val["Network.UdpPort"] == "4242");
     CHECK(val["Hotkeys.ToggleKey"] == "0x23");
     CHECK(val["Wheel.GearButtons"] == "12,13,14,15,16,17,-1");
-    CHECK(val["Wheel.FFBTorqueGain"] == "2.0");
+    CHECK(val["Wheel.FFBTorqueGain"] == "1.0");
     CHECK(val["Simulation.OptionalAssists"] == "game");
     CHECK(val["Simulation.RealisticSTM"] == "0");
     CHECK(val["Simulation.RealisticClutch"] == "0");
     CHECK(val["Simulation.RealisticAutomatic"] == "0");
     CHECK(val["Wheel.OverrideAzimuthWheel"] == "1");
     CHECK(val["General.OverrideAzimuthHeadTracking"] == "1");
-    CHECK(val.count("Launcher.AzimuthPath") == 1 && val["Launcher.AzimuthPath"].empty());
+    CHECK(val["Logging.Enabled"] == "1");
     CHECK(val["Rotation.YawLimit"] == "90");
 
     // Comments: own block, inherited block, section header block.

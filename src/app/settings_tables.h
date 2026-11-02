@@ -7,9 +7,9 @@
 namespace app {
 
 inline constexpr Setting kHeadSettings[] = {
+    ST_BOOL ("General", "OverrideAzimuthHeadTracking", "Use Sim Immersion head tracking (overrides Azimuth's)", "Head tracking", "rot"),
     ST_BOOL ("General", "EnableOnStartup", "Head tracking on at game start", "Head tracking", "rot"),
     ST_ENUM ("Input", "Source", "Tracker input", "Head tracking", "rot", "auto|freetrack|udp"),
-    ST_BOOL ("General", "OverrideAzimuthHeadTracking", "Override Azimuth head tracking if it adds its own", "Head tracking", "rot"),
     ST_BOOL ("General", "CockpitOnly", "Cockpit camera only", "Head tracking", "rot"),
     ST_FLOAT("General", "Smoothing", "Smoothing (0 - 1)", "Head tracking", "rot", 0, 1, 0.05),
     ST_INT  ("General", "StaleTimeoutMs", "Lost-signal timeout (ms)", "Head tracking", "rot", 50, 60000, 50),
@@ -55,7 +55,7 @@ inline constexpr Setting kHeadSettings[] = {
 #define AXES "X|Y|Z|RX|RY|RZ|SLIDER0|SLIDER1|NONE"
 
 inline constexpr Setting kWheelSettings[] = {
-    ST_BOOL ("Wheel", "Enabled", "Steering wheel support", "Wheel", nullptr),
+    ST_BOOL ("Wheel", "Enabled", "Use Sim Immersion wheel support (overrides Azimuth's)", "Wheel", nullptr),
     ST_TEXT ("Wheel", "DeviceMatch", "Device name contains", "Wheel", nullptr),
     ST_INT  ("Wheel", "WheelRange", "Wheel range (degrees)", "Wheel", "steer", 40, 65535, 10),
 
@@ -114,6 +114,7 @@ inline constexpr Setting kWheelSettings[] = {
 };
 
 inline constexpr Setting kSimSettings[] = {
+    ST_BOOL ("Simulation", "Enabled", "Use Sim Immersion simulation features", "Sim Immersion", nullptr),
     ST_SLIDER("Simulation", "FovCockpit", "Cockpit camera (extra degrees)", "Field of view", nullptr, -30, 60, 1),
     ST_SLIDER("Simulation", "FovDriver", "Driver camera (extra degrees)", "Field of view", nullptr, -30, 60, 1),
     ST_SLIDER("Simulation", "FovHood", "Hood camera (extra degrees)", "Field of view", nullptr, -30, 60, 1),
@@ -152,18 +153,19 @@ inline constexpr Setting kSimSettings[] = {
 // Draw distance (metres). The INI stores 0 = game default; the page shows a slider from the game's own
 // value up to the maximum (pages_draw.cpp), the table range here is the range of the stored value.
 inline constexpr Setting kDrawDistSettings[] = {
+    ST_BOOL ("DrawDistance", "Enabled", "Use Sim Immersion draw distances (on top of Azimuth's)", "Sim Immersion", nullptr),
     ST_SLIDER("DrawDistance", "ShadowDistance",  "Shadows (game: 85 m)",         "Draw distance (metres)", "shadow",  0, 1000, 1),
-    ST_SLIDER("DrawDistance", "WorldDistance",   "World objects (game: 360 m)",  "Draw distance (metres)", "world",   0, 3000, 1),
+    ST_SLIDER("DrawDistance", "WorldDistance",   "Scenery and trees (game: 360 m)",  "Draw distance (metres)", "world",   0, 3000, 1),
     ST_SLIDER("DrawDistance", "PropsDistance",   "Props (game: 450 m)",          "Draw distance (metres)", "props",   0, 3000, 1),
     ST_SLIDER("DrawDistance", "CrowdDistance",   "Crowd (game: 250 m)",          "Draw distance (metres)", "crowd",   0, 1000, 1),
     ST_SLIDER("DrawDistance", "GrassDistance",   "Grass (game: 100 m)",          "Draw distance (metres)", "grass",   0, 500, 1),
-    ST_SLIDER("DrawDistance", "TrafficDistance", "Traffic cars (game: 150 m)",   "Draw distance (metres)", "traffic", 0, 500, 1),
+    ST_SLIDER("DrawDistance", "TrafficDistance", "Traffic cars, medium detail (game: 120 m)",   "Draw distance (metres)", "traffic", 0, 500, 1),
     ST_SLIDER("DrawDistance", "RacerDistance",   "Racer cars, full detail (game: 75 m)", "Draw distance (metres)", "racer", 0, 1000, 1),
 };
 
 inline constexpr Setting kMainSettings[] = {
-    ST_TEXT ("Launcher", "AzimuthPath", "Azimuth (azimuth.exe)", "Azimuth", nullptr),
-    ST_BOOL ("Input", "Diagnostics", "Diagnostics: write the received pose and wheel state to the log", "Diagnostics", nullptr),
+    ST_BOOL ("Logging", "Enabled", "Enable logs (write FH2SimImmersion.log)", "Logging", nullptr),
+    ST_BOOL ("Input", "Diagnostics", "Detailed logs: also write the received pose and wheel state", "Logging", nullptr),
 };
 
 struct SettingTable { const Setting* rows; size_t count; };

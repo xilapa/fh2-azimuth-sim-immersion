@@ -12,6 +12,7 @@
 #include "fov_hook.h"
 #include "log.h"
 #include "patch_util.h"
+#include "spindle.h"
 #include "wheel_com.h"
 #include "wheel_device.h"
 
@@ -31,11 +32,20 @@ constexpr size_t    kDriverOff     = 0x4d00;        // qword pointer, null for c
 constexpr size_t    kDriverGetterSlot = 0xa8;           // driver vtable: returns an object whose first qword is set for the local player
 constexpr size_t    kCarIdOff      = 0x118;             // uint32
 constexpr size_t    kCarReadSize   = 0x4f40;
+constexpr uintptr_t kPresVtableRva[2] = {0x2ec1450, 0x2ec2b70};  // CarPresentation, its ref-counted form (behind the deferred wrapper)
+constexpr uintptr_t kPresDeferredVtableRva[2] = {0x2ebe7e0, 0x2ebef68};  // CCarPresentationDeferred, what car + kDriverModelOff really holds; the CarPresentation is at +8
+constexpr size_t    kPresRigOff    = 0x1298;        // qword pointer: the driver rig, which owns the steering wheel model
+constexpr uintptr_t kRigAttachSite = 0x137d8c9;     // CarPresentation calls: AttachWheel(rig, carMatrix, angle, a4, a5)
+constexpr uintptr_t kRigAttachRva  = 0x13ac5c0;
+constexpr uintptr_t kSetBoneSite   = 0x13ac80a;     // inside AttachWheel: SetBone(model, bone, matrix, a4, a5, a6) for the wheel spindle
+constexpr uintptr_t kSetBoneRva    = 0x13f4ec0;
 constexpr uint64_t  kCockpitFreshMs = 250;
 constexpr uint64_t  kPlayerFreshMs  = 1000;
 
 using CarUpdateFn = void (*)(uint8_t*, float, float, int);
 using SetDriverFn = void (*)(uint8_t*, bool);
+using RigAttachFn = uint64_t (*)(void*, const float*, float, void*, void*);
+using SetBoneFn = uint64_t (*)(void*, uint32_t, const float*, uint64_t, uint64_t, uint64_t);
 
 uintptr_t         g_base = 0;
 bool              g_wheelOn = false, g_hideOn = false, g_hideReady = false, g_trackOn = false;
@@ -47,6 +57,14 @@ uint8_t*          g_hidCar = nullptr;          // game thread only
 bool              g_weHid = false;
 bool              g_diag = false;
 std::atomic<bool> g_loggedWheel{false};
+std::atomic<void*> g_playerRig{nullptr};
+std::atomic<bool> g_loggedPresVt{false};
+thread_local const float* t_carMatrix = nullptr;     // set while the player's AttachWheel runs
+thread_local float t_wheelAngle = 0.0f;
+SRWLOCK           g_spindleLock = SRWLOCK_INIT;      // the game runs AttachWheel on several threads; they share one state
+Spindle           g_spindle;
+void*             g_spindleModel = nullptr;
+uint64_t          g_spindleDiag = 0;
 
 const float kPi = 3.14159265358979f;
 
@@ -104,6 +122,68 @@ void detectPlayer(uint8_t* car) {
     SteerLock_SetPlayerCar(id);
 }
 
+// The driver rig of the player's car; the wheel model copies its rotation from this rig's animation.
+void updatePlayerRig(uint8_t* car) {
+    uint8_t* pres;
+    std::memcpy(&pres, car + kDriverModelOff, sizeof(pres));
+    void* rig = nullptr;
+    if (pres && readable(pres, 16)) {
+        uint64_t vt;
+        std::memcpy(&vt, pres, sizeof(vt));
+        if (vt == g_base + kPresDeferredVtableRva[0] || vt == g_base + kPresDeferredVtableRva[1]) {
+            std::memcpy(&pres, pres + 8, sizeof(pres));
+            vt = 0;
+            if (pres && readable(pres, 8)) std::memcpy(&vt, pres, sizeof(vt));
+        }
+        if (vt == g_base + kPresVtableRva[0] || vt == g_base + kPresVtableRva[1]) {
+            if (readable(pres, kPresRigOff + 8)) std::memcpy(&rig, pres + kPresRigOff, sizeof(rig));
+        } else if (vt && !g_loggedPresVt.exchange(true)) {
+            LOG("cockpit: unknown driver presentation vtable rva 0x%llx; wheel stays at the animation's limit", (unsigned long long)(vt - g_base));
+        }
+    }
+    g_playerRig.store(rig, std::memory_order_relaxed);
+}
+
+uint64_t hookRigAttach(void* rig, const float* carMatrix, float angle, void* a4, void* a5) {
+    if (rig && rig == g_playerRig.load(std::memory_order_relaxed)) {
+        t_carMatrix = carMatrix;
+        t_wheelAngle = angle;
+    }
+    const uint64_t r = reinterpret_cast<RigAttachFn>(g_base + kRigAttachRva)(rig, carMatrix, angle, a4, a5);
+    t_carMatrix = nullptr;
+    return r;
+}
+
+uint64_t hookSetBone(void* model, uint32_t bone, const float* m, uint64_t a4, uint64_t a5, uint64_t a6) {
+    if (t_carMatrix) {
+        alignas(16) float out[16];
+        AcquireSRWLockExclusive(&g_spindleLock);
+        if (g_spindleModel != model) { g_spindle = Spindle(); g_spindleModel = model; }
+        const int axisBefore = g_spindle.axis;
+        const bool turned = SpindleRotate(g_spindle, m, t_carMatrix, t_wheelAngle, out);
+        const Spindle now = g_spindle;
+        const uint64_t tick = GetTickCount64();
+        const bool diag = g_diag && tick - g_spindleDiag >= 5000;
+        if (diag) g_spindleDiag = tick;
+        ReleaseSRWLockExclusive(&g_spindleLock);
+        if (now.axis != axisBefore) LOG("cockpit: wheel turns around bone axis %d, direction %+.0f", now.axis, now.sign);
+        if (diag) LOG("cockpit diag: spindle centre seen %d axis %d angle %.0f deg turned %d", now.hasRef, now.axis, t_wheelAngle * 180.0f / kPi, turned);
+        if (turned) return reinterpret_cast<SetBoneFn>(g_base + kSetBoneRva)(model, bone, out, a4, a5, a6);
+    }
+    return reinterpret_cast<SetBoneFn>(g_base + kSetBoneRva)(model, bone, m, a4, a5, a6);
+}
+
+// A call site is patched only if it still calls the expected function.
+bool hookCallSite(uintptr_t siteRva, uintptr_t targetRva, void* hook) {
+    const uintptr_t site = g_base + siteRva;
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(site);
+    int32_t rel;
+    std::memcpy(&rel, p + 1, sizeof(rel));
+    if (p[0] != 0xE8 || site + 5 + rel != g_base + targetRva) return false;
+    void* mem = allocNear(site, 64);
+    return mem && patchCallRel32(site, hook, mem);
+}
+
 void hookCarUpdate(uint8_t* car, float a, float b, int c) {
     reinterpret_cast<CarUpdateFn>(g_base + kCarUpdateRva)(car, a, b, c);
     if (car && g_trackOn) detectPlayer(car);
@@ -112,6 +192,7 @@ void hookCarUpdate(uint8_t* car, float a, float b, int c) {
     if (!readable(car, kCarReadSize)) return;
     AssistHook_ApplyToCar(car);
     if (g_wheelOn) {
+        updatePlayerRig(car);
         static uint32_t updates = 0, writes = 0, skipped = 0;      // game thread only
         static uint64_t lastDiag = GetTickCount64();
         static float steer = 0.0f;
@@ -179,6 +260,12 @@ void CockpitHook_Install(uintptr_t base, const Config& cfg) {
     }
     *slot = reinterpret_cast<uint64_t>(&hookCarUpdate);
     VirtualProtect(slot, 8, prot, &prot);
+    if (g_wheelOn) {
+        // SetBone first: nothing happens until AttachWheel, the outer call, is hooked too.
+        const bool ok = hookCallSite(kSetBoneSite, kSetBoneRva, reinterpret_cast<void*>(&hookSetBone)) &&
+                        hookCallSite(kRigAttachSite, kRigAttachRva, reinterpret_cast<void*>(&hookRigAttach));
+        LOG("cockpit: wheel spindle hook %s", ok ? "installed" : "mismatch; the wheel stays within the animation's range");
+    }
     LOG("cockpit: car update hook installed (in-game wheel %d, hide driver %d, car tracking %d, direction %+d)", g_wheelOn, g_hideOn, g_trackOn, (int)g_dir);
 }
 
@@ -191,3 +278,5 @@ extern "C" __declspec(dllexport) void FH2SI_TestCockpitWheel(uint8_t* car, float
 }
 
 extern "C" __declspec(dllexport) uint8_t* FH2SI_TestDetectPlayer(uint8_t* car, bool ffb) { if (ffb) fh2::CockpitHook_SetPlayerCar(car); else fh2::detectPlayer(car); return fh2::g_playerCar.load(); }
+
+extern "C" __declspec(dllexport) void* FH2SI_TestPlayerRig(uint8_t* car) { fh2::updatePlayerRig(car); return fh2::g_playerRig.load(); }

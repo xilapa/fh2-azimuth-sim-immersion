@@ -23,7 +23,7 @@ int main() {
     {
         FfbParams p = live(false); p.menuSpringScale = 0.5f;
         assert(near(FfbForce(p, 0.4f, 0, 0, nullptr), -0.2f));
-        assert(near(FfbForce(p, 2.0f, 0, 0, nullptr), -0.5f));
+        assert(near(FfbForce(p, 2.0f, 0, 0, nullptr), -1.0f));
     }
     // 3. torque only
     {
@@ -52,18 +52,18 @@ int main() {
         p.leftWl = 0;
         assert(near(FfbForce(p, 0, 0, 10.0, nullptr), 0.0f));
     }
-    // 7. total clamp
+    // 7. no cap on the total: the game's value goes to the wheel
     {
         FfbParams p = live(true); p.torque = 0.9f;
-        assert(near(FfbForce(p, 0, 0, 0, nullptr), 0.5f));
+        assert(near(FfbForce(p, 0, 0, 0, nullptr), 0.9f));
     }
     // 9. torque gain
     {
         FfbParams p = live(true); p.torque = 0.1f;
-        FfbTuning t; t.slipGain = 0;
-        assert(near(FfbForce(p, t, 0, 0, 0, nullptr), 0.2f));
-        t.torqueGain = 1.0f;
+        FfbTuning t;
         assert(near(FfbForce(p, t, 0, 0, 0, nullptr), 0.1f));
+        t.torqueGain = 2.0f;
+        assert(near(FfbForce(p, t, 0, 0, 0, nullptr), 0.2f));
     }
     // 10. game-driven spring with slip floor
     auto game = [] {
@@ -81,8 +81,9 @@ int main() {
         FfbTerms tm{};
         FfbForce(p, t, 0.5f, 0, 0, &tm);
         assert(near(tm.spring, -0.1f));
-        t.slipSpringFloor = 0;                       // the game removes the spring in a slide
-        assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), 0.0f));
+        t.slipSpringFloor = 0;                       // no floor: the game's own spring variable, as its program uses
+        assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), -0.45f));
+        t.slipSpringFloor = 0.4f;
         p.game.slip = 0.1f; p.game.speed = 1.0f;      // slow, no slip: speedF clamps to 0.15
         assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), -(0.15f * 1.0f * 0.5f) * 0.5f));
         t.springGain = 2.0f;
@@ -185,11 +186,19 @@ int main() {
         assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), -0.225f));
     }
 
+    // 15. default tuning: the game's torque unchanged, plus the extra forces
+    {
+        FfbParams p = game();
+        p.torque = 0.1f; p.game.haveFront = true; p.game.frontSlip = 0.3f;
+        FfbTerms tm{};
+        FfbForce(p, FfbTuning(), 0.5f, 0, 0, &tm);
+        assert(near(tm.torque, 0.1f) && near(tm.spring, -0.1f) && near(tm.slip, -0.125f) && near(tm.align, -0.08333f));
+    }
     // 8. device magnitude
-    assert(FfbDeviceMagnitude(0.25f, 1.0f, false) == -5000);
-    assert(FfbDeviceMagnitude(0.25f, 1.0f, true) == 5000);
-    assert(FfbDeviceMagnitude(0.5f, 2.0f, false) == -10000);
-    assert(FfbDeviceMagnitude(-0.1f, 1.0f, false) == 2000);
+    assert(FfbDeviceMagnitude(0.25f, 1.0f, false) == -2500);
+    assert(FfbDeviceMagnitude(0.25f, 1.0f, true) == 2500);
+    assert(FfbDeviceMagnitude(0.6f, 2.0f, false) == -10000);
+    assert(FfbDeviceMagnitude(-0.1f, 1.0f, false) == 1000);
 
     std::puts("all ffb tests passed");
     return 0;
