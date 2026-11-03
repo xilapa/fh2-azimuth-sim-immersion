@@ -41,8 +41,7 @@ bool azimuthAsks(void* caller) {
 bool keepWheelFromAzimuth() {
     const std::wstring ini = besideSelf(L"FH2SimImmersion.ini");
     return GetFileAttributesW(besideSelf(L"FH2SimImmersion.dll").c_str()) != INVALID_FILE_ATTRIBUTES &&
-           GetPrivateProfileIntW(L"Wheel", L"Enabled", 1, ini.c_str()) != 0 &&
-           GetPrivateProfileIntW(L"Wheel", L"OverrideAzimuthWheel", 1, ini.c_str()) != 0;
+           GetPrivateProfileIntW(L"Wheel", L"Enabled", 1, ini.c_str()) != 0;
 }
 
 } // namespace

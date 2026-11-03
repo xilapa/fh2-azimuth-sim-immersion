@@ -8,6 +8,8 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#define DIRECTINPUT_VERSION 0x0800
+#include <dinput.h>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -16,6 +18,8 @@
 #include <vector>
 #include <algorithm>
 #include "../src/dll/wheel_ffb.h"
+#include "../src/dll/wheel_device.h"
+#include "../src/common/wheel_pick.h"
 #include "../src/common/car_db.h"
 
 #ifdef _MSC_VER
@@ -114,7 +118,7 @@ static ULONG MSABI h_AddRef(void*) { return 2; }
 static ULONG MSABI h_Release(void*) { return 1; }
 static HRESULT MSABI h_Stub(void*) { return S_OK; }
 // Two real controllers in the fake list: a plain pad (does not answer IWheel) and a wheel that Azimuth
-// "provides" (answers IWheel). OverrideAzimuthWheel=1 (default) must hide the second one.
+// "provides" (answers IWheel). The plugin must hide the second one.
 static HRESULT MSABI h_CtlQI(void* self, const GUID* iid, void** out);
 static HRESULT MSABI h_GetUserNull(void*, void** out) { if (out) *out = nullptr; return S_OK; }
 static void* g_hPadVtbl[16], *g_hWheelVtbl[16];
@@ -189,7 +193,7 @@ static void wheelTests(uint8_t* base, const uint8_t origFrame[5], FnWCS createSt
     if (!view) return;
     uint32_t size = 99;
     ((FnU32Out)slotOf(view, 7))(view, &size);
-    CHECK(size == 2, "OverrideAzimuthWheel: list size == real count (2) - 1 + 1 (got %u)", size);
+    CHECK(size == 2, "Azimuth's wheel hidden: list size ==real count (2) - 1 + 1 (got %u)", size);
     {
         bool sawHarnessWheel = false;
         for (uint32_t i = 0; i < size; ++i) {
@@ -303,11 +307,6 @@ typedef bool (*FnLastFfb)(fh2::GameFfbInput*);
 typedef void (MSABI *FnUpdateFfb)(uint8_t*, const float*);
 typedef float (MSABI *FnGetFov)(void*);
 
-// Fake car for the front-slip capture: car + 0x4c08 -> phys, phys -> vtable of 0xC4 entries.
-static float MSABI fakeSlip(void*, int i) { static const float s[4] = {0.3f, 0.3f, 0.1f, 0.1f}; return i >= 0 && i < 4 ? s[i] : 0.0f; }
-static float MSABI fakeLoad(void*, int) { return 1.0f; }
-static void MSABI fakeUnexpected() { printf("  FAIL: unexpected physics vtable entry called\n"); fflush(stdout); abort(); }
-
 static void ffbTests(uint8_t* base, HMODULE plugin) {
     printf("game FFB input hook:\n");
     const uintptr_t kSite = 0x2fe134, kOrigTarget = 0x10743c0;
@@ -341,24 +340,15 @@ static void ffbTests(uint8_t* base, HMODULE plugin) {
           std::fabs(g.gain - 1.0f) < 1e-6f, "captured raw %f speed %f slip %f gain %f", g.rawTorque, g.speed, g.slip, g.gain);
     CHECK(std::fabs(g.dynScale - 0.42f) < 1e-6f && std::fabs(g.springParam - 0.5f) < 1e-6f && std::fabs(g.slip1 - 0.55f) < 1e-6f &&
           std::fabs(g.speed0 - 2.0f) < 1e-6f && std::fabs(g.speedScale1 - 1.0f) < 1e-6f, "captured driver parameters");
-    CHECK(!g.haveFront, "garbage rsi: no front slip captured");
 
-    // fake car: front slip comes from the physics object's vtable
+    // fake car: the plugin reads the car id from it
     alignas(16) static uint8_t carBuf[0x4c10];
-    alignas(16) static uint8_t physBuf[64];
-    static void* fakeVt[0xC4];
-    for (auto& e : fakeVt) e = (void*)&fakeUnexpected;
-    fakeVt[0x578 / 8] = (void*)&fakeSlip;
-    fakeVt[0x610 / 8] = (void*)&fakeLoad;
-    memset(carBuf, 0, sizeof(carBuf)); memset(physBuf, 0, sizeof(physBuf));
-    *(void**)physBuf = fakeVt;
-    *(void**)(carBuf + 0x4c08) = physBuf;
+    memset(carBuf, 0, sizeof(carBuf));
     static void* carElemFake;
     carElemFake = carBuf;
     float inCopy2[3] = {in[0], in[1], in[2]};
     callWithRsi((void*)target, slot, inCopy2, &carElemFake);
     CHECK(last(&g), "plugin captured the input with a fake car");
-    CHECK(g.haveFront && std::fabs(g.frontSlip - 0.3f) < 1e-6f, "front slip %f (have %d), expected 0.3", g.frontSlip, (int)g.haveFront);
 
     // steering lock per car (RealisticSteeringLock=1, WheelRange 900, game rotation 450, TestMode steering 0.25)
     printf("steering lock:\n");
@@ -854,6 +844,12 @@ static void drawDistTests(uint8_t* base, HMODULE plugin) {
     CHECK(!culled && level == 2, "150 m with distances 30/60/90/100 x2.2: level %d, culled %d (want 2, 0)", level, (int)culled);
     culled = select(250.0f * 250.0f, &lodFlags, &level, 0.0f, 0, 900.0f, 3600.0f, 8100.0f, 10000.0f);
     CHECK(culled && level == 4, "250 m is past the last distance: level %d, culled %d (want 4, 1)", level, (int)culled);
+    uint64_t coarseOnly = 1ULL << 53;   // only level 3 is loaded
+    culled = select(150.0f * 150.0f, &coarseOnly, &level, 0.0f, 0, 900.0f, 3600.0f, 8100.0f, 10000.0f);
+    CHECK(!culled && level == 3, "150 m, level 2 not loaded: the coarser level 3 is drawn (level %d, culled %d)", level, (int)culled);
+    uint64_t fineOnly = 1ULL << 50;     // only level 0 is loaded: no coarser level, the game's own choice stands
+    culled = select(150.0f * 150.0f, &fineOnly, &level, 0.0f, 0, 900.0f, 3600.0f, 8100.0f, 10000.0f);
+    CHECK(culled && level == 4, "150 m, only level 0 loaded: the game's own choice (level %d, culled %d)", level, (int)culled);
 
     // E. shadow cascades: ShadowDistance 200 on the game's own tables, raised at install and never lowered
     const auto closeTo = [](float a, float b) { return std::fabs(a - b) < 0.01f; };
@@ -952,8 +948,6 @@ static void enableCheckTests(HMODULE plugin) {
         CHECK(ask() == E_FAIL, "Wheel Enabled=1: Azimuth is refused");
         writeText(ini, "[Wheel]\nEnabled=0\n");
         CHECK(SUCCEEDED(ask()), "Wheel Enabled=0: Azimuth keeps the wheel");
-        writeText(ini, "[Wheel]\nEnabled=1\nOverrideAzimuthWheel=0\n");
-        CHECK(SUCCEEDED(ask()), "OverrideAzimuthWheel=0: Azimuth keeps the wheel");
         writeText(ini, "[Wheel]\nEnabled=1\n");
         wchar_t me[MAX_PATH];
         GetModuleFileNameW(nullptr, me, MAX_PATH);
@@ -973,28 +967,71 @@ static void enableCheckTests(HMODULE plugin) {
         CHECK(code == 0, "settings window in the same folder gets the real DirectInput (exit %lu)", code);
     }
 
+    typedef void (MSABI *FnMapInput)(const DIJOYSTATE2*, const DIJOYSTATE2*, const DIJOYSTATE2*, const DIJOYSTATE2*, fh2::PedalRest*, fh2::WheelInput*);
+    FnMapInput mapInput = (FnMapInput)GetProcAddress(plugin, "FH2SI_TestMapInput");
+    CHECK(mapInput != nullptr, "FH2SI_TestMapInput exported");
+    if (mapInput) {
+        DIJOYSTATE2 wheel{}, pedals{};
+        wheel.lY = 0;            // the wheel's own pedal axes read fully pressed: they must be ignored
+        wheel.lRz = 0;
+        wheel.rgbButtons[12] = 0x80;
+        pedals.lY = 65535; pedals.lRz = 65535;
+        fh2::PedalRest rest[4];
+        fh2::WheelInput in;
+        mapInput(&wheel, &pedals, nullptr, nullptr, rest, &in);
+        CHECK(in.throttle == 0 && in.brake == 0, "separate pedals are read, not the wheel's axes (%.2f %.2f)", in.throttle, in.brake);
+        pedals.lY = 0;
+        mapInput(&wheel, &pedals, nullptr, nullptr, rest, &in);
+        CHECK(in.throttle == 1.0f && in.brake == 0, "separate throttle pressed (%.2f %.2f)", in.throttle, in.brake);
+        mapInput(&wheel, nullptr, nullptr, nullptr, rest, &in);
+        CHECK(in.throttle == 0 && in.brake == 0 && in.gear == 0 && !in.handbrake && !in.b, "a missing device counts as released (%.2f %d)", in.throttle, in.gear);
+        fh2::PedalRest fresh[4];
+        pedals.lY = 32768;
+        mapInput(&wheel, &pedals, nullptr, nullptr, fresh, &in);
+        CHECK(in.throttle == 0, "a pedal resting half pressed counts as released (%.2f)", in.throttle);
+        pedals.lY = 0;
+        mapInput(&wheel, &pedals, nullptr, nullptr, fresh, &in);
+        CHECK(in.throttle == 1.0f, "and reads normally once it moved (%.2f)", in.throttle);
+        DIJOYSTATE2 shifter{};
+        shifter.rgbButtons[13] = 0x80;
+        mapInput(&wheel, &pedals, &shifter, nullptr, rest, &in);
+        CHECK(in.gear == 2, "gear comes from the separate shifter (%d)", in.gear);
+        mapInput(&wheel, &pedals, &wheel, nullptr, rest, &in);
+        CHECK(in.gear == 1, "gear comes from the wheel when the shifter is on it (%d)", in.gear);
+        DIJOYSTATE2 hb{};
+        hb.lX = 0;
+        mapInput(&wheel, &pedals, nullptr, &hb, rest, &in);
+        CHECK(!in.handbrake, "handbrake at rest is off");
+        hb.lX = 65535;
+        mapInput(&wheel, &pedals, nullptr, &hb, rest, &in);
+        CHECK(in.handbrake && in.b, "separate handbrake pulled presses B (%.2f)", in.handbrakeAxis);
+    }
+
     typedef void (MSABI *FnLoadCfg)(const wchar_t*, int*);
     FnLoadCfg loadCfg = (FnLoadCfg)GetProcAddress(plugin, "FH2SI_TestLoadConfig");
     CHECK(loadCfg != nullptr, "FH2SI_TestLoadConfig exported");
     if (loadCfg) {
         int out[5] = {};
-        writeText(cfg, "[Input]\nConfigVersion=7\nDiagnostics=1\n[General]\nOverrideAzimuthHeadTracking=1\n"
+        writeText(cfg, "[Input]\nConfigVersion=9\nDiagnostics=1\n[General]\nOverrideAzimuthHeadTracking=1\n"
                        "[Simulation]\nEnabled=1\nRealisticABS=1\n[DrawDistance]\nEnabled=1\nShadowDistance=200\n[Logging]\nEnabled=1\n");
         loadCfg(cfg.c_str(), out);
         CHECK(out[0] == 1 && out[1] == 1 && out[2] == 200 && out[3] == 1 && out[4] == 1, "checks on: settings used (%d %d %d %d %d)", out[0], out[1], out[2], out[3], out[4]);
-        writeText(cfg, "[Input]\nConfigVersion=7\nDiagnostics=1\n[General]\nOverrideAzimuthHeadTracking=0\n"
+        writeText(cfg, "[Input]\nConfigVersion=9\nDiagnostics=1\n[General]\nOverrideAzimuthHeadTracking=0\n"
                        "[Simulation]\nEnabled=0\nRealisticABS=1\n[DrawDistance]\nEnabled=0\nShadowDistance=200\n[Logging]\nEnabled=0\n");
         loadCfg(cfg.c_str(), out);
         CHECK(out[0] == 0 && out[1] == 0 && out[2] == 0 && out[3] == 0 && out[4] == 0, "checks off: settings ignored (%d %d %d %d %d)", out[0], out[1], out[2], out[3], out[4]);
-        writeText(cfg, "[Input]\nConfigVersion=6\n[Wheel]\nFFBGain=0.90\nFFBTorqueGain=2.0\nFFBSlipGain=0.7\nFFBAlignGain=0.60\n");
+        writeText(cfg, "[Input]\nConfigVersion=6\n[Wheel]\nFFBGain=0.90\nFFBTorqueGain=2.0\nFFBSlipGain=0.7\nFFBAlignGain=0.60\n[Rotation]\nYawLeftIsPositive=1\n");
         loadCfg(cfg.c_str(), out);
+        wchar_t yaw[8] = L"";
+        GetPrivateProfileStringW(L"Rotation", L"YawLeftIsPositive", L"", yaw, 8, cfg.c_str());
+        CHECK(!wcscmp(yaw, L"0"), "upgrade: the old YawLeftIsPositive=1 default follows the new 0 (%ls)", yaw);
         auto saved = [&](const wchar_t* key) {
             wchar_t v[32] = L"";
             GetPrivateProfileStringW(L"Wheel", key, L"", v, 32, cfg.c_str());
             return std::wstring(v);
         };
-        CHECK(saved(L"FFBTorqueGain") == L"1.0" && saved(L"FFBAlignGain") == L"0.3", "upgrade: old force defaults follow the new ones");
-        CHECK(saved(L"FFBGain") == L"0.90" && saved(L"FFBSlipGain") == L"0.7", "upgrade: changed force values stay");
+        CHECK(saved(L"FFBTorqueGain") == L"1.0" && saved(L"FFBAlignGain").empty() && saved(L"FFBSlipGain").empty(), "upgrade: old force defaults follow the new ones, removed keys are dropped");
+        CHECK(saved(L"FFBGain") == L"0.90", "upgrade: changed force values stay");
     }
 }
 
@@ -1035,7 +1072,7 @@ int wmain(int argc, wchar_t** argv) {
         size_t sep = iniPath.find_last_of(L"\\/");
         carsPath = (sep == std::wstring::npos ? std::wstring() : iniPath.substr(0, sep + 1)) + L"FH2SimImmersion_cars.ini";
         logPath = (sep == std::wstring::npos ? std::wstring() : iniPath.substr(0, sep + 1)) + L"FH2SimImmersion.log";
-        WritePrivateProfileStringW(L"Input", L"ConfigVersion", L"7", iniPath.c_str());
+        WritePrivateProfileStringW(L"Input", L"ConfigVersion", L"9", iniPath.c_str());
         WritePrivateProfileStringW(L"Wheel", L"TestMode", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"FovCockpit", L"10", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealisticABS", L"1", iniPath.c_str());

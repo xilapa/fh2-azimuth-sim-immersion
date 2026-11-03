@@ -11,8 +11,7 @@ All major features are implemented and built. This document tracks what remains 
 Test each feature in Forza Horizon 2 running in Azimuth 0.9.10.
 
 #### FFB improvements (0.9.2)
-- [ ] Slip invert default on: counter-steer force in slides
-- [ ] Front-tyre self-aligning force (understeer, spins, handbrake turns)
+- [ ] Counter-steer comes from the game's own torque (the extra counter-steer and front-slip forces were removed after a recorded lap)
 - [ ] Rumble gain: road surface and impact vibration (kerbs, cobblestones, gravel)
 - [ ] Real handbrake mapped to game button B
 
@@ -30,7 +29,6 @@ Test each feature in Forza Horizon 2 running in Azimuth 0.9.10.
 - [ ] Manual cars without clutch show "manual without clutch" (sequential, dual-clutch)
 - [ ] Cars with clutch show "manual with clutch"
 - [ ] Cars marked "mixed" follow OptionalAssists setting
-- [ ] Azimuth wheel override switch (`OverrideAzimuthWheel=1`) works
 - [ ] Azimuth head-tracking override switch (`OverrideAzimuthHeadTracking=1`) works
 - [ ] **Note:** The game may only read the shifting mode at race start
 

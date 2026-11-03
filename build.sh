@@ -36,7 +36,7 @@ x86_64-w64-mingw32-windres -I src/app -O coff src/app/app.rc -o build/app_res.o
 $CXX $FLAGS -DFH2SI_VERSION="\"$VERSION\"" -mwindows -municode -o build/FH2SimImmersion.exe \
     src/app/main.cpp src/app/page.cpp src/app/draw.cpp src/app/ini.cpp src/app/injector.cpp \
     src/app/pages_head.cpp src/app/pages_wheel.cpp src/app/pages_sim.cpp src/app/pages_draw.cpp src/app/pages_main.cpp build/app_res.o \
-    -lcomctl32 -lpsapi -lole32 -lshell32 -lgdi32 -ldinput8 -ldxguid
+    -lcomctl32 -lpsapi -lole32 -lshell32 -lgdi32 -ldinput8 -ldxguid -lws2_32
 # integration harness (needs your own copy of the game executable to run)
 $CXX $FLAGS -municode -mavx -o build/harness.exe tests/harness.cpp -lws2_32
 

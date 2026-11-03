@@ -41,6 +41,7 @@ static LRESULT CALLBACK PictureWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         EndPaint(h, &ps);
         return 0;
     }
+    if (m == WM_LBUTTONDOWN && p) { p->PictureClick((short)LOWORD(l), (short)HIWORD(l)); return 0; }
     return DefWindowProcW(h, m, w, l);
 }
 
@@ -172,10 +173,10 @@ Ctl& Page::MakeCtl(HWND parent, const Setting& s, bool withLabel) {
                                  0, 0, 10, 10, parent, (HMENU)(INT_PTR)c.id, hi, nullptr);
     } else {
         if (withLabel) c.label = MakeStatic(parent, label.c_str());
-        if (s.type == SType::Enum) {
-            c.main = CreateWindowExW(0, L"COMBOBOX", L"", vis | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
+        if (s.type == SType::Enum || s.type == SType::Device) {
+            c.main = CreateWindowExW(0, L"COMBOBOX", L"", vis | WS_TABSTOP | WS_VSCROLL | (s.type == SType::Enum ? CBS_DROPDOWNLIST : CBS_DROPDOWN | CBS_AUTOHSCROLL),
                                      0, 0, 10, 10, parent, (HMENU)(INT_PTR)c.id, hi, nullptr);
-            for (auto& v : splitBar(s.values)) SendMessageW(c.main, CB_ADDSTRING, 0, (LPARAM)Widen(v).c_str());
+            if (s.type == SType::Enum) for (auto& v : splitBar(s.values)) SendMessageW(c.main, CB_ADDSTRING, 0, (LPARAM)Widen(v).c_str());
             noWheel(c.main, scroller_ ? scroller_ : parent);
         } else {
             c.main = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", vis | WS_TABSTOP | ES_AUTOHSCROLL,
@@ -197,6 +198,7 @@ Ctl& Page::MakeCtl(HWND parent, const Setting& s, bool withLabel) {
     std::wstring wt = Widen(tip);
     if (!wt.empty()) wt += L"\n";
     wt += L"[" + Widen(s.section) + L"] " + Widen(s.key);
+    if (s.pct) wt += L" (the file keeps a fraction: 100 % here = 1.0 there)";
     AddTip(c.label, wt); AddTip(c.main, wt); AddTip(c.slider, wt);
     return c;
 }
@@ -249,6 +251,7 @@ std::string Page::GetValue(Ctl& c) {
         char* end = nullptr;
         double v = s.type == SType::Int ? (double)strtol(t.c_str(), &end, 0) : strtod(t.c_str(), &end);
         if (t.empty() || (end && *end)) return c.shown.empty() ? c.loaded : c.shown;   // not a number: keep
+        if (s.pct) v /= 100.0;
         if (s.max > s.min) v = std::min(std::max(v, s.min), s.max);
         return s.type == SType::Int ? fmtNum(v, 0) : fmtNum(v, decimalsFor(s.step));
     }
@@ -278,7 +281,7 @@ void Page::SetValue(Ctl& c, const std::string& v) {
         double d = s.type == SType::Int ? (double)strtol(v.c_str(), &end, 0) : strtod(v.c_str(), &end);
         if (s.max > s.min) d = std::min(std::max(d, s.min), s.max);
         int dec = s.type == SType::Int ? 0 : decimalsFor(s.step);
-        SetWindowTextW(c.main, Widen(fmtNum(d, dec)).c_str());
+        SetWindowTextW(c.main, Widen(fmtNum(s.pct ? d * 100.0 : d, s.pct ? decimalsFor(s.step * 100.0) : dec)).c_str());
         if (c.slider) SendMessageW(c.slider, TBM_SETPOS, TRUE, std::lround(d * std::pow(10.0, dec)));
         break;
     }
@@ -296,6 +299,7 @@ double Page::Num(const char* section, const char* key, double def) {
     GetWindowTextW(c->main, buf, 64);
     wchar_t* end = nullptr;
     double v = wcstod(buf, &end);
+    if (end != buf && c->s->pct) v /= 100.0;
     return end == buf ? def : v;
 }
 
@@ -373,7 +377,7 @@ int Page::PositionRows(int W) {
                 int ew = S(sliderEditW_), sw = std::max(S(60), W - x0 - ew - S(22));
                 put(c.slider, x0, y, sw, S(26));
                 put(c.main, x0 + sw + S(6), y + S(1), ew, S(22));
-            } else if (c.s->type == SType::Enum) {
+            } else if (c.s->type == SType::Enum || c.s->type == SType::Device) {
                 put(c.main, x0, y + S(1), ctlW, S(220));
             } else {
                 int w = (c.s->type == SType::Int || c.s->type == SType::Float) ? std::min(ctlW, S(100)) : ctlW;
@@ -448,6 +452,16 @@ void Page::Tick() {
 
 LRESULT Page::PanelProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
+    case WM_LBUTTONDOWN:
+        if (h == scroller_) {      // a click on a row's label focuses its control
+            POINT pt{(short)LOWORD(l), (short)HIWORD(l)};
+            for (auto& c : ctls_) {
+                if (!c.label || !c.main) continue;
+                RECT r; GetWindowRect(c.label, &r); MapWindowPoints(nullptr, scroller_, (POINT*)&r, 2);
+                if (PtInRect(&r, pt)) { SetFocus(c.main); break; }
+            }
+        }
+        break;
     case WM_ERASEBKGND: {
         RECT rc; GetClientRect(h, &rc);
         FillRect((HDC)w, &rc, G.white);
@@ -460,7 +474,7 @@ LRESULT Page::PanelProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         int id = LOWORD(w), code = HIWORD(w);
         HWND ctl = (HWND)l;
         if (h == scroller_ || h == host_) {
-            bool change = code == BN_CLICKED || code == CBN_SELCHANGE || code == EN_CHANGE;
+            bool change = code == BN_CLICKED || code == CBN_SELCHANGE || code == CBN_EDITCHANGE || code == EN_CHANGE;
             Ctl* c = nullptr;
             for (auto& x : ctls_) if (x.id == id) c = &x;
             if (c && change && !loading_) {

@@ -51,6 +51,7 @@ public:
     // window procedures of the page's windows (forwarded by the "FH2Panel" / "FH2Picture" classes)
     LRESULT PanelProc(HWND h, UINT m, WPARAM w, LPARAM l);
     virtual void PaintPicture(HDC dc, const RECT& rc) {}
+    void PictureClick(int x, int y) { OnPictureClick(x, y); }
 
 protected:
     virtual void Build() = 0;                       // create the controls (host_ exists)
@@ -59,6 +60,7 @@ protected:
     virtual void OnCommand(int id, int code, HWND ctl) {}
     virtual void OnChanged(Ctl& c) {}               // a setting control changed (user or Load)
     virtual void OnPart(const std::string& part) {} // focus / hover moved to another picture part
+    virtual void OnPictureClick(int x, int y) {}    // left click on the picture, in its client coordinates
 
     // controls
     void  BuildRows(const Setting* t, size_t n);    // scrolling rows in scroller_

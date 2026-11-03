@@ -48,7 +48,6 @@ int main() {
     CHECK(val["Simulation.RealisticSTM"] == "0");
     CHECK(val["Simulation.RealisticClutch"] == "0");
     CHECK(val["Simulation.RealisticAutomatic"] == "0");
-    CHECK(val["Wheel.OverrideAzimuthWheel"] == "1");
     CHECK(val["General.OverrideAzimuthHeadTracking"] == "1");
     CHECK(val["Logging.Enabled"] == "1");
     CHECK(val["Rotation.YawLimit"] == "90");
@@ -56,7 +55,6 @@ int main() {
     // Comments: own block, inherited block, section header block.
     for (auto& e : defs) {
         if (e.section == "Input" && e.key == "Diagnostics") CHECK(e.comment.find("troubleshooting") != std::string::npos);
-        if (e.section == "Wheel" && e.key == "FFBSlipFull") CHECK(e.comment.find("Rear slip") != std::string::npos);
         if (e.section == "Rotation" && e.key == "YawGain") CHECK(e.comment.find("Gain multiplies") != std::string::npos);
         if (e.section == "Input" && e.key == "ConfigVersion") CHECK(e.comment.empty());
     }

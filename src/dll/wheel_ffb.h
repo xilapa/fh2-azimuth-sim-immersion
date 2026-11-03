@@ -10,8 +10,6 @@ struct GameFfbInput {
     float rawTorque = 0, speed = 0, slip = 0, gain = 0, dynScale = 0, dynMax = 0, springParam = 0,
           slip0 = 0, slip1 = 0, slipScale0 = 0, slipScale1 = 0, speed0 = 0, speed1 = 0,
           speedScale0 = 0, speedScale1 = 0;
-    float frontSlip = 0;     // load-weighted average of the front tyres' slip
-    bool  haveFront = false;
     uint64_t qpc = 0;
 };
 
@@ -25,15 +23,11 @@ struct FfbParams {
 };
 
 struct FfbTuning {
-    // The extra forces (spring floor, slip, align) are sized to the game's own torque, which peaks around 0.21.
-    float torqueGain = 1.0f, springGain = 1.0f, slipSpringFloor = 0.4f, slipGain = 0.25f,
-          slipStart = 0.08f, slipFull = 0.55f;
-    bool slipInvert = true;
-    float alignGain = 0.3f, alignStart = 0.05f, alignFull = 0.5f;   // front-slip aligning force
+    float torqueGain = 1.0f, springGain = 1.0f, slipSpringFloor = 0.4f;   // slipSpringFloor: share of the spring kept when the rear slides
     float rumbleGain = 1.0f;
 };
 
-struct FfbTerms { float torque, spring, damping, rumble, menu, total, slip, align; };
+struct FfbTerms { float torque, spring, damping, rumble, menu, total; };
 
 // Returns the total force in game units (1.0 = the wheel's maximum). terms may be null.
 float FfbForce(const FfbParams& p, const FfbTuning& tune, float angle, float velocity, double tMs, FfbTerms* terms);
@@ -41,5 +35,8 @@ float FfbForce(const FfbParams& p, const FfbTuning& tune, float angle, float vel
 float FfbForce(const FfbParams& p, float angle, float velocity, double tMs, FfbTerms* terms);
 // Device magnitude -10000..10000 from a force, gain and invert flag.
 long FfbDeviceMagnitude(float force, float gain, bool invert);
+// Lifts a device magnitude (-10000..10000) over the wheel's dead band: |out| = floor + |mag| * (1 - floor),
+// with the first 1% ramping up from 0 so the force does not jump across the centre. minForce 0 = unchanged.
+long FfbMinForce(long mag, float minForce);
 
 } // namespace fh2

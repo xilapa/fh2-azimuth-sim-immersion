@@ -77,7 +77,7 @@ int main() {
     };
     {
         FfbParams p = game();
-        FfbTuning t; t.torqueGain = 1; t.slipGain = 0; t.slipSpringFloor = 0.4f;
+        FfbTuning t; t.torqueGain = 1; t.slipSpringFloor = 0.4f;
         FfbTerms tm{};
         FfbForce(p, t, 0.5f, 0, 0, &tm);
         assert(near(tm.spring, -0.1f));
@@ -95,71 +95,6 @@ int main() {
         p.game.speed0 = p.game.speed1 = 5; p.game.speedScale0 = 0.3f; p.game.speedScale1 = 0.8f;
         assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), -(0.8f * 0.5f) * 0.5f));
     }
-    // 11. counter-steer slip term
-    {
-        FfbParams p = game();
-        FfbTuning t; t.torqueGain = 1; t.slipSpringFloor = 0; t.slipGain = 0.5f;
-        t.slipInvert = false; t.alignGain = 0; t.rumbleGain = 1;
-        p.game.slip = 0.315f;
-        FfbTerms tm{};
-        FfbForce(p, t, 0, 0, 0, &tm);
-        assert(near(tm.slip, 0.125f));
-        p.game.slip = -0.315f;
-        FfbForce(p, t, 0, 0, 0, &tm);
-        assert(near(tm.slip, -0.125f));
-        t.slipInvert = true;
-        FfbForce(p, t, 0, 0, 0, &tm);
-        assert(near(tm.slip, 0.125f));
-        t.slipInvert = false;
-        p.game.slip = 0.05f;                         // below start
-        FfbForce(p, t, 0, 0, 0, &tm);
-        assert(tm.slip == 0.0f);
-        p.game.slip = 2.0f;                          // saturates at gain*0.5
-        FfbForce(p, t, 0, 0, 0, &tm);
-        assert(near(tm.slip, 0.25f));
-        t.slipFull = t.slipStart;                    // degenerate range
-        FfbForce(p, t, 0, 0, 0, &tm);
-        assert(tm.slip == 0.0f);
-        t.slipFull = 0.55f; t.slipGain = 0;
-        FfbForce(p, t, 0, 0, 0, &tm);
-        assert(tm.slip == 0.0f);
-        // total includes the slip term
-        t.slipGain = 0.5f; p.game.slip = 0.315f;
-        assert(near(FfbForce(p, t, 0, 0, 0, nullptr), 0.125f));
-    }
-    // 13. front-slip aligning force
-    {
-        FfbParams p = game();
-        FfbTuning t; t.torqueGain = 1; t.slipSpringFloor = 0; t.slipGain = 0; t.rumbleGain = 1;
-        t.alignGain = 0.6f; t.alignStart = 0.05f; t.alignFull = 0.5f; t.slipInvert = true;
-        p.game.haveFront = true; p.game.frontSlip = 0.275f;
-        FfbTerms tm{};
-        FfbForce(p, t, 0, 0, 0, &tm);
-        assert(near(tm.align, -0.15f));
-        assert(near(FfbForce(p, t, 0, 0, 0, nullptr), -0.15f));       // included in the total
-        t.slipInvert = false;
-        FfbForce(p, t, 0, 0, 0, &tm);
-        assert(near(tm.align, 0.15f));
-        p.game.frontSlip = -0.275f;
-        FfbForce(p, t, 0, 0, 0, &tm);
-        assert(near(tm.align, -0.15f));
-        p.game.frontSlip = 0.02f;                                      // below start
-        FfbForce(p, t, 0, 0, 0, &tm);
-        assert(tm.align == 0.0f);
-        p.game.frontSlip = 3.0f;                                       // saturates at gain*0.5
-        FfbForce(p, t, 0, 0, 0, &tm);
-        assert(near(tm.align, 0.3f));
-        p.game.frontSlip = 0.275f;
-        p.game.haveFront = false;
-        FfbForce(p, t, 0, 0, 0, &tm);
-        assert(tm.align == 0.0f);
-        p.game.haveFront = true; t.alignGain = 0;
-        FfbForce(p, t, 0, 0, 0, &tm);
-        assert(tm.align == 0.0f);
-        t.alignGain = 0.6f; t.alignFull = t.alignStart;                // degenerate range
-        FfbForce(p, t, 0, 0, 0, &tm);
-        assert(tm.align == 0.0f);
-    }
     // 14. rumble gain
     {
         FfbParams p = live(true); p.leftAmp = 0.1f; p.leftWl = 40.0f;
@@ -174,14 +109,14 @@ int main() {
         FfbForce(p, t, 0, 0, 10.0, &tm);
         assert(tm.rumble == 0.0f);
     }
-    // 12. no game input: fall back to the captured spring scale; no slip term
+    // 12. no game input: fall back to the captured spring scale
     {
         FfbParams p = game();
         p.haveGame = false;
-        FfbTuning t; t.torqueGain = 1; t.slipSpringFloor = 0.4f; t.slipGain = 0.5f; t.springGain = 1.0f;
+        FfbTuning t; t.torqueGain = 1; t.slipSpringFloor = 0.4f; t.springGain = 1.0f;
         FfbTerms tm{};
         FfbForce(p, t, 0.5f, 0, 0, &tm);
-        assert(near(tm.spring, -0.45f) && tm.slip == 0.0f);
+        assert(near(tm.spring, -0.45f));
         t.springGain = 0.5f;
         assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), -0.225f));
     }
@@ -189,16 +124,29 @@ int main() {
     // 15. default tuning: the game's torque unchanged, plus the extra forces
     {
         FfbParams p = game();
-        p.torque = 0.1f; p.game.haveFront = true; p.game.frontSlip = 0.3f;
+        p.torque = 0.1f;
         FfbTerms tm{};
         FfbForce(p, FfbTuning(), 0.5f, 0, 0, &tm);
-        assert(near(tm.torque, 0.1f) && near(tm.spring, -0.1f) && near(tm.slip, -0.125f) && near(tm.align, -0.08333f));
+        assert(near(tm.torque, 0.1f) && near(tm.spring, -0.1f));
     }
     // 8. device magnitude
     assert(FfbDeviceMagnitude(0.25f, 1.0f, false) == -2500);
     assert(FfbDeviceMagnitude(0.25f, 1.0f, true) == 2500);
     assert(FfbDeviceMagnitude(0.6f, 2.0f, false) == -10000);
     assert(FfbDeviceMagnitude(-0.1f, 1.0f, false) == 1000);
+
+    // minimum force
+    {
+        assert(FfbMinForce(0, 0.05f) == 0);
+        assert(FfbMinForce(5000, 0.0f) == 5000);
+        assert(FfbMinForce(10000, 0.05f) == 10000);
+        assert(FfbMinForce(-10000, 0.05f) == -10000);
+        assert(FfbMinForce(5000, 0.05f) == 5250);
+        assert(FfbMinForce(-5000, 0.05f) == -5250);
+        assert(FfbMinForce(100, 0.05f) == 595);
+        assert(FfbMinForce(50, 0.05f) == 298);
+        assert(FfbMinForce(-50, 0.05f) == -298);
+    }
 
     std::puts("all ffb tests passed");
     return 0;

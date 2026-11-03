@@ -47,7 +47,7 @@ add_executable(FH2SimImmersionApp WIN32
   src/app/app.rc)
 set_target_properties(FH2SimImmersionApp PROPERTIES OUTPUT_NAME FH2SimImmersion)
 target_compile_definitions(FH2SimImmersionApp PRIVATE FH2SI_VERSION="${PROJECT_VERSION}" UNICODE _UNICODE)
-target_link_libraries(FH2SimImmersionApp PRIVATE comctl32 psapi ole32 shell32 gdi32 dinput8 dxguid)
+target_link_libraries(FH2SimImmersionApp PRIVATE comctl32 psapi ole32 shell32 gdi32 dinput8 dxguid ws2_32)
 target_link_options(FH2SimImmersionApp PRIVATE -municode -mwindows)
 
 # Integration test (needs your own copy of the game executable to run)

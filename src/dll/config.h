@@ -17,8 +17,8 @@ enum class WheelUserMode { Auto, None };
 
 struct WheelConfig {
     bool        enabled = true;
-    bool        overrideAzimuthWheel = true;   // hide a wheel provided by Azimuth itself, use ours
-    std::string deviceMatch = "G29";
+    std::string deviceMatch;
+    std::string pedalsDevice, shifterDevice, handbrakeDevice;   // name contains; empty = they are on the wheel
     int         wheelRange = 900;
     WheelAxis   steeringAxis = WheelAxis::X, throttleAxis = WheelAxis::Y,
                 brakeAxis = WheelAxis::RZ, clutchAxis = WheelAxis::Slider0;
@@ -43,8 +43,11 @@ struct WheelConfig {
     bool        ffbEnabled = true;
     float       ffbGain = 1.0f;
     bool        ffbInvert = false;
+    float       ffbMinForce = 0.05f;      // lifts small forces over the wheel's dead band; 0 = off
     FfbTuning   ffbTuning;
     float       ffbLockStrength = 1.0f, ffbLockRampDeg = 3.0f;   // soft lock at the end of the steering lock
+    bool        ffbLimitUnknown = true;   // soft lock at half force on wheels not known to be gentle
+    bool        ffbForeground = false;    // take the force only while the game has the focus
 };
 
 enum class AssistMode { Game, On, Off };     // Game = keep the player's game setting

@@ -33,7 +33,7 @@ inline bool EnsureCurrentIni(const std::wstring& ini, int* kept = nullptr, bool*
     const int oldVersion = GetPrivateProfileIntW(L"Input", L"ConfigVersion", 0, bak.c_str());
     // Force values that were the defaults before version 7 follow the new ones, sized to the game's torque; changed values stay.
     const struct { const char* key; double value; } kOldForceDefaults[] = {
-        {"FFBTorqueGain", 2.0}, {"FFBSlipGain", 0.5}, {"FFBAlignGain", 0.6}, {"FFBRumbleGain", 1.5}};
+        {"FFBTorqueGain", 2.0}, {"FFBRumbleGain", 1.5}};
     auto wide = [](const std::string& s) { return std::wstring(s.begin(), s.end()); };   // ASCII names
     std::vector<wchar_t> buf(4096);
     for (const app::IniEntry& e : app::ParseIniText(kDefaultIni)) {
@@ -45,6 +45,7 @@ inline bool EnsureCurrentIni(const std::wstring& ini, int* kept = nullptr, bool*
         if (oldVersion < 7 && e.section == "Wheel")
             for (const auto& d : kOldForceDefaults)
                 if (e.key == d.key && wcstod(buf.data(), nullptr) == d.value) oldDefault = true;
+        if (oldVersion < 9 && e.key == "YawLeftIsPositive" && wcscmp(buf.data(), L"1") == 0) oldDefault = true;   // 1 was a backwards default
         if (oldDefault) continue;
         if (WritePrivateProfileStringW(sec.c_str(), key.c_str(), buf.data(), ini.c_str()) && kept) ++*kept;
     }

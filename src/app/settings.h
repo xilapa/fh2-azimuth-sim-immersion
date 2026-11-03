@@ -5,7 +5,7 @@
 
 namespace app {
 
-enum class SType { Bool, Int, Float, Enum, Text, Buttons };
+enum class SType { Bool, Int, Float, Enum, Text, Buttons, Device };
 
 struct Setting {
     const char* section;
@@ -18,14 +18,17 @@ struct Setting {
     const char* group;     // heading; a new heading starts a new block of rows
     const char* part;      // picture part this setting belongs to (highlighted when focused)
     bool        slider;    // Int / Float: slider + edit
+    bool        pct;       // Float: shown as percent (INI value x 100)
 };
 
-#define ST_BOOL(sec, key, label, group, part)                    {sec, key, SType::Bool, label, nullptr, 0, 0, 0, nullptr, group, part, false}
-#define ST_INT(sec, key, label, group, part, lo, hi, st)         {sec, key, SType::Int, label, nullptr, lo, hi, st, nullptr, group, part, false}
-#define ST_FLOAT(sec, key, label, group, part, lo, hi, st)       {sec, key, SType::Float, label, nullptr, lo, hi, st, nullptr, group, part, false}
-#define ST_SLIDER(sec, key, label, group, part, lo, hi, st)      {sec, key, SType::Float, label, nullptr, lo, hi, st, nullptr, group, part, true}
-#define ST_ENUM(sec, key, label, group, part, vals)              {sec, key, SType::Enum, label, nullptr, 0, 0, 0, vals, group, part, false}
-#define ST_TEXT(sec, key, label, group, part)                    {sec, key, SType::Text, label, nullptr, 0, 0, 0, nullptr, group, part, false}
-#define ST_BUTTONS(sec, key, label, group, part)                 {sec, key, SType::Buttons, label, nullptr, 0, 0, 0, nullptr, group, part, false}
+#define ST_BOOL(sec, key, label, group, part)                    {sec, key, SType::Bool, label, nullptr, 0, 0, 0, nullptr, group, part, false, false}
+#define ST_INT(sec, key, label, group, part, lo, hi, st)         {sec, key, SType::Int, label, nullptr, lo, hi, st, nullptr, group, part, false, false}
+#define ST_FLOAT(sec, key, label, group, part, lo, hi, st)       {sec, key, SType::Float, label, nullptr, lo, hi, st, nullptr, group, part, false, false}
+#define ST_PCT(sec, key, label, group, part, lo, hi, st)         {sec, key, SType::Float, label, nullptr, lo, hi, st, nullptr, group, part, false, true}
+#define ST_SLIDER(sec, key, label, group, part, lo, hi, st)      {sec, key, SType::Float, label, nullptr, lo, hi, st, nullptr, group, part, true, false}
+#define ST_ENUM(sec, key, label, group, part, vals)              {sec, key, SType::Enum, label, nullptr, 0, 0, 0, vals, group, part, false, false}
+#define ST_TEXT(sec, key, label, group, part)                    {sec, key, SType::Text, label, nullptr, 0, 0, 0, nullptr, group, part, false, false}
+#define ST_DEVICE(sec, key, label, group, part)                  {sec, key, SType::Device, label, nullptr, 0, 0, 0, nullptr, group, part, false, false}
+#define ST_BUTTONS(sec, key, label, group, part)                 {sec, key, SType::Buttons, label, nullptr, 0, 0, 0, nullptr, group, part, false, false}
 
 } // namespace app

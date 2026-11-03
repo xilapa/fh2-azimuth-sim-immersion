@@ -9,6 +9,7 @@ g++ -std=c++17 -O1 -Wall tests/test_ini.cpp -o build/test_ini && ./build/test_in
 g++ -std=c++17 -O1 -Wall tests/test_lock.cpp src/dll/wheel_ffb.cpp -o build/test_lock && ./build/test_lock
 g++ -std=c++17 -O1 -Wall tests/test_spindle.cpp -o build/test_spindle && ./build/test_spindle
 g++ -std=c++17 -O1 -Wall tests/test_cars.cpp -o build/test_cars && ./build/test_cars
+g++ -std=c++17 -O1 -Wall tests/test_wheel.cpp -o build/test_wheel && ./build/test_wheel
 if command -v python3 >/dev/null 2>&1; then
     python3 tools/gen_car_db.py data/car_assists.csv build/car_db.h.new
     diff -q --strip-trailing-cr build/car_db.h.new src/common/car_db.h || { echo "src/common/car_db.h is out of date: run tools/gen_car_db.py" >&2; exit 1; }

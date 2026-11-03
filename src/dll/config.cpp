@@ -118,8 +118,10 @@ static const char* wheelAxisName(WheelAxis a) {
 }
 static void readWheel(const wchar_t* ini, WheelConfig& w) {
     w.enabled        = readI(ini, "Wheel", "Enabled", 1) != 0;
-    w.overrideAzimuthWheel = readI(ini, "Wheel", "OverrideAzimuthWheel", 1) != 0;
-    w.deviceMatch    = readStr(ini, "Wheel", "DeviceMatch", "G29");
+    w.deviceMatch    = readStr(ini, "Wheel", "DeviceMatch", "");
+    w.pedalsDevice    = readStr(ini, "Wheel", "PedalsDevice", "");
+    w.shifterDevice   = readStr(ini, "Wheel", "ShifterDevice", "");
+    w.handbrakeDevice = readStr(ini, "Wheel", "HandbrakeDevice", "");
     w.wheelRange     = readI(ini, "Wheel", "WheelRange", 900);
     if (w.wheelRange < 40 || w.wheelRange > 65535) {
         LOG("config: WheelRange=%d out of range 40..65535; using 900", w.wheelRange);
@@ -194,32 +196,30 @@ static void readWheel(const wchar_t* ini, WheelConfig& w) {
         w.ffbGain = w.ffbGain < 0.0f ? 0.0f : 4.0f;
     }
     w.ffbInvert    = readI(ini, "Wheel", "FFBInvert", 0) != 0;
+    w.ffbMinForce  = clampCfg(ini, "FFBMinForce", (float)readF(ini, "Wheel", "FFBMinForce", 0.05), 0.0f, 0.3f);
+    w.ffbLimitUnknown = readI(ini, "Wheel", "FFBLimitUnknown", 1) != 0;
+    w.ffbForeground   = readI(ini, "Wheel", "FFBForeground", 0) != 0;
     {
         FfbTuning& t = w.ffbTuning;
         t.torqueGain      = clampCfg(ini, "FFBTorqueGain", (float)readF(ini, "Wheel", "FFBTorqueGain", 1.0), 0.0f, 5.0f);
         t.springGain      = clampCfg(ini, "FFBSpringGain", (float)readF(ini, "Wheel", "FFBSpringGain", 1.0), 0.0f, 5.0f);
         t.slipSpringFloor = clampCfg(ini, "FFBSlipSpringFloor", (float)readF(ini, "Wheel", "FFBSlipSpringFloor", 0.4), 0.0f, 1.0f);
-        t.slipGain        = clampCfg(ini, "FFBSlipGain", (float)readF(ini, "Wheel", "FFBSlipGain", 0.25), 0.0f, 5.0f);
-        t.slipStart       = clampCfg(ini, "FFBSlipStart", (float)readF(ini, "Wheel", "FFBSlipStart", 0.08), 0.0f, 2.0f);
-        t.slipFull        = clampCfg(ini, "FFBSlipFull", (float)readF(ini, "Wheel", "FFBSlipFull", 0.55), 0.0f, 2.0f);
-        t.slipInvert      = readI(ini, "Wheel", "FFBSlipInvert", 1) != 0;
-        t.alignGain       = clampCfg(ini, "FFBAlignGain", (float)readF(ini, "Wheel", "FFBAlignGain", 0.3), 0.0f, 5.0f);
-        t.alignStart      = clampCfg(ini, "FFBAlignStart", (float)readF(ini, "Wheel", "FFBAlignStart", 0.05), 0.0f, 2.0f);
-        t.alignFull       = clampCfg(ini, "FFBAlignFull", (float)readF(ini, "Wheel", "FFBAlignFull", 0.5), 0.0f, 2.0f);
-        t.rumbleGain      = clampCfg(ini, "FFBRumbleGain", (float)readF(ini, "Wheel", "FFBRumbleGain", 1.0), 0.0f, 5.0f);
+        t.rumbleGain     = clampCfg(ini, "FFBRumbleGain", (float)readF(ini, "Wheel", "FFBRumbleGain", 1.0), 0.0f, 5.0f);
         w.ffbLockStrength = clampCfg(ini, "FFBLockStrength", (float)readF(ini, "Wheel", "FFBLockStrength", 1.0), 0.0f, 1.0f);
         w.ffbLockRampDeg  = clampCfg(ini, "FFBLockRampDeg", (float)readF(ini, "Wheel", "FFBLockRampDeg", 3.0), 0.5f, 30.0f);
-        LOG("config: ffb torque %.2f spring %.2f floor %.2f slip %.2f [%.2f..%.2f] inv %d align %.2f [%.2f..%.2f] rumble %.2f lock %.2f ramp %.1f",
-            t.torqueGain, t.springGain, t.slipSpringFloor, t.slipGain, t.slipStart, t.slipFull, t.slipInvert,
-            t.alignGain, t.alignStart, t.alignFull, t.rumbleGain, w.ffbLockStrength, w.ffbLockRampDeg);
+        LOG("config: ffb torque %.2f spring %.2f floor %.2f rumble %.2f lock %.2f ramp %.1f",
+            t.torqueGain, t.springGain, t.slipSpringFloor,
+            t.rumbleGain, w.ffbLockStrength, w.ffbLockRampDeg);
     }
+    LOG("config: wheel pedals '%s' shifter '%s' handbrake '%s' limit unknown %d foreground %d min force %.2f", w.pedalsDevice.c_str(),
+        w.shifterDevice.c_str(), w.handbrakeDevice.c_str(), w.ffbLimitUnknown, w.ffbForeground, w.ffbMinForce);
     LOG("config: wheel enabled %d match '%s' range %d axes steer %s%s thr %s brk %s clu %s pedalsInv %d dz %.2f "
-        "hshifter %d user %s rescan %d id %04x:%04x flag14 %d test %d ffb %d gain %.2f inv %d overrideAzimuth %d",
+        "hshifter %d user %s rescan %d id %04x:%04x flag14 %d test %d ffb %d gain %.2f inv %d",
         w.enabled, w.deviceMatch.c_str(), w.wheelRange, wheelAxisName(w.steeringAxis),
         w.steeringInvert ? "(inv)" : "", wheelAxisName(w.throttleAxis), wheelAxisName(w.brakeAxis),
         wheelAxisName(w.clutchAxis), w.pedalsInverted, w.pedalDeadzone, w.hShifter,
         w.userMode == WheelUserMode::Auto ? "auto" : "none", w.forceRescan, w.vendorId, w.productId,
-        w.configFlag14, w.testMode, w.ffbEnabled, w.ffbGain, w.ffbInvert, w.overrideAzimuthWheel);
+        w.configFlag14, w.testMode, w.ffbEnabled, w.ffbGain, w.ffbInvert);
 }
 
 static AssistMode toMode(CarOvr o, bool& set) {
@@ -307,7 +307,7 @@ Config loadConfig(const std::wstring& iniPath) {
     c.map.z = readAxis(ini, "Position", "Z", 0.08f);
     c.map.yawLeftGain  = clampCfg(ini, "YawLeftGain", (float)readF(ini, "Rotation", "YawLeftGain", 1.0), 0.0f, 5.0f);
     c.map.yawRightGain = clampCfg(ini, "YawRightGain", (float)readF(ini, "Rotation", "YawRightGain", 1.0), 0.0f, 5.0f);
-    c.map.yawLeftIsPositive = readI(ini, "Rotation", "YawLeftIsPositive", 1) != 0;
+    c.map.yawLeftIsPositive = readI(ini, "Rotation", "YawLeftIsPositive", 0) != 0;
     readOrder(ini, "RotOrder", c.map.rotOrder);
     readOrder(ini, "PosOrder", c.map.posOrder);
     LOG("config: source %s diagnostics %d recenter buttons 0x%04x", src.c_str(), c.diagnostics, c.recenterButtons);

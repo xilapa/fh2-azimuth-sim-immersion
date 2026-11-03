@@ -135,6 +135,15 @@ void DrawHeadPicture(HDC dc, const RECT& rc, const HeadPicState& st, int dpi, HF
         if (zl > 0) dblArrow(c, col(hz), wid(hz), cx - R * 2.6, cy + zl * 0.5, cx - R * 2.6, cy - zl * 0.5);
         text(c, col(hz), L"Z ±" + num(st.zLim, 2) + L" m", (int)(cx - R * 2.6) + c.px(8), (int)(cy + zl * 0.5) - c.px(14));
         cleanup(c);
+        if (st.live) {   // yaw turns the nose arrow (left = counter-clockwise), X and Z move the dot
+            double a = (90.0 + st.yawLeft) * kPi / 180.0;
+            line(c, kAccent, 3, cx, cy, cx + R * 1.35 * std::cos(a), cy - R * 1.35 * std::sin(a));
+            double s = (top.right - top.left) * 0.45 / 0.25;          // same scale as the X and Z arrows: pixels per metre
+            double dx = cx + std::max(-0.25, std::min(0.25, st.x)) * s, dy = cy + std::max(-0.25, std::min(0.25, st.z)) * s;
+            pen(c, kAccent, 1); brush(c, kAccent);
+            Ellipse(dc, (int)(dx - c.px(5)), (int)(dy - c.px(5)), (int)(dx + c.px(5)), (int)(dy + c.px(5)));
+            cleanup(c);
+        }
     }
     // ---- side view: pitch, Y
     {
@@ -154,6 +163,15 @@ void DrawHeadPicture(HDC dc, const RECT& rc, const HeadPicState& st, int dpi, HF
         if (yl > 0) dblArrow(c, col(hy), wid(hy), cx - R * 1.5, cy + yl, cx - R * 1.5, cy - yl);
         text(c, col(hy), L"Y ±" + num(st.yLim, 2) + L" m", (int)(cx - R * 1.5) - c.px(4), side.bottom - c.px(20));
         cleanup(c);
+        if (st.live) {   // pitch tilts the nose arrow (down = clockwise), Y moves the dot
+            double a = -st.pitchDown * kPi / 180.0;
+            line(c, kAccent, 3, cx, cy, cx + R * 1.35 * std::cos(a), cy - R * 1.35 * std::sin(a));
+            double s = (side.bottom - side.top) * 0.42 / 0.25;
+            double dy = cy - std::max(-0.25, std::min(0.25, st.y)) * s;
+            pen(c, kAccent, 1); brush(c, kAccent);
+            Ellipse(dc, (int)(cx - c.px(5)), (int)(dy - c.px(5)), (int)(cx + c.px(5)), (int)(dy + c.px(5)));
+            cleanup(c);
+        }
     }
     // ---- front view: roll
     {
@@ -169,7 +187,14 @@ void DrawHeadPicture(HDC dc, const RECT& rc, const HeadPicState& st, int dpi, HF
         double rl = lim(st.rollLim, 85);
         if (rl > 0) arcArrow(c, col(hr), wid(hr), cx, cy, R * 1.6, 90 - rl, 2 * rl);
         text(c, col(hr), L"Roll ±" + num(st.rollLim, 0) + L"°", (int)cx - c.px(30), front.bottom - c.px(20));
+        if (st.live) {   // roll tilts the eye line like a mirror (left = counter-clockwise)
+            double a = st.rollLeft * kPi / 180.0;
+            double ex = R * 0.7 * std::cos(a), ey = R * 0.7 * std::sin(a);
+            line(c, kAccent, 3, cx - ex, cy - R * 0.15 + ey, cx + ex, cy - R * 0.15 - ey);
+            cleanup(c);
+        }
     }
+    if (!st.liveText.empty()) text(c, st.live ? kAccent : kDim, st.liveText, top.left + c.px(8), top.bottom - c.px(20));
 }
 
 // ------------------------------------------------------------------ wheel
@@ -179,15 +204,19 @@ static std::wstring lab(const WheelPicState& st, const char* part, const wchar_t
     return it != st.label.end() ? it->second : fallback;
 }
 
-void DrawWheelPicture(HDC dc, const RECT& rc, const WheelPicState& st, int dpi, HFONT font) {
+void DrawWheelPicture(HDC dc, const RECT& rc, const WheelPicState& st, int dpi, HFONT font, std::vector<PicHit>* hits) {
     Ctx c{dc, dpi / 96.0, font};
+    if (hits) hits->clear();
     const std::string& P = st.part;
     int W = rc.right - rc.left, H = rc.bottom - rc.top;
     int m = c.px(8);
     auto hi = [&](const char* name, const char* group = nullptr) { return on(P, name, group); };
+    auto hit = [&](int l, int t, int r, int b, const char* part) { if (hits) hits->push_back({RECT{l, t, r, b}, part}); };
+    auto lit = [&](const char* part) { return st.live.active && st.live.lit.count(part) > 0; };
 
-    double R = std::min(W * 0.16, H * 0.14);
-    double cx = W / 2.0, cy = m + c.px(14) + R * 1.15;
+    const int legendX = (int)(W * 0.56);                 // the list of settings starts here
+    double R = std::min((legendX - 2 * m) * 0.34, H * 0.14);
+    double cx = m + (legendX - m) / 2.0, cy = m + c.px(14) + R * 1.15;
     // rotation of the wheel while testing
     double theta = st.live.active ? (st.live.steer - 0.5) * st.rangeDeg : 0;
     theta = std::max(-540.0, std::min(540.0, theta));
@@ -216,18 +245,20 @@ void DrawWheelPicture(HDC dc, const RECT& rc, const WheelPicState& st, int dpi, 
     pen(c, kGray, 1.5); brush(c, kLight);
     Ellipse(dc, (int)(cx - R * 0.38), (int)(cy - R * 0.38), (int)(cx + R * 0.38), (int)(cy + R * 0.38));
     cleanup(c);
+    hit((int)(cx - R), (int)(cy - R), (int)(cx + R), (int)(cy + R), "steer");
 
     struct Face { const char* part; double dx, dy; COLORREF fill; const wchar_t* letter; };
     const Face faces[] = {{"btnA", 0, 0.2, RGB(110, 190, 90), L"A"}, {"btnB", 0.2, 0, RGB(220, 90, 80), L"B"},
                           {"btnX", -0.2, 0, RGB(90, 140, 220), L"X"}, {"btnY", 0, -0.2, RGB(235, 200, 70), L"Y"}};
     double br = R * 0.095;
     for (auto& f : faces) {
-        bool h = hi(f.part);
-        pen(c, h ? kAccent : kGray, h ? 3 : 1); brush(c, f.fill);
+        bool h = hi(f.part), down = lit(f.part);
+        pen(c, h ? kAccent : kGray, h ? 3 : 1); brush(c, down ? kAccent : f.fill);
         double x = cx + f.dx * R, y = cy + f.dy * R;
         Ellipse(dc, (int)(x - br), (int)(y - br), (int)(x + br), (int)(y + br));
         cleanup(c);
-        text(c, kText, f.letter, (int)x, (int)(y - c.px(7)), DT_CENTER);
+        text(c, down ? RGB(255, 255, 255) : kText, f.letter, (int)x, (int)(y - c.px(7)), DT_CENTER);
+        hit((int)(x - br * 1.6), (int)(y - br * 1.6), (int)(x + br * 1.6), (int)(y + br * 1.6), f.part);
     }
     // View / Menu
     double sx = R * 0.55, sy = -R * 0.22, sr = R * 0.07;
@@ -235,44 +266,38 @@ void DrawWheelPicture(HDC dc, const RECT& rc, const WheelPicState& st, int dpi, 
     const Small smalls[] = {{"view", cx - sx, cy + sy, L"V"}, {"menu", cx + sx, cy + sy, L"M"}};
     for (auto& s : smalls) {
         bool h = hi(s.part);
-        pen(c, h ? kAccent : kGray, h ? 3 : 1); brush(c, h ? RGB(210, 228, 248) : RGB(250, 250, 252));
+        pen(c, h ? kAccent : kGray, h ? 3 : 1); brush(c, lit(s.part) ? kAccent : (h ? RGB(210, 228, 248) : RGB(250, 250, 252)));
         Ellipse(dc, (int)(s.x - sr * 1.3), (int)(s.y - sr * 1.3), (int)(s.x + sr * 1.3), (int)(s.y + sr * 1.3));
         cleanup(c);
+        hit((int)(s.x - sr * 1.6), (int)(s.y - sr * 1.6), (int)(s.x + sr * 1.6), (int)(s.y + sr * 1.6), s.part);
     }
     // paddles
     struct Pad { const char* part; double x; };
     const Pad pads[] = {{"lb", -1.32}, {"rb", 1.32}};
     for (auto& p : pads) {
         bool h = hi(p.part);
-        pen(c, h ? kAccent : kGray, h ? 3 : 1.5); brush(c, h ? RGB(210, 228, 248) : kLight);
+        pen(c, h ? kAccent : kGray, h ? 3 : 1.5); brush(c, lit(p.part) ? kAccent : (h ? RGB(210, 228, 248) : kLight));
         RECT pr{(LONG)(cx + (p.x - 0.1) * R), (LONG)(cy - R * 0.55), (LONG)(cx + (p.x + 0.1) * R), (LONG)(cy + R * 0.1)};
         RoundRect(dc, pr.left, pr.top, pr.right, pr.bottom, c.px(6), c.px(6));
         cleanup(c);
+        hit((int)pr.left, (int)pr.top, (int)pr.right, (int)pr.bottom, p.part);
     }
 
-    // labels with leader lines
-    {
-        int lineH = c.px(17);
-        struct L { const char* part; bool left; double ax, ay; };
-        const L ls[] = {
-            {"lb", true, cx - 1.32 * R, cy - R * 0.2}, {"view", true, cx - sx, cy + sy}, {"btnX", true, cx - 0.2 * R, cy},
-            {"steer", true, cx - R, cy + R * 0.5},
-            {"rb", false, cx + 1.32 * R, cy - R * 0.2}, {"menu", false, cx + sx, cy + sy}, {"btnY", false, cx, cy - 0.2 * R},
-            {"btnB", false, cx + 0.2 * R, cy}, {"btnA", false, cx, cy + 0.2 * R}, {"ffb", false, cx + R * 0.72, cy + R * 0.72},
-        };
-        int li = 0, ri = 0;
-        double y0 = cy - R * 1.25;
-        for (auto& l : ls) {
-            std::wstring t = lab(st, l.part, L"");
-            if (t.empty()) continue;
-            int ly = (int)(y0 + (l.left ? li++ : ri++) * lineH);
-            bool h = hi(l.part) || (std::string(l.part) == "steer" && hi("steer"));
-            int lx = l.left ? m : W - m;
-            int tw = c.px(6) * (int)t.size();
-            int ex = l.left ? lx + tw + c.px(4) : lx - tw - c.px(4);
-            line(c, h ? kAccent : kFaint, h ? 1.5 : 1, ex, ly + c.px(8), l.ax, l.ay);
-            cleanup(c);
-            text(c, h ? kAccent : kText, t, lx, ly, l.left ? DT_LEFT : DT_RIGHT);
+    {   // one row per part: name and the value of its setting; pressed = filled, focused = accent
+        struct Row { const char* part; const wchar_t* name; };
+        const Row rows[] = {{"steer", L"Steering"}, {"btnA", L"A"}, {"btnB", L"B"}, {"btnX", L"X"}, {"btnY", L"Y"},
+                            {"view", L"View"}, {"menu", L"Menu"}, {"lb", L"LB (left paddle)"}, {"rb", L"RB (right paddle)"},
+                            {"ffb", L"Force"}};
+        int rowH = c.px(19), y = m;
+        for (auto& r : rows) {
+            bool h = hi(r.part), down = lit(r.part);
+            RECT rr{legendX, y, W - m, y + rowH};
+            if (down) { pen(c, kAccent, 1); brush(c, RGB(210, 228, 248)); Rectangle(dc, rr.left, rr.top, rr.right, rr.bottom); cleanup(c); }
+            if (h) { line(c, kAccent, 3, legendX + c.px(2), y + c.px(3), legendX + c.px(2), y + rowH - c.px(3)); cleanup(c); }
+            text(c, h ? kAccent : kText, r.name, legendX + c.px(8), y + c.px(2));
+            text(c, h ? kAccent : kDim, lab(st, r.part, L"-"), W - m - c.px(4), y + c.px(2), DT_RIGHT);
+            hit((int)rr.left, (int)rr.top, (int)rr.right, (int)rr.bottom, r.part);
+            y += rowH;
         }
     }
 
@@ -287,6 +312,7 @@ void DrawWheelPicture(HDC dc, const RECT& rc, const WheelPicState& st, int dpi, 
         int tx = bx + (int)(bw * std::min(std::max(st.live.steer, 0.0), 1.0));
         Rectangle(dc, tx - c.px(3), (int)barY - c.px(3), tx + c.px(3), (int)barY + c.px(11));
         cleanup(c);
+        text(c, kDim, std::to_wstring(std::lround((st.live.steer - 0.5) * st.rangeDeg)) + L"°", (int)cx, (int)barY + c.px(12), DT_CENTER);
     }
 
     // pedals (left) and shifter (right)
@@ -314,6 +340,7 @@ void DrawWheelPicture(HDC dc, const RECT& rc, const WheelPicState& st, int dpi, 
         int ty = areaTop + full + c.px(2);
         text(c, h ? kAccent : kText, p.name, x + pw / 2, ty, DT_CENTER);
         text(c, h ? kAccent : kDim, lab(st, p.part, L""), x + pw / 2, ty + c.px(14), DT_CENTER);
+        hit(x, top, x + pw, areaTop + full + c.px(30), p.part);
     }
     {   // handbrake lever, between the pedals and the shifter
         bool h = hi("handbrake");
@@ -323,20 +350,22 @@ void DrawWheelPicture(HDC dc, const RECT& rc, const WheelPicState& st, int dpi, 
         double len = std::min<double>(full * 0.8, (lx1 - lx0) * 1.6);
         double val = std::min(std::max(st.live.active ? st.live.handbrake : 0.0, 0.0), 1.0);
         double ang = (-35.0 + 35.0 * val) * kPi / 180;     // from vertical; leans back when released
-        COLORREF lc = h ? kAccent : kGray;
+        COLORREF lc = (h || lit("handbrake")) ? kAccent : kGray;
+        COLORREF ac = (lit("handbrake") || (st.live.active && val > 0.002)) ? kAccent : lc;
         // housing
         pen(c, lc, h ? 3 : 1.5); brush(c, kLight);
         RoundRect(dc, pivX - c.px(14), pivY - c.px(2), pivX + c.px(14), pivY + c.px(8), c.px(4), c.px(4));
         cleanup(c);
         // lever arm and grip
         int ex = pivX + (int)(len * std::sin(ang)), ey = pivY - (int)(len * std::cos(ang));
-        line(c, st.live.active && val > 0.002 ? kAccent : lc, h ? 4 : 3, pivX, pivY, ex, ey);
-        line(c, st.live.active && val > 0.002 ? kAccent : lc, 8, ex - (int)(5 * c.k * std::cos(ang)), ey - (int)(5 * c.k * std::sin(ang)),
+        line(c, ac, h ? 4 : 3, pivX, pivY, ex, ey);
+        line(c, ac, 8, ex - (int)(5 * c.k * std::cos(ang)), ey - (int)(5 * c.k * std::sin(ang)),
              ex + (int)(5 * c.k * std::cos(ang)), ey + (int)(5 * c.k * std::sin(ang)));
         cleanup(c);
         int ty = areaTop + full + c.px(2);
         text(c, h ? kAccent : kText, L"Handbrake", (lx0 + lx1) / 2, ty, DT_CENTER);
         text(c, h ? kAccent : kDim, lab(st, "handbrake", L""), (lx0 + lx1) / 2, ty + c.px(14), DT_CENTER);
+        hit(lx0, areaTop, lx1, areaTop + full + c.px(30), "handbrake");
     }
     {
         bool h = hi("shifter");
@@ -347,15 +376,23 @@ void DrawWheelPicture(HDC dc, const RECT& rc, const WheelPicState& st, int dpi, 
         line(c, gc, h ? 3 : 1.5, colX[0], midY, colX[2], midY);
         for (int i = 0; i < 3; ++i) line(c, gc, h ? 3 : 1.5, colX[i], gy0, colX[i], gy1);
         cleanup(c);
-        const wchar_t* nums[6] = {L"1", L"2", L"3", L"4", L"5", L"6"};
-        for (int i = 0; i < 6; ++i) {
-            int x = colX[i / 2], y = (i % 2 == 0) ? gy0 : gy1;
-            pen(c, gc, 1.5); brush(c, RGB(250, 250, 252));
+        // one knob; filled accent with white text while the shifter is in its gear
+        auto knob = [&](int x, int y, const wchar_t* t, bool cur) {
+            pen(c, cur ? kAccent : gc, 1.5); brush(c, cur ? kAccent : RGB(250, 250, 252));
             Ellipse(dc, x - c.px(8), y - c.px(8), x + c.px(8), y + c.px(8));
             cleanup(c);
-            text(c, kText, nums[i], x, y - c.px(7), DT_CENTER);
+            text(c, cur ? RGB(255, 255, 255) : kText, t, x, y - c.px(7), DT_CENTER);
+        };
+        const wchar_t* nums[6] = {L"1", L"2", L"3", L"4", L"5", L"6"};
+        for (int i = 0; i < 6; ++i) knob(colX[i / 2], (i % 2 == 0) ? gy0 : gy1, nums[i], st.live.active && st.live.gear == i + 1);
+        knob(colX[2] + c.px(24), gy0, L"R", st.live.active && st.live.gear == -1);
+        knob(colX[2] + c.px(24), gy1, L"7", st.live.active && st.live.gear == 7);
+        if (st.live.active && st.live.gear == 0) {   // neutral: a dot in the middle of the H
+            pen(c, kAccent, 1); brush(c, kAccent);
+            Ellipse(dc, colX[1] - c.px(4), midY - c.px(4), colX[1] + c.px(4), midY + c.px(4));
+            cleanup(c);
         }
-        text(c, kDim, L"R", colX[2] + c.px(16), gy0 - c.px(7));
+        hit(gx0, areaTop, gx1, areaBot, "shifter");
         text(c, h ? kAccent : kText, L"H-shifter", (gx0 + gx1) / 2, gy1 + c.px(12), DT_CENTER);
         text(c, h ? kAccent : kDim, lab(st, "shifter", L""), (gx0 + gx1) / 2, gy1 + c.px(27), DT_CENTER);
     }

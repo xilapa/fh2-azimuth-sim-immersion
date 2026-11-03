@@ -5,7 +5,7 @@
 //  B. traffic cars: the distance of their medium detail level, a registry variable in the game's .data, written lazily
 //     on the first track-settings load, because the game's static initializers may not have run when the plugin installs;
 //  C. racer cars: the CarLODTransDist render setting (parse method and defaults method);
-//  D. scenery level of detail (trees and everything else drawn per model): the same method as Azimuth's Scenery detail;
+//  D. scenery level of detail (trees and everything else drawn per model): the same method as Azimuth's Scenery detail, with a fallback to coarser levels that are loaded;
 //  E. shadow splits: the same tables Azimuth's Shadow distance patches.
 #include "drawdist_hook.h"
 #include <windows.h>
@@ -54,7 +54,9 @@ uintptr_t      g_base = 0;
 DrawDistConfig g_cfg;
 std::atomic<bool> g_trafficDone{false};
 std::atomic<bool> g_carLogged{false};
-float*         g_lodMeasure = nullptr;      // read by the level selection thunks: 1 / scale^2
+std::atomic<float> g_lodMeasure{1.0f};       // multiplies the squared distance in the level selection: 1 / scale^2
+typedef char (*SelectFn)(float, const uint64_t*, int*, float, uint8_t, float, float, float, float);
+SelectFn g_select[4] = {};                   // the original target of each call: the game's, or Azimuth's Scenery detail
 
 typedef uint64_t (*SerializeFn)(uint8_t*, void*, void*, void*);
 typedef uint64_t (*CarFn)(void*, void*, void*, void*);
@@ -77,7 +79,7 @@ void applyTrackOverrides(uint8_t* ts) {
     if (g_cfg.world > 0) {
         raise(ts, kOffWorld, g_cfg.world);
         const float k = world0 > 0 ? std::min(at<float>(ts, kOffWorld) / world0, kLodScaleMax) : 1.0f;
-        if (g_lodMeasure) *g_lodMeasure = 1.0f / (k * k);
+        g_lodMeasure.store(1.0f / (k * k), std::memory_order_relaxed);
         LOG("drawdist: scenery level of detail distances x%.1f", k);
     }
     if (g_cfg.props > 0)  raise(ts, kOffProps, g_cfg.props);
@@ -163,8 +165,19 @@ uintptr_t levelSelectTarget(uintptr_t rva) {
     return target >= kLevelSelectRva && target < kLevelSelectRva + kLevelSelectSize ? target : 0;
 }
 
-// Every call goes through: vmulss xmm0,xmm0,[measure] ; jmp [the old target]. Wrapping the calls and not the function
-// also works on top of Azimuth's Scenery detail.
+// The game draws the level the distance picks, and nothing when that level is not loaded. Asking for finer levels
+// farther away (the scaled distance) would then leave holes in far terrain, so the nearest coarser level that is
+// loaded is drawn instead, else what the game would draw on its own. Wrapping the calls and not the function also
+// works on top of Azimuth's Scenery detail.
+template <int I>
+char selectLevel(float distSq, const uint64_t* flags, int* level, float a4, uint8_t a5, float t0, float t1, float t2, float t3) {
+    const char culled = g_select[I](distSq * g_lodMeasure.load(std::memory_order_relaxed), flags, level, a4, a5, t0, t1, t2, t3);
+    if (!culled || *level >= 4) return culled;
+    for (int l = *level + 1; l <= 3; ++l)
+        if ((*flags >> (50 + l)) & 1) { *level = l; return 0; }
+    return g_select[I](distSq, flags, level, a4, a5, t0, t1, t2, t3);
+}
+
 void installLodHook() {
     for (uintptr_t rva : kLevelSelectCalls) {
         if (!levelSelectTarget(rva)) {
@@ -172,26 +185,18 @@ void installLodHook() {
             return;
         }
     }
-    constexpr size_t kPerCall = 48;
-    uint8_t* block = static_cast<uint8_t*>(allocNear(g_base + kLevelSelectCalls[0], 16 + kPerCall * 4));
+    void* const wrappers[4] = {reinterpret_cast<void*>(&selectLevel<0>), reinterpret_cast<void*>(&selectLevel<1>),
+                               reinterpret_cast<void*>(&selectLevel<2>), reinterpret_cast<void*>(&selectLevel<3>)};
+    constexpr size_t kPerCall = 16;      // patchCallRel32's stub is 12 bytes
+    uint8_t* block = static_cast<uint8_t*>(allocNear(g_base + kLevelSelectCalls[0], kPerCall * 4));
     if (!block) { LOG("drawdist: could not allocate level selection memory; unchanged"); return; }
-    g_lodMeasure = reinterpret_cast<float*>(block);
-    *g_lodMeasure = 1.0f;
-    uint8_t* thunk = block + 16;
     int patched = 0;
-    for (uintptr_t rva : kLevelSelectCalls) {
-        const int32_t disp = static_cast<int32_t>(block - (thunk + 8));
-        const uint64_t target = g_base + levelSelectTarget(rva);
-        const uint8_t head[] = {0xC5, 0xFA, 0x59, 0x05};
-        const uint8_t jump[] = {0xFF, 0x25, 0, 0, 0, 0};
-        std::memcpy(thunk, head, sizeof(head));
-        std::memcpy(thunk + 4, &disp, sizeof(disp));
-        std::memcpy(thunk + 8, jump, sizeof(jump));
-        std::memcpy(thunk + 14, &target, sizeof(target));
-        if (patchCallRel32(g_base + rva, thunk, thunk + 24)) ++patched;
-        thunk += kPerCall;
+    for (int i = 0; i < 4; ++i) {
+        const uintptr_t rva = kLevelSelectCalls[i];
+        g_select[i] = reinterpret_cast<SelectFn>(g_base + levelSelectTarget(rva));   // set before the call can reach it
+        if (patchCallRel32(g_base + rva, wrappers[i], block + kPerCall * i)) ++patched;
     }
-    LOG("drawdist: level selection hooked at %d of 4 calls", patched);
+    LOG("drawdist: level selection hooked at %d of 4 calls (missing levels fall back to coarser ones)", patched);
 }
 
 void logAzimuthScenery() {
