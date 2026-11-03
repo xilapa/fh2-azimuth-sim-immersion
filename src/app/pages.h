@@ -14,7 +14,7 @@ Page* NewMainPage(int index);
 // Main page services used by main.cpp
 class MainPageApi {
 public:
-    virtual void AddStatusLine(const std::wstring& line) = 0;       // injector status (any thread-safe caller: UI thread)
+    virtual void AddStatusLine(const std::wstring& line) = 0;       // setup status (UI thread)
 protected:
     ~MainPageApi() {}
 };

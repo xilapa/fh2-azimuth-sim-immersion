@@ -327,12 +327,6 @@ Config loadConfig(const std::wstring& iniPath) {
         c.map.positionEnabled, c.map.x.gain, c.map.x.invert, c.map.x.limit, c.map.y.gain,
         c.map.y.invert, c.map.y.limit, c.map.z.gain, c.map.z.invert, c.map.z.limit);
     readWheel(ini, c.wheel);
-    c.sim.fovCockpit = clampCfg(ini, "FovCockpit", (float)readF(ini, "Simulation", "FovCockpit", 0.0), -30.0f, 60.0f);
-    c.sim.fovDriver  = clampCfg(ini, "FovDriver", (float)readF(ini, "Simulation", "FovDriver", 0.0), -30.0f, 60.0f);
-    c.sim.fovHood    = clampCfg(ini, "FovHood", (float)readF(ini, "Simulation", "FovHood", 0.0), -30.0f, 60.0f);
-    c.sim.fovBumper  = clampCfg(ini, "FovBumper", (float)readF(ini, "Simulation", "FovBumper", 0.0), -30.0f, 60.0f);
-    LOG("config: fov cockpit %.1f driver %.1f hood %.1f bumper %.1f", c.sim.fovCockpit, c.sim.fovDriver,
-        c.sim.fovHood, c.sim.fovBumper);
     c.sim.realisticAbs     = readI(ini, "Simulation", "RealisticABS", 0) != 0;
     c.sim.realisticTc      = readI(ini, "Simulation", "RealisticTC", 0) != 0;
     std::string opt        = readStr(ini, "Simulation", "OptionalAssists", "game");

@@ -60,7 +60,6 @@ struct CarAssistOverride {                   // from FH2SimImmersion_cars.ini
 };
 
 struct SimConfig {
-    float fovCockpit = 0, fovDriver = 0, fovHood = 0, fovBumper = 0;   // extra degrees, 0 = game default
     bool       realisticAbs = false, realisticTc = false, realisticStm = false, realisticClutch = false, realisticAutomatic = false;
     AssistMode optionalAssists = AssistMode::Game;   // cars where the real car had it as an option
     std::vector<CarAssistOverride> carOverrides;

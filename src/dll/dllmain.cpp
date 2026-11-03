@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
-// FH2 Sim Immersion for Azimuth: plugin entry point, loaded into azimuth.exe.
+// FH2 Sim Immersion: an ExtraOptions plugin, loaded into azimuth.exe from mods\Sim Immersion\plugins.
 #include <windows.h>
+#include <atomic>
+#include <cwchar>
 #include <string>
 #include "config.h"
 #include "hook.h"
@@ -21,15 +23,18 @@ std::wstring moduleDir(HMODULE m) {
     return slash == std::wstring::npos ? L"." : s.substr(0, slash);
 }
 
+// The plugin sits in <mod folder>\plugins; its settings and log are in the mod folder.
+std::wstring modDir(HMODULE m) {
+    std::wstring d = moduleDir(m);
+    size_t slash = d.find_last_of(L"\\/");
+    if (slash != std::wstring::npos && _wcsicmp(d.c_str() + slash + 1, L"plugins") == 0) return d.substr(0, slash);
+    return d;
+}
+
 DWORD WINAPI initThread(void* param) {
     HMODULE self = static_cast<HMODULE>(param);
-    std::wstring dir = moduleDir(self);
-    // Migrate the settings file from the old FH2HeadTracking name.
+    std::wstring dir = modDir(self);
     std::wstring ini = dir + L"\\FH2SimImmersion.ini";
-    std::wstring oldIni = dir + L"\\FH2HeadTracking.ini";
-    const bool renamed = GetFileAttributesW(ini.c_str()) == INVALID_FILE_ATTRIBUTES &&
-                         GetFileAttributesW(oldIni.c_str()) != INVALID_FILE_ATTRIBUTES &&
-                         MoveFileExW(oldIni.c_str(), ini.c_str(), 0);
 
     const std::wstring log = dir + L"\\FH2SimImmersion.log";
     if (GetPrivateProfileIntW(L"Logging", L"Enabled", 1, ini.c_str()) != 0) fh2::Log::open(log.c_str());
@@ -38,7 +43,6 @@ DWORD WINAPI initThread(void* param) {
     wchar_t exe[MAX_PATH];
     GetModuleFileNameW(nullptr, exe, MAX_PATH);
     LOG("FH2 Sim Immersion " FH2SI_VERSION " loaded into pid %lu (%ls)", GetCurrentProcessId(), exe);
-    if (renamed) LOG("config: renamed FH2HeadTracking.ini to FH2SimImmersion.ini");
 
     fh2::Config cfg = fh2::loadConfig(ini);
     if (cfg.overrideAzimuthHeadTracking) fh2::Tracker::start(cfg);
@@ -49,18 +53,18 @@ DWORD WINAPI initThread(void* param) {
 } // namespace
 
 BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
-    if (reason == DLL_PROCESS_ATTACH) {
-        DisableThreadLibraryCalls(inst);
-        // One instance per process, whichever way we were loaded (injector or ASI loader).
-        wchar_t name[64];
-        wsprintfW(name, L"Local\\FH2SimImmersion_%lu", GetCurrentProcessId());
-        HANDLE m = CreateMutexW(nullptr, TRUE, name);
-        if (m && GetLastError() == ERROR_ALREADY_EXISTS) { CloseHandle(m); return TRUE; }
-        // Pin ourselves: an injector's LoadLibrary thread exits, we must stay.
-        HMODULE pinned;
-        GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
-                           reinterpret_cast<LPCWSTR>(&DllMain), &pinned);
-        if (HANDLE t = CreateThread(nullptr, 0, initThread, inst, 0, nullptr)) CloseHandle(t);
-    }
+    if (reason == DLL_PROCESS_ATTACH) DisableThreadLibraryCalls(inst);
+    return TRUE;
+}
+
+// ExtraOptions calls this once, on its loader thread, after the game is mapped and its own patches are in.
+// Without ExtraOptions nothing calls it and the mod stays off.
+extern "C" __declspec(dllexport) BOOL WINAPI FH2PluginInitialize(const void* /*context*/) {
+    static std::atomic<bool> started{false};
+    if (started.exchange(true)) return TRUE;
+    HMODULE self = nullptr;
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,   // our hooks point here: never unload
+                       reinterpret_cast<LPCWSTR>(&FH2PluginInitialize), &self);
+    if (HANDLE t = CreateThread(nullptr, 0, initThread, self, 0, nullptr)) CloseHandle(t);
     return TRUE;
 }

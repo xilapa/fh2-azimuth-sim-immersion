@@ -70,6 +70,9 @@ static uint8_t* mapImage(const wchar_t* path, size_t pad = 0) {
 // Fake car object: EvaluateInput calls car->vtbl[0x70/8]() twice and needs non-null.
 struct FakeCar;
 static void* MSABI carSlot14(FakeCar* self) { return self; }
+static float MSABI otherModFov(void*) { return 50.0f; }   // stands for another mod's field-of-view hook
+static int g_otherCarUpdateCalls = 0;
+static void MSABI otherModCarUpdate(void*, float, float, int) { ++g_otherCarUpdateCalls; }   // another mod's car update hook
 static void* g_carVtbl[32];
 struct FakeCar { void** vtbl; uint8_t pad[0x400]; };
 
@@ -398,7 +401,9 @@ static void cockpitTests(uint8_t* base, HMODULE plugin, uint64_t slotOrig, const
     const uintptr_t kSlot = 0x2c5cc00, kCarUpdate = 0x2a9400, kSetDriver = 0xf75500;
     CHECK(slotOrig == (uint64_t)(base + kCarUpdate), "car update slot held the original before loading");
     uint64_t now = *(uint64_t*)(base + kSlot);
-    CHECK(now != slotOrig, "car update slot re-pointed");
+    CHECK(now != slotOrig && now != (uint64_t)&otherModCarUpdate, "car update slot re-pointed over another mod's hook");
+    ((void (MSABI *)(void*, float, float, int))now)(nullptr, 0.0f, 0.0f, 0);
+    CHECK(g_otherCarUpdateCalls == 1, "car update: another mod's hook still runs (%d)", g_otherCarUpdateCalls);
     static const uint8_t expect[10] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20};
     CHECK(memcmp(base + kSetDriver, expect, sizeof(expect)) == 0, "Car_SetDriverVisible first 10 bytes");
     {
@@ -788,21 +793,23 @@ static void assistTests(uint8_t* base, uint64_t absOrig, uint64_t stmOrig, uint6
     }
 }
 
-static void fovTests(uint8_t* base) {
-    printf("field of view:\n");
+static void cameraTests(uint8_t* base) {
+    printf("cockpit camera tracker:\n");
     const uintptr_t kGetFov = 0x10340f0;
     uint64_t cockpit = *(uint64_t*)(base + 0x2e77c30 + 14 * 8);
+    uint64_t driver  = *(uint64_t*)(base + 0x2e78120 + 14 * 8);
     uint64_t hood    = *(uint64_t*)(base + 0x2e77ea8 + 14 * 8);
-    CHECK(cockpit != (uint64_t)(base + kGetFov), "CCamCockpit GetFOV slot re-pointed");
-    CHECK(hood == (uint64_t)(base + kGetFov), "CCamHood GetFOV slot unchanged (FovHood=0)");
+    CHECK(cockpit != (uint64_t)(base + kGetFov), "cockpit camera GetFOV slot re-pointed");
+    CHECK(driver != (uint64_t)&otherModFov, "driver camera GetFOV slot re-pointed over another mod's hook");
+    CHECK(hood == (uint64_t)(base + kGetFov), "hood camera GetFOV slot unchanged");
     alignas(16) static uint8_t cam[0x400];
     memset(cam, 0, sizeof(cam));
     *(float*)(cam + 0x1d0) = 45.0f;
     cam[0x218] = 0;
     float v = ((FnGetFov)cockpit)(cam);
-    CHECK(std::fabs(v - 55.0f) < 1e-4f, "cockpit FOV 45 + 10 = %f", v);
-    v = ((FnGetFov)hood)(cam);
-    CHECK(std::fabs(v - 45.0f) < 1e-4f, "hood FOV unchanged = %f", v);
+    CHECK(std::fabs(v - 45.0f) < 1e-4f, "cockpit camera: the game's field of view, unchanged (%f)", v);
+    v = ((FnGetFov)driver)(cam);
+    CHECK(std::fabs(v - 50.0f) < 1e-4f, "driver camera: another mod's field of view still applies (%f)", v);
 }
 
 static void drawDistTests(uint8_t* base, HMODULE plugin) {
@@ -904,24 +911,14 @@ static HRESULT askProxy(FnProxyCreate create) {
     return hr;
 }
 
-// Run as proxy_test\FH2SimImmersion.exe by enableCheckTests: the settings window must get the real DirectInput.
-static int settingsWindowProbe() {
-    wchar_t self[MAX_PATH];
-    GetModuleFileNameW(nullptr, self, MAX_PATH);
-    std::wstring dir(self);
-    dir.resize(dir.find_last_of(L"\\/") + 1);
-    HMODULE proxy = LoadLibraryW((dir + L"dinput8.dll").c_str());
-    FnProxyCreate create = proxy ? (FnProxyCreate)GetProcAddress(proxy, "DirectInput8Create") : nullptr;
-    return create && SUCCEEDED(askProxy(create)) ? 0 : 1;
-}
-
 static void writeText(const std::wstring& path, const char* text) {
     FILE* f = _wfopen(path.c_str(), L"wb");
     if (f) { fputs(text, f); fclose(f); }
 }
 
-// dinput8.dll keeps Azimuth (the main exe, here the harness) from the wheel only when the mod wants it, and the tab
-// checks turn their part of the settings off. Runs in build\proxy_test, which is overwritten on each run.
+// dinput8.dll keeps Azimuth (the main exe, here the harness) from the wheel only when ExtraOptions will load the mod and
+// the mod wants the wheel, and the tab checks turn their part of the settings off. Runs in build\proxy_test, which is
+// overwritten on each run.
 static void enableCheckTests(HMODULE plugin) {
     printf("\ntab checks and dinput8.dll\n");
     wchar_t self[MAX_PATH];
@@ -929,10 +926,16 @@ static void enableCheckTests(HMODULE plugin) {
     std::wstring build(self);
     build.resize(build.find_last_of(L"\\/") + 1);
     const std::wstring dir = build + L"proxy_test\\";
+    const std::wstring mod = dir + L"mods\\Sim Immersion\\";
     CreateDirectoryW(dir.c_str(), nullptr);
-    const std::wstring dll = dir + L"FH2SimImmersion.dll", ini = dir + L"FH2SimImmersion.ini", cfg = dir + L"cfg.ini";
+    CreateDirectoryW((dir + L"mods").c_str(), nullptr);
+    CreateDirectoryW(mod.c_str(), nullptr);
+    CreateDirectoryW((mod + L"plugins").c_str(), nullptr);
+    const std::wstring dll = mod + L"plugins\\FH2SimImmersion.dll", ini = mod + L"FH2SimImmersion.ini",
+                       winmm = dir + L"winmm.dll", cfg = dir + L"cfg.ini";
     DeleteFileW(dll.c_str());
     DeleteFileW(ini.c_str());
+    DeleteFileW(winmm.c_str());
     CopyFileW((build + L"dinput8.dll").c_str(), (dir + L"dinput8.dll").c_str(), FALSE);
 
     HMODULE proxy = LoadLibraryW((dir + L"dinput8.dll").c_str());
@@ -941,30 +944,15 @@ static void enableCheckTests(HMODULE plugin) {
     CHECK(create != nullptr, "dinput8.dll exports DirectInput8Create");
     if (create) {
         auto ask = [&]() { return askProxy(create); };
-        CHECK(SUCCEEDED(ask()), "no mod beside dinput8.dll: Azimuth keeps the wheel");
+        CHECK(SUCCEEDED(ask()), "no mod: Azimuth keeps the wheel");
         writeText(dll, "");
-        CHECK(ask() == E_FAIL, "mod there, no settings file yet: Azimuth is refused");
+        CHECK(SUCCEEDED(ask()), "mod but no ExtraOptions: Azimuth keeps the wheel");
+        writeText(winmm, "");
+        CHECK(ask() == E_FAIL, "ExtraOptions and the mod, no settings file yet: Azimuth is refused");
         writeText(ini, "[Wheel]\nEnabled=1\n");
         CHECK(ask() == E_FAIL, "Wheel Enabled=1: Azimuth is refused");
         writeText(ini, "[Wheel]\nEnabled=0\n");
         CHECK(SUCCEEDED(ask()), "Wheel Enabled=0: Azimuth keeps the wheel");
-        writeText(ini, "[Wheel]\nEnabled=1\n");
-        wchar_t me[MAX_PATH];
-        GetModuleFileNameW(nullptr, me, MAX_PATH);
-        const std::wstring window = dir + L"FH2SimImmersion.exe";
-        CopyFileW(me, window.c_str(), FALSE);
-        std::wstring cmd = L"\"" + window + L"\" --settings-window-probe";
-        STARTUPINFOW si{};
-        si.cb = sizeof(si);
-        PROCESS_INFORMATION pi{};
-        DWORD code = 1;
-        if (CreateProcessW(window.c_str(), cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, dir.c_str(), &si, &pi)) {
-            WaitForSingleObject(pi.hProcess, 10000);
-            GetExitCodeProcess(pi.hProcess, &code);
-            CloseHandle(pi.hThread);
-            CloseHandle(pi.hProcess);
-        }
-        CHECK(code == 0, "settings window in the same folder gets the real DirectInput (exit %lu)", code);
     }
 
     typedef void (MSABI *FnMapInput)(const DIJOYSTATE2*, const DIJOYSTATE2*, const DIJOYSTATE2*, const DIJOYSTATE2*, fh2::PedalRest*, fh2::WheelInput*);
@@ -1036,7 +1024,6 @@ static void enableCheckTests(HMODULE plugin) {
 }
 
 int wmain(int argc, wchar_t** argv) {
-    if (argc == 2 && !wcscmp(argv[1], L"--settings-window-probe")) return settingsWindowProbe();
     if (HANDLE h = OpenFileMappingW(FILE_MAP_READ, FALSE, L"FT_SharedMem")) { printf("note: a head tracker is running (FT_SharedMem exists); the tracker checks will fail because it overrides the test pose\n"); CloseHandle(h); }
     if (argc < 3) { printf("usage: harness <game.exe> <FH2SimImmersion.dll> [--deep]\n"); return 2; }
     bool deep = argc > 3 && wcscmp(argv[3], L"--deep") == 0;
@@ -1074,7 +1061,6 @@ int wmain(int argc, wchar_t** argv) {
         logPath = (sep == std::wstring::npos ? std::wstring() : iniPath.substr(0, sep + 1)) + L"FH2SimImmersion.log";
         WritePrivateProfileStringW(L"Input", L"ConfigVersion", L"9", iniPath.c_str());
         WritePrivateProfileStringW(L"Wheel", L"TestMode", L"1", iniPath.c_str());
-        WritePrivateProfileStringW(L"Simulation", L"FovCockpit", L"10", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealisticABS", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealisticTC", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealisticSTM", L"1", iniPath.c_str());
@@ -1106,7 +1092,6 @@ int wmain(int argc, wchar_t** argv) {
         std::wstring p, cars;
         ~RestoreIni() {
             WritePrivateProfileStringW(L"Wheel", L"TestMode", L"0", p.c_str());
-            WritePrivateProfileStringW(L"Simulation", L"FovCockpit", L"0", p.c_str());
             WritePrivateProfileStringW(L"Simulation", L"RealisticABS", L"0", p.c_str());
             WritePrivateProfileStringW(L"Simulation", L"RealisticTC", L"0", p.c_str());
             WritePrivateProfileStringW(L"Simulation", L"RealisticSTM", L"0", p.c_str());
@@ -1128,8 +1113,15 @@ int wmain(int argc, wchar_t** argv) {
     if (clutchOrig != (uint64_t)(base + 0xfbcb70)) { printf("clutch getter slot does not hold the expected pointer\n"); return 2; }
 
     const uint64_t carUpdateSlotOrig = *(uint64_t*)(base + 0x2c5cc00);
+    *(uint64_t*)(base + 0x2c5cc00) = (uint64_t)&otherModCarUpdate;   // ExtraOptions hooks this slot before the plugin loads
+    // another mod (ExtraOptions) replaced the driver camera's GetFOV before the plugin loads
+    *(uint64_t*)(base + 0x2e78120 + 14 * 8) = (uint64_t)&otherModFov;
     HMODULE plugin = LoadLibraryW(argv[2]);
     if (!plugin) { printf("LoadLibrary failed %lu\n", GetLastError()); return 2; }
+    typedef BOOL (WINAPI *FnPluginInit)(const void*);
+    FnPluginInit pluginInit = (FnPluginInit)GetProcAddress(plugin, "FH2PluginInitialize");
+    CHECK(pluginInit != nullptr, "FH2PluginInitialize exported");
+    CHECK(pluginInit && pluginInit(nullptr), "FH2PluginInitialize starts the mod");
 
     WSADATA w; WSAStartup(MAKEWORD(2, 2), &w);
     SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -1211,7 +1203,7 @@ int wmain(int argc, wchar_t** argv) {
     wheelTests(base, origFrame, createString);
     ffbTests(base, plugin);
     assistTests(base, absOrig, stmOrig, tcOrig, clutchOrig);
-    fovTests(base);
+    cameraTests(base);
     cockpitTests(base, plugin, carUpdateSlotOrig, logPath);
     drawDistTests(base, plugin);
     enableCheckTests(plugin);

@@ -10,7 +10,6 @@
 #include "hook.h"
 #include "patch_util.h"
 #include "wheel_hook.h"
-#include "fov_hook.h"
 #include "cockpit_hook.h"
 #include "assist_hook.h"
 #include "drawdist_hook.h"
@@ -370,7 +369,6 @@ bool installWhenReady(const Config& cfg) {
             else LOG("head tracking: left to Azimuth (OverrideAzimuthHeadTracking=0)");
             WheelHook_Install(base, cfg);
             if (cfg.simEnabled) {
-                FovHook_Install(base, cfg);
                 AssistHook_Install(base, cfg);
             }
             DrawDist_Install(base, cfg);

@@ -30,7 +30,7 @@ std::wstring ExeDir() {
 std::wstring IniPath()     { return ExeDir() + L"\\FH2SimImmersion.ini"; }
 std::wstring CarsIniPath() { return ExeDir() + L"\\FH2SimImmersion_cars.ini"; }
 std::wstring LogPath()     { return ExeDir() + L"\\FH2SimImmersion.log"; }
-std::wstring DllPath()     { return ExeDir() + L"\\FH2SimImmersion.dll"; }
+std::wstring DllPath()     { return ExeDir() + L"\\plugins\\FH2SimImmersion.dll"; }
 
 const std::vector<IniEntry>& Defaults() {
     static const std::vector<IniEntry> d = ParseIniText(fh2::kDefaultIni);
@@ -56,6 +56,24 @@ std::string ReadSetting(const char* section, const char* key) {
 bool WriteSetting(const char* section, const char* key, const std::string& value) {
     return WritePrivateProfileStringW(Widen(section).c_str(), Widen(key).c_str(), Widen(value).c_str(),
                                       IniPath().c_str()) != 0;
+}
+
+// What keeps the mod from loading, as lines for the Logging tab; one "complete" line when nothing does.
+std::vector<std::wstring> SetupProblems() {
+    const std::wstring az = ExeDir() + L"\\..\\..\\";
+    auto exists = [](const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES; };
+    std::vector<std::wstring> out;
+    if (!exists(az + L"azimuth.exe")) {
+        out.push_back(L"This folder is not mods\\Sim Immersion inside the Azimuth folder: the mod only loads from there.");
+    } else {
+        if (!exists(az + L"winmm.dll"))
+            out.push_back(L"ExtraOptions is not installed (no winmm.dll next to azimuth.exe): the mod does not load without it.");
+        if (!exists(az + L"dinput8.dll"))
+            out.push_back(L"dinput8.dll is missing next to azimuth.exe: Azimuth will also open the wheel.");
+    }
+    if (!exists(DllPath())) out.push_back(L"plugins\\FH2SimImmersion.dll is missing in this folder.");
+    if (out.empty()) out.push_back(L"Setup complete: ExtraOptions loads the mod from this folder.");
+    return out;
 }
 
 } // namespace app

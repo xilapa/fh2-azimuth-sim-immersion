@@ -21,7 +21,6 @@ add_library(FH2SimImmersion SHARED
   src/dll/wheel_device.cpp
   src/dll/wheel_com.cpp
   src/dll/wheel_hook.cpp
-  src/dll/fov_hook.cpp
   src/dll/assist_hook.cpp
   src/dll/drawdist_hook.cpp
   src/dll/cockpit_hook.cpp
@@ -38,7 +37,6 @@ add_executable(FH2SimImmersionApp WIN32
   src/app/page.cpp
   src/app/draw.cpp
   src/app/ini.cpp
-  src/app/injector.cpp
   src/app/pages_head.cpp
   src/app/pages_wheel.cpp
   src/app/pages_sim.cpp

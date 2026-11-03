@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// FH2SimImmersion.exe - settings window. While it is open, the plugin is injected into any azimuth.exe that starts.
+// FH2SimImmersion.exe - settings window. ExtraOptions loads the plugin; this window only edits the settings.
 //
 // Settings live in FH2SimImmersion.ini next to this program.
 #include <windows.h>
@@ -8,7 +8,6 @@
 #include <string>
 #include <vector>
 #include "ini.h"
-#include "injector.h"
 #include "page.h"
 #include "pages.h"
 
@@ -19,14 +18,12 @@
 namespace app {
 
 enum { IDC_TAB = 100, IDC_APPLY, IDC_REVERT, IDC_DEFAULTS, IDC_STATUS };
-const UINT WM_APP_STATUS = WM_APP + 1;
 const UINT_PTR kTimer = 1;
 const wchar_t* kClass = L"FH2SimImmersionApp";
 
 static HWND g_tab, g_status, g_apply, g_revert, g_defaults;
 static std::vector<std::unique_ptr<Page>> g_pages;
 static int g_cur = 0;
-static Injector g_injector;
 
 void SetStatus(const std::wstring& text) { if (g_status) SetWindowTextW(g_status, text.c_str()); }
 
@@ -181,17 +178,11 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT m, WPARAM w, LPARAM l) {
     case WM_TIMER:
         if (w == kTimer && g_cur < (int)g_pages.size()) g_pages[g_cur]->Tick();
         return 0;
-    case WM_APP_STATUS: {
-        std::unique_ptr<std::wstring> line((std::wstring*)l);
-        if (MainPageApi* api = mainApi()) api->AddStatusLine(*line);
-        return 0;
-    }
     case WM_CLOSE:
         DestroyWindow(hwnd);
         return 0;
     case WM_DESTROY:
         KillTimer(hwnd, kTimer);
-        g_injector.Stop();
         g_pages.clear();
         PostQuitMessage(0);
         return 0;
@@ -241,9 +232,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
                                 CW_USEDEFAULT, CW_USEDEFAULT, MulDiv(900, d, 96), MulDiv(640, d, 96),
                                 nullptr, nullptr, inst, nullptr);
     if (!hwnd) return 1;
-    g_injector.Start(DllPath(), [hwnd](const std::wstring& s) {
-        PostMessageW(hwnd, WM_APP_STATUS, 0, (LPARAM)new std::wstring(s));
-    });
+    if (MainPageApi* api = mainApi())
+        for (const std::wstring& s : SetupProblems()) api->AddStatusLine(s);
     ShowWindow(hwnd, show);
     UpdateWindow(hwnd);
 

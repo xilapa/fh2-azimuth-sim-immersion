@@ -113,10 +113,6 @@ inline constexpr Setting kWheelSettings[] = {
 
 inline constexpr Setting kSimSettings[] = {
     ST_BOOL ("Simulation", "Enabled", "Use Sim Immersion simulation features", "Sim Immersion", nullptr),
-    ST_SLIDER("Simulation", "FovCockpit", "Cockpit camera (extra degrees)", "Field of view", nullptr, -30, 60, 1),
-    ST_SLIDER("Simulation", "FovDriver", "Driver camera (extra degrees)", "Field of view", nullptr, -30, 60, 1),
-    ST_SLIDER("Simulation", "FovHood", "Hood camera (extra degrees)", "Field of view", nullptr, -30, 60, 1),
-    ST_SLIDER("Simulation", "FovBumper", "Bumper camera (extra degrees)", "Field of view", nullptr, -30, 60, 1),
 
     ST_BOOL ("Simulation", "RealisticABS", "Realistic ABS (per car)", "Realistic assists", nullptr),
     ST_BOOL ("Simulation", "RealisticTC", "Realistic traction control (per car)", "Realistic assists", nullptr),

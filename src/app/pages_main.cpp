@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Tab 5: logging: the log switches, injector status and log tail.
+// Tab 5: logging: the log switches, setup status and log tail.
 #include "pages.h"
 #include <shellapi.h>
 #include <deque>
@@ -37,7 +37,7 @@ protected:
         MakeCtl(host_, kMainSettings[1], false);                        // Diagnostics
         log_ = MakeButton(L"Open log", kIdLog);
         folder_ = MakeButton(L"Open settings folder", kIdFolder);
-        statusLabel_ = MakeStatic(host_, L"Status (the plugin is injected into any azimuth.exe that starts while this window is open)");
+        statusLabel_ = MakeStatic(host_, L"Status");
         box_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | ES_AUTOHSCROLL,
                                0, 0, 10, 10, host_, nullptr, G.inst, nullptr);
@@ -120,7 +120,7 @@ private:
 
     void RefreshStatus(bool force) {
         if (!box_) return;
-        std::wstring t = L"Injector\r\n";
+        std::wstring t = L"Setup\r\n";
         if (lines_.empty()) t += L"  (nothing yet)\r\n";
         for (auto& l : lines_) t += L"  " + l + L"\r\n";
         t += L"\r\nFH2SimImmersion.log (last 30 lines)\r\n";

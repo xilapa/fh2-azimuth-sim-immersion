@@ -10,6 +10,8 @@ All major features are implemented and built. This document tracks what remains 
 
 Test each feature in Forza Horizon 2 running in Azimuth 0.9.10.
 
+- [ ] Loads as an ExtraOptions plugin from mods\Sim Immersion; works together with ExtraOptions and FH2 Streaming Radio
+
 #### FFB improvements (0.9.2)
 - [ ] Counter-steer comes from the game's own torque (the extra counter-steer and front-slip forces were removed after a recorded lap)
 - [ ] Rumble gain: road surface and impact vibration (kerbs, cobblestones, gravel)
@@ -108,8 +110,8 @@ Add screenshots to `docs/screenshots/` to document the settings window.
 - **Build:** CMake + mingw-w64; `./build.sh` on Windows; unit tests all pass
 - **Per-car data:** `data/car_assists.csv` (354 cars with ABS, TC, STM, clutch, gearbox, steering lock)
 - **Overrides:** `FH2SimImmersion_cars.ini` (`[Cars]` for assists, `[SteeringLock]` for lock degrees)
-- **Log:** `FH2SimImmersion.log` next to the DLL shows what the plugin did
-- **Important:** Close `FH2SimImmersion.exe` before reporting any Azimuth bugs (Azimuth developer does not support modified setups)
+- **Log:** `FH2SimImmersion.log` in `mods\Sim Immersion` shows what the plugin did
+- **Important:** Remove `dinput8.dll`, the `mods\Sim Immersion` folder and ExtraOptions before reporting any Azimuth bugs (Azimuth developer does not support modified setups)
 
 ## How to contribute
 

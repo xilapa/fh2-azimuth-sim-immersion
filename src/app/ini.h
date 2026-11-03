@@ -15,7 +15,7 @@ std::wstring ExeDir();
 std::wstring IniPath();        // FH2SimImmersion.ini
 std::wstring CarsIniPath();    // FH2SimImmersion_cars.ini
 std::wstring LogPath();        // FH2SimImmersion.log
-std::wstring DllPath();        // FH2SimImmersion.dll
+std::wstring DllPath();        // plugins\FH2SimImmersion.dll
 
 const std::vector<IniEntry>& Defaults();                           // parsed kDefaultIni
 const IniEntry* FindDefault(const char* section, const char* key);
@@ -26,5 +26,7 @@ void EnsureIni();
 
 std::string ReadSetting(const char* section, const char* key);     // INI value, else the default
 bool        WriteSetting(const char* section, const char* key, const std::string& value);
+
+std::vector<std::wstring> SetupProblems();   // lines for the Logging tab: what keeps the mod from loading
 
 } // namespace app

@@ -9,7 +9,6 @@
 #include <cmath>
 #include <cstring>
 #include "assist_hook.h"
-#include "fov_hook.h"
 #include "log.h"
 #include "patch_util.h"
 #include "spindle.h"
@@ -40,6 +39,39 @@ constexpr uintptr_t kRigAttachRva  = 0x13ac5c0;
 constexpr uintptr_t kSetBoneSite   = 0x13ac80a;     // inside AttachWheel: SetBone(model, bone, matrix, a4, a5, a6) for the wheel spindle
 constexpr uintptr_t kSetBoneRva    = 0x13f4ec0;
 constexpr uint64_t  kCockpitFreshMs = 250;
+
+// The cockpit camera is in use while the game asks it for its field of view: wrap that call (vtable slot 14 of the
+// cockpit and driver cameras) and remember when it last ran. The wrapper calls whatever the slot held before, so a
+// field-of-view mod that replaced it (ExtraOptions) keeps working.
+constexpr uintptr_t kCamVtableRva[2] = {0x2e77c30, 0x2e78120};   // cockpit, driver
+constexpr size_t    kGetFovSlot = 14;
+using GetFovFn = float (*)(void*);
+GetFovFn g_prevFov[2] = {};
+std::atomic<uint64_t> g_cockpitTick{0};
+
+template <int I>
+float trackFov(void* cam) {
+    g_cockpitTick.store(GetTickCount64(), std::memory_order_relaxed);
+    return g_prevFov[I](cam);
+}
+
+bool installCockpitTracker(uintptr_t base) {
+    void* const fns[2] = {reinterpret_cast<void*>(&trackFov<0>), reinterpret_cast<void*>(&trackFov<1>)};
+    for (int i = 0; i < 2; ++i) {
+        uint64_t* slot = reinterpret_cast<uint64_t*>(base + kCamVtableRva[i] + kGetFovSlot * 8);
+        DWORD prot;
+        if (*slot == 0 || !VirtualProtect(slot, 8, PAGE_READWRITE, &prot)) {
+            LOG("cockpit: camera %d GetFOV slot not writable; driver hiding off", i);
+            return false;
+        }
+        g_prevFov[i] = reinterpret_cast<GetFovFn>(*slot);
+        std::atomic_thread_fence(std::memory_order_release);   // the wrapper's target is set before the slot points at it
+        *slot = reinterpret_cast<uint64_t>(fns[i]);
+        VirtualProtect(slot, 8, prot, &prot);
+    }
+    LOG("cockpit: camera tracker installed");
+    return true;
+}
 constexpr uint64_t  kPlayerFreshMs  = 1000;
 
 using CarUpdateFn = void (*)(uint8_t*, float, float, int);
@@ -48,6 +80,7 @@ using RigAttachFn = uint64_t (*)(void*, const float*, float, void*, void*);
 using SetBoneFn = uint64_t (*)(void*, uint32_t, const float*, uint64_t, uint64_t, uint64_t);
 
 uintptr_t         g_base = 0;
+CarUpdateFn       g_prevCarUpdate = nullptr;   // what the slot held: the game's CarUpdate, or another mod's hook on it (ExtraOptions)
 bool              g_wheelOn = false, g_hideOn = false, g_hideReady = false, g_trackOn = false;
 float             g_dir = 1.0f;
 std::atomic<uint8_t*>  g_playerCar{nullptr};
@@ -85,7 +118,8 @@ void applyDriver(uint8_t* car) {
     uint64_t model;
     std::memcpy(&model, car + kDriverModelOff, sizeof(model));
     if (model == 0) return;                                // no driver model: the game ignores the call too
-    const bool cockpit = GetTickCount64() - FovHook_LastCockpitTick() <= kCockpitFreshMs && FovHook_LastCockpitTick() != 0;
+    const uint64_t camTick = g_cockpitTick.load(std::memory_order_relaxed);
+    const bool cockpit = camTick != 0 && GetTickCount64() - camTick <= kCockpitFreshMs;
     const bool want = !cockpit;                            // driver visible wanted
     auto setVisible = reinterpret_cast<SetDriverFn>(g_base + kSetDriverRva);
     if (!want && car[kDriverShownOff] != 0) {
@@ -185,7 +219,7 @@ bool hookCallSite(uintptr_t siteRva, uintptr_t targetRva, void* hook) {
 }
 
 void hookCarUpdate(uint8_t* car, float a, float b, int c) {
-    reinterpret_cast<CarUpdateFn>(g_base + kCarUpdateRva)(car, a, b, c);
+    g_prevCarUpdate(car, a, b, c);
     if (car && g_trackOn) detectPlayer(car);
     if (!car || car != g_playerCar.load(std::memory_order_relaxed)) return;
     if (GetTickCount64() - g_playerTick.load(std::memory_order_relaxed) > kPlayerFreshMs) return;
@@ -243,21 +277,26 @@ void CockpitHook_Install(uintptr_t base, const Config& cfg) {
         if (std::memcmp(reinterpret_cast<const void*>(base + kSetDriverRva), kSetDriverBytes, sizeof(kSetDriverBytes)) != 0) {
             LOG("cockpit: Car_SetDriverVisible bytes mismatch; driver hiding off");
             g_hideOn = false;
+        } else if (!installCockpitTracker(base)) {
+            g_hideOn = false;
         } else {
             g_hideReady = true;
             LOG("cockpit: driver hide ready");
         }
     }
     uint64_t* slot = reinterpret_cast<uint64_t*>(base + kCarUpdateSlot);
-    if (*slot != static_cast<uint64_t>(base + kCarUpdateRva)) {
-        LOG("cockpit: car update slot mismatch; unchanged");
+    if (*slot == 0) {
+        LOG("cockpit: car update slot empty; unchanged");
         return;
     }
+    const bool chained = *slot != static_cast<uint64_t>(base + kCarUpdateRva);
     DWORD prot;
     if (!VirtualProtect(slot, 8, PAGE_READWRITE, &prot)) {
         LOG("cockpit: VirtualProtect failed %lu; unchanged", GetLastError());
         return;
     }
+    g_prevCarUpdate = reinterpret_cast<CarUpdateFn>(*slot);
+    std::atomic_thread_fence(std::memory_order_release);   // the hook's target is set before the slot points at it
     *slot = reinterpret_cast<uint64_t>(&hookCarUpdate);
     VirtualProtect(slot, 8, prot, &prot);
     if (g_wheelOn) {
@@ -266,7 +305,7 @@ void CockpitHook_Install(uintptr_t base, const Config& cfg) {
                         hookCallSite(kRigAttachSite, kRigAttachRva, reinterpret_cast<void*>(&hookRigAttach));
         LOG("cockpit: wheel spindle hook %s", ok ? "installed" : "mismatch; the wheel stays within the animation's range");
     }
-    LOG("cockpit: car update hook installed (in-game wheel %d, hide driver %d, car tracking %d, direction %+d)", g_wheelOn, g_hideOn, g_trackOn, (int)g_dir);
+    LOG("cockpit: car update hook installed (in-game wheel %d, hide driver %d, car tracking %d, direction %+d%s)", g_wheelOn, g_hideOn, g_trackOn, (int)g_dir, chained ? ", after another mod's hook" : "");
 }
 
 } // namespace fh2

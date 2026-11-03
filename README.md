@@ -11,14 +11,14 @@ Realism and immersion add-ons for Forza Horizon 2 running in Azimuth:
 * **Steering lock and in-game wheel (experimental)**: real car's steering lock, max wheel rotation capping or scaling, soft lock force feedback, and an in-game wheel that follows the real one. See [Steering lock and the in-game wheel](#steering-lock-and-the-in-game-wheel).
 * **Draw distance**: raise how far the game draws scenery, traffic, shadows and props. See [Draw distance](#draw-distance).
 
-**Unofficial.** Not affiliated with Azimuth / Almost There Games, Microsoft or Playground Games. The Azimuth developer does not support modified setups: **remove `dinput8.dll` and close FH2SimImmersion.exe before reporting any Azimuth bug.**
+**Unofficial.** Not affiliated with Azimuth / Almost There Games, Microsoft or Playground Games. The Azimuth developer does not support modified setups: **before reporting any Azimuth bug, remove `dinput8.dll`, the `mods\Sim Immersion` folder and ExtraOptions (its `winmm.dll` and `mods` folder), and reproduce it.**
 
-**Supported:** Forza Horizon 2 **1.0.0.64** (with or without Storm Island) on Azimuth 0.9.x and 1.0.4.
+**Supported:** Forza Horizon 2 **1.0.0.64** (with or without Storm Island) on Azimuth 1.0.4 with ExtraOptions 0.4.4 or newer.
 On any other game build the plugin detects the difference, changes nothing, and logs why.
 
 ## How it works
 
-Azimuth loads `dinput8.dll` from its own folder, and that loads `FH2SimImmersion.dll`, the plugin. `FH2SimImmersion.exe` is the optional settings window; while it runs, it also loads the plugin into any `azimuth.exe` that starts. The plugin waits until the game image is mapped, checks that it is the known build (by hash and by an opcode skeleton), and only then patches it in memory. No Azimuth or game file is edited, and this repository contains no game code or data.
+ExtraOptions (its `winmm.dll` next to `azimuth.exe`) loads the mods in `mods`, and one of them is `mods\Sim Immersion\plugins\FH2SimImmersion.dll`, the plugin. `dinput8.dll` next to `azimuth.exe` only keeps Azimuth from opening the wheel (see [Install](#install)). `FH2SimImmersion.exe` is the settings window and does not touch the game. The plugin waits until the game image is mapped, checks that it is the known build (by hash and by an opcode skeleton), and only then patches it in memory. No Azimuth or game file is edited, and this repository contains no game code or data.
 
 * **Head tracking.** The game evaluates a head-tracking input for each camera layer every frame (`HeadTrackingX/Y/Z/Yaw/Pitch` in CameraPhysics.xml). In this build the Kinect side of those inputs is almost empty: X, Y and Z come from a function that always returns zero, pitch is always zero, and yaw is only body lean, capped at about 12 degrees. The plugin redirects those five input reads and, for the cockpit layers, supplies your head pose from FreeTrack shared memory (Beam Eye Tracker, OpenTrack) or OpenTrack UDP. Rotation goes through the cockpit `HeadTrackingYaw -> CameraSpaceYPROffset` layer and position through the cockpit `HeadTrackingX -> CarSpaceXYZOffset` layer. The game applies them with its own layer maths and spring smoothing; the layer ranges are widened in memory (Camera.zip is not modified).
 * **Steering wheel.** The game supports the Logitech G920 on Xbox, but Azimuth 0.9 only passes gamepads to it and Azimuth 1.0 has its own wheel support. The plugin adds a virtual Xbox wheel to the game's controller list and feeds it from your DirectInput wheel. The game then uses its own wheel controls and steering. The game's force feedback programs (steering torque, centring spring, damping, rumble) are emulated and played on the real wheel as one DirectInput force.
@@ -27,9 +27,23 @@ Azimuth loads `dinput8.dll` from its own folder, and that loads `FH2SimImmersion
 
 ## Install
 
-**Copy these into the folder of `azimuth.exe`:** `FH2SimImmersion.dll` and `dinput8.dll` from this folder, then start Azimuth as usual. Azimuth loads `dinput8.dll`, and that starts the mod. The mod's settings file is created next to them on the first start. `FH2SimImmersion.exe` is only an optional settings window; copy it to the same folder too if you want to use it, so that it edits the same file (a copy in another folder edits a file the mod does not read, and its status line says so). Works with Azimuth 1.0.4.
+### Requirements
 
-When the Wheel tab's check is on, `dinput8.dll` also keeps Azimuth from opening the wheel, because Azimuth 1.0 holds it exclusively otherwise and the mod's force feedback would not work.
+* **Azimuth 1.0.4.**
+* **[ExtraOptions](https://github.com/RokkuDayo/ForzaHorizon2_ExtraOptions) 0.4.4 or newer** (the Azimuth build). This mod is loaded by ExtraOptions and only works with it.
+* Optional: [FH2 Streaming Radio](https://github.com/RussFactorShow/FH2-Streaming-Radio), see [Other mods](#other-mods).
+
+### Steps
+
+1. **Install ExtraOptions** by following its own readme: extract the files and the `mods` folder from the `Azimuth` folder of its zip into the folder of `azimuth.exe`.
+2. **Copy the mod** from this mod's zip (its `FH2SimImmersion` folder):
+   * `dinput8.dll` into the folder of `azimuth.exe`, replacing any older copy;
+   * the `mods\Sim Immersion` folder into the `mods` folder.
+3. **Start Azimuth once**, then check that the mod loaded. ExtraOptions adds the mod to `mods\loadorder.txt` by itself. Either open `FH2_ExtraOptions.log` and look for the `PLUGINS: ...FH2SimImmersion.dll | initialized` line, or open `mods\Sim Immersion\FH2SimImmersion.exe` and look at the **Setup** section on its Logging tab.
+4. **Settings** (optional): run `mods\Sim Immersion\FH2SimImmersion.exe`. See [Settings window](#settings-window).
+
+### Before you play
+
 1. **Set up a head tracker** (optional, but head tracking will not work without one). Either of these works; when both are running, FreeTrack is used:
    * **Beam Eye Tracker:** Game Connection -> **Head Tracking Device Emulation**, with Driver set to `Compatibility`. Beam then publishes the FreeTrack/TrackIR shared memory, and the plugin reads it directly.
    * **[OpenTrack](https://github.com/opentrack/opentrack/releases)** with a webcam:
@@ -40,21 +54,24 @@ When the Wheel tab's check is on, `dinput8.dll` also keeps Azimuth from opening 
 
 2. **Plug in the wheel** (if using one) before starting the game. Set the rotation in your wheel's software, such as Logitech G HUB (900 degrees recommended), and disable any game profile there that remaps the wheel.
 
-3. **Copy the files** as described at the top of this section.
+3. **Start Azimuth** as usual, then **drive in the cockpit camera** to use head tracking. (Steering wheel works in any camera.)
 
-4. **Start Azimuth.**
+### Why dinput8.dll is still needed
 
-5. **Drive in the cockpit camera** to use head tracking. (Steering wheel works in any camera.)
+ExtraOptions loads its mods from `winmm.dll`, but Azimuth opens DirectInput (the wheel) before ExtraOptions loads any mod, so `dinput8.dll` has to stay next to `azimuth.exe`. While the Wheel tab's check is on, it keeps Azimuth from opening the wheel, because Azimuth 1.0 holds the wheel exclusively otherwise and the mod's force feedback would not work. It does nothing unless ExtraOptions and this mod are installed.
 
-Windows Defender may flag FH2SimImmersion.exe because it can also load a DLL into another process (what injectors do). If it does, allow it, or do not use the exe.
+### Upgrading from 0.9.x
 
-### Alternative: loading from the settings window
+* Delete the old `FH2SimImmersion.dll` and `FH2SimImmersion.exe` from the folder of `azimuth.exe`. Keep `dinput8.dll` there and replace it with the new one.
+* Move `FH2SimImmersion.ini` and `FH2SimImmersion_cars.ini` from the folder of `azimuth.exe` into `mods\Sim Immersion` (do step 2 of the steps above first, so that the folder exists).
 
-Without `dinput8.dll`, keep `FH2SimImmersion.exe` open while you start Azimuth, and it loads the mod into `azimuth.exe` by itself. On Azimuth 1.0 this leaves the wheel with Azimuth, so the mod's force feedback does not work; use `dinput8.dll` for that.
+### Other mods
+
+[FH2 Streaming Radio, ExtraOptions Edition](https://github.com/RussFactorShow/FH2-Streaming-Radio) works with this mod. Put its folder in `mods` as well. Its skip-song button combo reads the controller, not the wheel.
 
 ### Uninstall
 
-Delete `FH2SimImmersion.dll`, `dinput8.dll`, `FH2SimImmersion.exe` and the `FH2SimImmersion` settings and log files from the folder of `azimuth.exe`. Nothing else was changed. Upgrading from FH2HeadTracking: delete the old FH2HeadTracking.exe/.dll; your FH2HeadTracking.ini is renamed automatically.
+Delete `dinput8.dll` from the folder of `azimuth.exe`, and delete the `mods\Sim Immersion` folder (with its settings and log files). ExtraOptions drops it from `mods\loadorder.txt` on its next start. Nothing else was changed by this mod.
 
 ## Settings window
 
@@ -63,9 +80,9 @@ Delete `FH2SimImmersion.dll`, `dinput8.dll`, `FH2SimImmersion.exe` and the `FH2S
 ![Settings window - TODO: add screenshot](docs/screenshots/settings-window.png)
 * **Head tracking:** tracker input and network, smoothing, every rotation and position gain, invert and limit, the hotkeys and the recenter buttons. The picture shows a head from above, the side and the front with the axis you are editing highlighted. **Live preview** reads your tracker the way the game does (FreeTrack, or UDP while the game is closed) and draws the head pose after this tab's gains, inverts and limits; **Center** takes the current pose as the centre.
 * **Wheel (experimental):** a **Test wheel** box (input test, press to assign, a force test with its own force), then the wheel mapping (devices, axes, buttons, H-shifter, handbrake), the force feedback of the game's own forces, the extra effects of this mod, and Advanced. The picture shows the wheel, pedals, handbrake and shifter with each part's setting; pressed buttons and the selected gear light up, and clicking a part selects its setting.
-* **Simulation:** field of view per camera, realistic assists, the steering wheel group (real steering lock, maximum wheel rotation, in-game wheel, hiding the driver) and a list of all known cars with what the real car had (ABS, TC, STM, clutch, gearbox, lock). Select a car and choose how its ABS / traction control is forced (auto, on or off), including whether it has a clutch or always shifts automatically, and optionally a steering lock override.
+* **Simulation:** realistic assists, the steering wheel group (real steering lock, maximum wheel rotation, in-game wheel, hiding the driver) and a list of all known cars with what the real car had (ABS, TC, STM, clutch, gearbox, lock). Select a car and choose how its ABS / traction control is forced (auto, on or off), including whether it has a clutch or always shifts automatically, and optionally a steering lock override.
 * **Draw distance:** a slider per distance with a picture of the distances to scale.
-* **Logging:** a check that turns `FH2SimImmersion.log` on or off, a check for detailed logs, and a status box with what the window did and the last lines of the log.
+* **Logging:** a check that turns `FH2SimImmersion.log` on or off, a check for detailed logs, and a status box with what the window did and the last lines of the log. The **Setup** section says what is missing (ExtraOptions, `dinput8.dll` or the plugin), or "Setup complete".
 
 The INI file still works when edited by hand, and everything the window does is also described below.
 
@@ -97,7 +114,7 @@ Both clicks also reach the game, as usual. You can also recenter in your tracker
 
 * `RecenterButtons`, e.g. `BACK+START` (also on the Head tracking tab).
 * `WheelRecenterButtons`: steering wheel buttons held together to recenter (default `4+5`, both G29 shift paddles).
-* `RecenterKey` / `ChordRecenterKey` to add a keyboard key. The file is created next to the DLL on the first run. Edit it, then restart the game.
+* `RecenterKey` / `ChordRecenterKey` to add a keyboard key. The file is `mods\Sim Immersion\FH2SimImmersion.ini`, created on the first run. Edit it, then restart the game.
 
 ## Steering wheel (experimental)
 
@@ -160,7 +177,7 @@ On top of that:
 To find axis and button numbers, set `Diagnostics=1` (under `[Input]`). Every 2 seconds the log shows a `wheel diag raw:` line with every axis value and the pressed buttons.
 ## Field of view
 
-The `[Simulation]` section widens (or narrows) the field of view of the cockpit, driver, hood and bumper cameras: `FovCockpit`, `FovDriver`, `FovHood` and `FovBumper`. Each value is the number of degrees added to the game's own field of view; `0` leaves the game default alone. For example `FovCockpit=10`. The log shows the game's value once per camera as `fov: ... base`.
+Field of view: use the camera settings of [ExtraOptions](https://github.com/RokkuDayo/ForzaHorizon2_ExtraOptions). This mod no longer changes it.
 
 ## Choosing what the mod does
 
@@ -170,7 +187,7 @@ Every tab of the settings window starts with a check that turns that whole part 
 |---|---|---|
 | Head tracking | `[General] OverrideAzimuthHeadTracking` | head tracking is left to Azimuth |
 | Wheel | `[Wheel] Enabled` | the steering wheel is left to Azimuth |
-| Simulation | `[Simulation] Enabled` | no field of view changes, realistic assists, steering lock or in-game wheel changes |
+| Simulation | `[Simulation] Enabled` | no realistic assists, steering lock or in-game wheel changes |
 | Draw distance | `[DrawDistance] Enabled` | distances stay with the game and Azimuth's own settings |
 | Logging | `[Logging] Enabled` | no `FH2SimImmersion.log` is written |
 
@@ -213,7 +230,7 @@ The `[Simulation]` section has the keys:
 
 ### Per-car overrides
 
-Per-car overrides go in an optional file `FH2SimImmersion_cars.ini` next to the DLL:
+Per-car overrides go in an optional file `FH2SimImmersion_cars.ini` in `mods\Sim Immersion`, next to the settings file:
 
 ```
 [Cars]
@@ -280,7 +297,7 @@ Azimuth 0.9.10 has no wheel support; Azimuth 1.0 has its own. By default the plu
 
 ## Checking that it works
 
-`FH2SimImmersion.log` is written next to the DLL unless `[Logging] Enabled=0`. A good run looks like this:
+`FH2SimImmersion.log` is written in `mods\Sim Immersion` unless `[Logging] Enabled=0`. A good run looks like this:
 
 ```
 FH2 Sim Immersion 0.9.6 loaded into pid ... (...\azimuth.exe)
@@ -300,8 +317,8 @@ The `layer ...` lines only appear once you are driving in cockpit view.
 ```
 src/dll/        plugin loaded into azimuth.exe (hook, tracker, config, wheel, assists, draw distance)
 src/common/     shared headers: default settings text, car database (generated from data/car_assists.csv)
-src/proxy/      dinput8.dll: starts the plugin when Azimuth starts
-src/app/        FH2SimImmersion.exe: settings window and injector (Win32, GDI pictures, app.rc/app.manifest)
+src/proxy/      dinput8.dll: keeps Azimuth off the wheel while the mod drives it
+src/app/        FH2SimImmersion.exe: settings window (Win32, GDI pictures, app.rc/app.manifest)
 tests/          unit tests, integration harness, fake azimuth.exe
 tools/          gen_car_db.py (generates src/common/car_db.h)
 docs/           reverse-engineering notes
@@ -334,7 +351,7 @@ It regenerates `src/common/car_db.h` from `data/car_assists.csv`, builds and run
 dist/FH2SimImmersion-0.9.6.zip
 ```
 
-The zip contains `FH2SimImmersion.dll`, `dinput8.dll`, `FH2SimImmersion.exe`, this README and `LICENSE.txt`.
+The zip has one `FH2SimImmersion` folder with `dinput8.dll` and `mods\Sim Immersion\` (`plugins\FH2SimImmersion.dll`, `FH2SimImmersion.exe`, `mod.json`, this README and `LICENSE.txt`).
 
 ### Integration test (harness)
 
@@ -359,7 +376,7 @@ The defaults have been tested with Beam. Use these settings if your tracker beha
 
 ## Troubleshooting
 
-* **No log file:** check the Logging tab (`[Logging] Enabled=1`). Otherwise the DLL was not loaded: make sure `FH2SimImmersion.dll` and `dinput8.dll` are in the folder of `azimuth.exe` and that antivirus (Windows Defender) did not block them.
+* **No log file:** check the Logging tab (`[Logging] Enabled=1`). Otherwise the plugin was not loaded: check the **Setup** section of the Logging tab and `FH2_ExtraOptions.log`, make sure ExtraOptions is installed and `mods\Sim Immersion` is in `mods`, and that antivirus (Windows Defender) did not block the files.
 * **"this game build is not recognised":** you have a different FH2 version than 1.0.0.64. Nothing was changed.
 * **"bind ... failed":** another program is already using UDP port 4242 (e.g. a second tracker). Change `UdpPort` here and in OpenTrack.
 * **No head tracking:** check the tracker is running with the output described under Install, that the log shows `freetrack: shared memory found` or UDP packets, and that you are in the cockpit camera. Recenter, and check the toggle (`End`) did not switch it off.
@@ -372,7 +389,7 @@ The defaults have been tested with Beam. Use these settings if your tracker beha
 * **Wrong or reversed pedals/axes:** set `Diagnostics=1`, read the `wheel diag raw:` lines (or use **Test input**) and fix the axis and `PedalsInverted` settings.
 * **Steering degrees feel wrong:** `WheelRange` must equal the rotation set in your wheel's software.
 * **Part of the plugin does nothing and the log says `mismatch; unchanged`:** the game build differs from the one the offsets were taken from.
-* **Azimuth bug:** remove `dinput8.dll`, close FH2SimImmersion.exe and reproduce it before reporting it to the Azimuth developer.
+* **Azimuth bug:** remove `dinput8.dll`, the `mods\Sim Immersion` folder and ExtraOptions, and reproduce it before reporting it to the Azimuth developer.
 
 ## License
 
