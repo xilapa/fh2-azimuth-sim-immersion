@@ -190,19 +190,21 @@ void installLodHook() {
     constexpr size_t kPerCall = 16;      // patchCallRel32's stub is 12 bytes
     uint8_t* block = static_cast<uint8_t*>(allocNear(g_base + kLevelSelectCalls[0], kPerCall * 4));
     if (!block) { LOG("drawdist: could not allocate level selection memory; unchanged"); return; }
-    int patched = 0;
+    int patched = 0, moved = 0;
     for (int i = 0; i < 4; ++i) {
         const uintptr_t rva = kLevelSelectCalls[i];
-        g_select[i] = reinterpret_cast<SelectFn>(g_base + levelSelectTarget(rva));   // set before the call can reach it
+        // Azimuth's later entry copies the caller's registers and stack slots, so a wrapper in between would hand it ours
+        if (levelSelectTarget(rva) != kLevelSelectRva) { ++moved; continue; }
+        g_select[i] = reinterpret_cast<SelectFn>(g_base + kLevelSelectRva);   // set before the call can reach it
         if (patchCallRel32(g_base + rva, wrappers[i], block + kPerCall * i)) ++patched;
     }
-    LOG("drawdist: level selection hooked at %d of 4 calls (missing levels fall back to coarser ones)", patched);
+    LOG("drawdist: level selection hooked at %d of 4 calls (missing levels fall back to coarser ones; %d left to Azimuth's Scenery detail)", patched, moved);
 }
 
 void logAzimuthScenery() {
     const uint8_t* p = reinterpret_cast<const uint8_t*>(g_base + kLevelSelectRva);
     if (g_cfg.world > 0 && p[0] == 0xFF && p[1] == 0x25)
-        LOG("drawdist: Azimuth's Scenery detail is on as well; the two multiply. Set it to Default to use only WorldDistance");
+        LOG("drawdist: Azimuth's Scenery detail is on; it decides most terrain detail and WorldDistance only the rest. Set it to Default to use only WorldDistance");
 }
 
 // ---------------------------------------------------------------------------

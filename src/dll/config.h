@@ -45,6 +45,7 @@ struct WheelConfig {
     bool        ffbInvert = false;
     float       ffbMinForce = 0.05f;      // lifts small forces over the wheel's dead band; 0 = off
     FfbTuning   ffbTuning;
+    std::wstring ffbStatsPath;            // where the game's strongest steering force is saved, for the calibration in the app
     float       ffbLockStrength = 1.0f, ffbLockRampDeg = 3.0f;   // soft lock at the end of the steering lock
     bool        ffbLimitUnknown = true;   // soft lock at half force on wheels not known to be gentle
     bool        ffbForeground = false;    // take the force only while the game has the focus

@@ -67,7 +67,7 @@ ExtraOptions loads its mods from `winmm.dll`, but Azimuth opens DirectInput (the
 
 ### Other mods
 
-[FH2 Streaming Radio, ExtraOptions Edition](https://github.com/RussFactorShow/FH2-Streaming-Radio) works with this mod. Put its folder in `mods` as well. Its skip-song button combo reads the controller, not the wheel.
+[FH2 Streaming Radio, ExtraOptions Edition](https://github.com/RussFactorShow/FH2-Streaming-Radio) works with this mod. Put its folder in `mods` as well. Its skip-song combo (LB+X by default) works from the wheel too: the wheel's buttons are also reported to mods that read an Xbox controller (XInput), so press the left paddle (LB) and X together.
 
 ### Uninstall
 
@@ -154,6 +154,8 @@ The game supports the Logitech G920 on Xbox, but Azimuth 0.9 only passes gamepad
 * `FFBForeground` (default `0`): `1` takes the force only while the game has the focus, for wheel drivers that refuse force in the background. Use it if the wheel gets no force and the log says `exclusive cooperative level failed`.
 * The force goes to the axis the wheel reports as having a motor. If that is not the steering axis, the log line `wheel ffb: force axis offset` shows it.
 * Setting up another wheel in the Wheel tab: **Test force: push right** pushes the wheel for half a second with the force set next to it (15% by default) (if it turns left, tick **Invert force direction**). **Press to assign** turns the input test on: click a button or axis row (or that part of the picture), then press that button or move that axis far, and press Apply.
+* **Calibrate force** (Wheel tab): sets **Steering torque** (`FFBTorqueGain`) so the strongest steering force the game can send reaches about 85% of the wheel, with the Strength and Smallest force set there; press Apply to keep it. No drive is needed: the game's force is its tyre force (at most 1) times two fixed factors and the in-game force feedback scale. The mod saves that maximum in `FH2SimImmersion_ffb.ini` when you are in a car (so a changed in-game scale is followed); before that the button uses the game's default (0.205).
+* **Record drive** (Wheel tab): calibrates from your own driving. Press it, start the game and drive a few minutes, then come back and press **Stop recording and calibrate**: Steering torque is set so the strongest forces of that drive (the 1% strongest moments) reach about 85% of the wheel. The app and the mod talk through `FH2SimImmersion_record.ini` and `FH2SimImmersion_ffb.ini`; restarting the game during a recording starts it again.
 
 ### Force feedback tuning
 
@@ -204,7 +206,7 @@ Nothing in the game files is edited; the values are changed in memory while the 
 | Key | What it controls | Game value | Range |
 |---|---|---|---|
 | `ShadowDistance` | how far shadows are drawn: the track's shadow end and the shadow cascade tables (the ones Azimuth's Shadow distance setting patches). Only ever raises them, so it works on top of Azimuth's setting. Azimuth's Shadow detail keeps long shadows sharp | 85 m | up to 1000 |
-| `WorldDistance` | scenery and trees: the cull distance, plus the distance of every model's detail levels, scaled by this value divided by the game's (at most 8 times). This is the same method as Azimuth's **Scenery detail**, which doubles (High) or quadruples (Ultra) them; if both are on they multiply, so set Azimuth's to Default. Where a finer level is not loaded yet, the next coarser one is drawn, so far terrain has no holes. | 360 m (200 m on some tracks) | up to 3000 |
+| `WorldDistance` | scenery and trees: the cull distance, plus the distance of every model's detail levels, scaled by this value divided by the game's (at most 8 times). This is the same method as Azimuth's **Scenery detail**, which doubles (High) or quadruples (Ultra) them; if both are on, Azimuth's decides most models' detail levels, so set Azimuth's to Default. Where a finer level is not loaded yet, the next coarser one is drawn, so far terrain has no holes. | 360 m (200 m on some tracks) | up to 3000 |
 | `PropsDistance` | props that can be knocked over: fences, signs, bollards | 450 m | up to 3000 |
 | `CrowdDistance` | spectators (their model and fade distances follow) | 250 m | up to 1000 |
 | `GrassDistance` | grass (the start of its fade and its detail level follow) | 100 m | up to 500 |

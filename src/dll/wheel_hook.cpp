@@ -2,7 +2,10 @@
 // Hooks that present the virtual wheel to Forza Horizon 2.
 #include "wheel_hook.h"
 #include <windows.h>
+#include <xinput.h>
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -413,6 +416,69 @@ DWORD WINAPI diagThread(void*) {
     }
 }
 
+// ---- XInput: other mods read the pad with XInputGetState (Spotify Radio's skip-song combo). The wheel is not an Xbox
+// controller, so its mapped buttons are added to what XInputGetState reports for user 0. The game reads its pads through
+// Windows.Gaming.Input, not XInput, so it does not see them twice.
+using XInputGetStateFn = DWORD (WINAPI*)(DWORD, XINPUT_STATE*);
+XInputGetStateFn g_xinputGetStateEx = nullptr;   // ordinal 100: the same reading plus the Guide button
+std::atomic<DWORD> g_padPacket{0};               // bumped when the wheel's part changes, so readers see a new packet
+std::atomic<uint32_t> g_padLast{0};
+
+DWORD WINAPI hookXInputGetState(DWORD user, XINPUT_STATE* s) {
+    DWORD r = g_xinputGetStateEx(user, s);
+    if (r == ERROR_SUCCESS && s) s->Gamepad.wButtons &= ~0x0400;   // XInputGetState never reports the Guide button
+    WheelInput in;
+    if (user != 0 || !s || (r != ERROR_SUCCESS && r != ERROR_DEVICE_NOT_CONNECTED) || !WheelDevice_Read(in) || !in.valid) return r;
+    if (r != ERROR_SUCCESS) ZeroMemory(s, sizeof(*s));
+    WORD b = 0;
+    if (in.a) b |= XINPUT_GAMEPAD_A;
+    if (in.b) b |= XINPUT_GAMEPAD_B;
+    if (in.x) b |= XINPUT_GAMEPAD_X;
+    if (in.y) b |= XINPUT_GAMEPAD_Y;
+    if (in.lb) b |= XINPUT_GAMEPAD_LEFT_SHOULDER;
+    if (in.rb) b |= XINPUT_GAMEPAD_RIGHT_SHOULDER;
+    if (in.view) b |= XINPUT_GAMEPAD_BACK;
+    if (in.menu) b |= XINPUT_GAMEPAD_START;
+    if (in.up) b |= XINPUT_GAMEPAD_DPAD_UP;
+    if (in.down) b |= XINPUT_GAMEPAD_DPAD_DOWN;
+    if (in.left) b |= XINPUT_GAMEPAD_DPAD_LEFT;
+    if (in.right) b |= XINPUT_GAMEPAD_DPAD_RIGHT;
+    const BYTE lt = (BYTE)std::lround((std::min)((std::max)(in.brake, 0.0f), 1.0f) * 255.0f);
+    const BYTE rt = (BYTE)std::lround((std::min)((std::max)(in.throttle, 0.0f), 1.0f) * 255.0f);
+    s->Gamepad.wButtons |= b;
+    s->Gamepad.bLeftTrigger = (std::max)(s->Gamepad.bLeftTrigger, lt);
+    s->Gamepad.bRightTrigger = (std::max)(s->Gamepad.bRightTrigger, rt);
+    const uint32_t mine = (uint32_t)b | (uint32_t)lt << 16 | (uint32_t)rt << 24;
+    if (g_padLast.exchange(mine, std::memory_order_relaxed) != mine) g_padPacket.fetch_add(1, std::memory_order_relaxed);
+    s->dwPacketNumber += g_padPacket.load(std::memory_order_relaxed);
+    return ERROR_SUCCESS;
+}
+
+// Points XInputGetState at the hook. The hook reads through XInputGetStateEx, a separate function, so no original code
+// has to be copied. shortcut: the 12-byte write is not atomic; a thread inside the first bytes of XInputGetState at that
+// moment would crash. It happens once, right after the mod loads; make it a hot-patch if that ever shows up.
+void installXInputButtons() {
+    HMODULE x = LoadLibraryW(L"xinput1_4.dll");      // kept loaded: the hook lives as long as the process
+    if (!x) { LOG("xinput: xinput1_4.dll not found; the wheel's buttons are not reported to XInput readers"); return; }
+    auto ex = reinterpret_cast<XInputGetStateFn>(GetProcAddress(x, MAKEINTRESOURCEA(100)));
+    auto* fn = reinterpret_cast<uint8_t*>(GetProcAddress(x, "XInputGetState"));
+    static const uint8_t kPrologue[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x56, 0x57, 0x41, 0x56, 0x48, 0x83, 0xEC, 0x30};
+    if (!ex || !fn || std::memcmp(fn, kPrologue, sizeof(kPrologue)) != 0) {
+        LOG("xinput: XInputGetState is not the expected code; the wheel's buttons are not reported to XInput readers");
+        return;
+    }
+    g_xinputGetStateEx = ex;
+    uint8_t stub[12] = {0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xE0};   // mov rax, hook ; jmp rax
+    const uint64_t to = reinterpret_cast<uint64_t>(&hookXInputGetState);
+    std::memcpy(stub + 2, &to, sizeof(to));
+    DWORD prot;
+    if (!VirtualProtect(fn, sizeof(stub), PAGE_EXECUTE_READWRITE, &prot)) { LOG("xinput: VirtualProtect failed %lu", GetLastError()); return; }
+    std::memcpy(fn, stub, sizeof(stub));
+    VirtualProtect(fn, sizeof(stub), prot, &prot);
+    FlushInstructionCache(GetCurrentProcess(), fn, sizeof(stub));
+    LOG("xinput: the wheel's buttons are reported to XInput readers as user 0 (Spotify Radio's skip combo)");
+}
+
 } // namespace
 
 static bool installWheel(uintptr_t base, const Config& cfg) {
@@ -503,6 +569,7 @@ void WheelHook_Install(uintptr_t base, const Config& cfg) {
     } else {
         wheelOk = installWheel(base, cfg);
     }
+    if (wheelOk) installXInputButtons();
     g_wheelActive = wheelOk && cfg.wheel.ffbEnabled;
     if (g_wheelActive || assists) installFfbSite(base, g_wheelActive, assists);
     if (wheelOk && cfg.diagnostics)

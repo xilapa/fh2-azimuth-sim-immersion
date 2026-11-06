@@ -3,6 +3,7 @@
 #define DIRECTINPUT_VERSION 0x0800
 #include "wheel_device.h"
 #include <dinput.h>
+#include <atomic>
 #include <cmath>
 #include <cstdlib>
 #include <deque>
@@ -13,6 +14,7 @@
 #include "wheel_com.h"
 #include "wheel_ffb.h"
 #include "../common/wheel_enum.h"
+#include "../common/ffb_calib.h"
 
 namespace fh2 {
 
@@ -27,6 +29,10 @@ bool               g_started = false;
 bool               g_diag = false;
 bool               g_ffbCapable = false;
 FfbStatus          g_ffbStatus;
+// "Record drive" in the app: the game's steering force while driving (written by the poll thread).
+std::atomic<bool>     g_recording{false};
+std::atomic<uint32_t> g_torqueHist[kTorqueBins];
+std::atomic<double>   g_recordMs{0.0};
 
 GUID               g_wheelGuid{};
 DWORD              g_forceAxis = DIJOFS_X;
@@ -195,7 +201,8 @@ void publish(const WheelInput& in) {
 DWORD WINAPI testThread(void*) {
     for (;;) {
         WheelInput in;
-        in.steering = 0.25f; in.throttle = 0.5f; in.a = true;
+        in.steering = 0.25f; in.throttle = 0.5f;
+        in.a = GetTickCount64() % 1000 < 500;   // tapped, not held: menus act on a press
         in.timestamp = qpc();
         in.valid = true;
         publish(in);
@@ -272,6 +279,62 @@ int openExtra(const std::vector<FoundDevice>& devs, int wheelIdx, const std::str
     return (int)g_extras.size() - 1;
 }
 
+// Every 2 s: follows "Record drive" in the app (FH2SimImmersion_record.ini) and saves the recording, and saves the game's
+// strongest steering force whenever it changes (in a car); both for the calibration in the app.
+// shortcut: a game restart during a recording starts it again from zero, upgrade if people record across restarts.
+DWORD WINAPI ffbStatsThread(void*) {
+    const std::wstring& path = g_cfg.ffbStatsPath;
+    std::wstring ctl = path;   // FH2SimImmersion_ffb.ini -> FH2SimImmersion_record.ini, written by the app
+    const size_t cut = ctl.rfind(L"ffb.ini");
+    if (cut != std::wstring::npos) ctl.replace(cut, 7, L"record.ini");
+    float written = -1.0f;
+    std::wstring session;   // the app's Started stamp of the recording in progress; empty = not recording
+    double savedMs = -1.0;
+    for (;;) {
+        Sleep(2000);
+        wchar_t started[64];
+        const bool active = GetPrivateProfileIntW(L"Record", L"Active", 0, ctl.c_str()) != 0;
+        GetPrivateProfileStringW(L"Record", L"Started", L"", started, 64, ctl.c_str());
+        if (active && started[0] && session != started) {   // a new recording: from zero
+            g_recording.store(false);
+            for (auto& b : g_torqueHist) b.store(0, std::memory_order_relaxed);
+            g_recordMs.store(0.0);
+            session = started;
+            savedMs = -1.0;
+            g_recording.store(true);
+            LOG("wheel ffb: recording a drive for the calibration (started %ls in the app)", started);
+        } else if (!active && !session.empty()) {
+            g_recording.store(false);
+            LOG("wheel ffb: recording stopped (%.0f s of driving)", g_recordMs.load() / 1000.0);
+            session.clear();
+        }
+        const double ms = g_recordMs.load(std::memory_order_relaxed);
+        if (!session.empty() && ms != savedMs) {
+            uint32_t bins[kTorqueBins];
+            for (int i = 0; i < kTorqueBins; ++i) bins[i] = g_torqueHist[i].load(std::memory_order_relaxed);
+            wchar_t b[32];
+            WritePrivateProfileStringW(L"Recording", L"Started", session.c_str(), path.c_str());
+            swprintf(b, 32, L"%.0f", ms / 1000.0);
+            WritePrivateProfileStringW(L"Recording", L"Seconds", b, path.c_str());
+            swprintf(b, 32, L"%.3f", TorquePercentile(bins, 0.99));
+            WritePrivateProfileStringW(L"Recording", L"Torque99", b, path.c_str());
+            savedMs = ms;
+        }
+        FfbParams p;
+        VirtualWheel_FfbSnapshot(p);
+        if (!p.haveGame) continue;
+        const float m = GameTorqueMax(p.game.dynScale, p.game.gain, p.game.dynMax);
+        if (!(m > 0.0f) || std::fabs(m - written) < 0.0005f) continue;
+        wchar_t b[32];
+        WritePrivateProfileStringW(L"LastDrive", nullptr, nullptr, path.c_str());   // an earlier version's section
+        swprintf(b, 32, L"%.3f", m);
+        WritePrivateProfileStringW(L"Game", L"TorqueMax", b, path.c_str());
+        LOG("wheel ffb: the game's strongest steering force is %.3f (dynScale %.3f, in-game scale %.2f, max %.3f); saved for the calibration in the app",
+            m, p.game.dynScale, p.game.gain, p.game.dynMax);
+        written = m;
+    }
+}
+
 DWORD WINAPI pollThread(void*) {
     // Wait for a visible top-level window of this process.
     HWND hwnd = nullptr;
@@ -290,6 +353,8 @@ DWORD WINAPI pollThread(void*) {
             ffbOn = false;
         }
     }
+    if (ffbOn && !g_cfg.ffbStatsPath.empty())
+        if (HANDLE t = CreateThread(nullptr, 0, ffbStatsThread, nullptr, 0, nullptr)) CloseHandle(t);
     HRESULT hr = S_OK;
     if (ffbOn && !fgMode) {
         hr = g_dev->SetCooperativeLevel(hwnd, DISCL_EXCLUSIVE | DISCL_BACKGROUND);
@@ -325,6 +390,7 @@ DWORD WINAPI pollThread(void*) {
     bool ffbHeld = false;      // FFBForeground: the force handle is acquired
     HWND ffbWnd = nullptr;
     double nextFgTryMs = 0;
+    double statsPrevMs = 0;   // the previous force loop time, for the recorded drive's duration
     for (;;) {
         pollExtras();
         if (fgMode && ffbOn) {
@@ -447,6 +513,12 @@ DWORD WINAPI pollThread(void*) {
                 VirtualWheel_FfbSnapshot(p);
                 FfbTerms terms{};
                 float F = FfbForce(p, g_cfg.ffbTuning, angle, velocity, nowMs, &terms);
+                if (g_recording.load(std::memory_order_relaxed) && p.race && !p.stale && p.haveGame && p.game.speed > 5.0f) {
+                    const double dt = statsPrevMs > 0 ? std::fmin(nowMs - statsPrevMs, 50.0) : 0.0;   // driving
+                    g_torqueHist[TorqueBin(p.torque)].fetch_add(1, std::memory_order_relaxed);
+                    g_recordMs.store(g_recordMs.load(std::memory_order_relaxed) + dt, std::memory_order_relaxed);
+                }
+                statsPrevMs = nowMs;
                 LONG mag = FfbDeviceMagnitude(F, g_cfg.ffbGain, g_cfg.ffbInvert);
                 // Soft lock: end stop at the physical lock (works also when the game's FFB is idle, e.g. in menus).
                 const float physLock = VirtualWheel_PhysicalLockDeg();

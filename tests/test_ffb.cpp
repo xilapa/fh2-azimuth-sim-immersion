@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include "../src/dll/wheel_ffb.h"
+#include "../src/common/ffb_calib.h"
 
 using namespace fh2;
 
@@ -146,6 +147,38 @@ int main() {
         assert(FfbMinForce(100, 0.05f) == 595);
         assert(FfbMinForce(50, 0.05f) == 298);
         assert(FfbMinForce(-50, 0.05f) == -298);
+    }
+
+    // calibration (src/common/ffb_calib.h)
+    {
+        assert(near(GameTorqueMax(0.41f, 0.5f, 0.6f), 0.205f));
+        assert(near(GameTorqueMax(0.41f, 1.0f, 0.3f), 0.3f));     // capped at dynMax
+        assert(near(GameTorqueMax(2.0f, 1.0f, 5.0f), 1.0f));      // never above 1
+        assert(GameTorqueMax(0.0f, 0.5f, 0.6f) == 0.0f);
+        assert(GameTorqueMax(std::nanf(""), 0.5f, 0.6f) == 0.0f);
+        assert(near(CalibratedTorqueGain(0.205f, 1.5f, 0.05f, 0.85f), 2.7f));
+        assert(near(WheelShare(0.205f, 2.7f, 1.5f, 0.05f), 0.838f, 1e-3f));
+        assert(near(CalibratedTorqueGain(0.2f, 1.5f, 0.05f, 0.85f), 2.8f));
+        assert(CalibratedTorqueGain(0.0f, 1.5f, 0.05f, 0.85f) == 0.0f);
+        assert(CalibratedTorqueGain(0.2f, 0.0f, 0.05f, 0.85f) == 0.0f);
+        assert(near(CalibratedTorqueGain(0.001f, 1.0f, 0.05f, 0.85f), 5.0f));
+        assert(near(CalibratedTorqueGain(1.0f, 4.0f, 0.05f, 0.85f), 0.2f));
+        assert(WheelShare(0.0f, 1.0f, 1.0f, 0.05f) == 0.0f);
+        assert(near(WheelShare(1.0f, 3.0f, 1.0f, 0.05f), 1.0f));
+
+        // a recorded drive
+        assert(TorqueBin(0.0f) == 0);
+        assert(TorqueBin(0.5f) == 100);
+        assert(TorqueBin(-0.5f) == 100);
+        assert(TorqueBin(2.0f) == kTorqueBins - 1);
+        assert(TorqueBin(std::nanf("")) == 0);
+        uint32_t bins[kTorqueBins] = {};
+        assert(TorquePercentile(bins, 0.99) == 0.0f);
+        bins[10] = 100;
+        bins[150] = 1;
+        assert(near(TorquePercentile(bins, 0.5), 0.055f));
+        assert(near(TorquePercentile(bins, 0.99), 0.055f));
+        assert(near(TorquePercentile(bins, 1.0), 0.755f));
     }
 
     std::puts("all ffb tests passed");

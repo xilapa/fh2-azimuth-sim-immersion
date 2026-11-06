@@ -5,6 +5,7 @@
 #include <dinput.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <set>
@@ -12,12 +13,15 @@
 #include "ini.h"
 #include "settings_tables.h"
 #include "../common/wheel_enum.h"
+#include "../common/ffb_calib.h"
 
 namespace app {
 
 namespace {
 const int kIdTest = 9100, kIdPush = 9101, kIdDetect = 9102;
 const int kIdForce = 9103;
+const int kIdCalibrate = 9104;
+const int kIdRecord = 9105;
 const DWORD kPushMs = 500;
 
 enum Role { kWheel, kPedals, kShifter, kHandbrake, kRoles };
@@ -168,17 +172,30 @@ protected:
                                   0, 0, 10, 10, host_, (HMENU)(INT_PTR)kIdDetect, G.inst, nullptr);
         AddTip(detect_, L"Turns the input test on. Click a button or axis row, then press that button or move that axis far: the row is filled in. "
                         L"Press Apply to keep it.");
+        calib_ = CreateWindowExW(0, L"BUTTON", L"Calibrate force", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                 0, 0, 10, 10, host_, (HMENU)(INT_PTR)kIdCalibrate, G.inst, nullptr);
+        AddTip(calib_, L"Sets Steering torque so the strongest steering force the game can send reaches about 85% of the wheel, "
+                       L"with the Strength and Smallest force set here. The mod reads that force from the game when you are in a car; "
+                       L"before that it uses the game's default. Press Apply to keep it.");
+        rec_ = CreateWindowExW(0, L"BUTTON", L"Record drive", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                               0, 0, 10, 10, host_, (HMENU)(INT_PTR)kIdRecord, G.inst, nullptr);
+        AddTip(rec_, L"Calibrates from your own driving: press it, start the game and drive a few minutes, come back and press "
+                     L"\"Stop recording and calibrate\". Steering torque is then set so the strongest forces of that drive reach about 85% of the wheel.");
+        recStarted_ = RecordingStarted();   // a recording left running stays on
+        if (!recStarted_.empty()) SetWindowTextW(rec_, L"Stop recording and calibrate");
         BuildRows(kWheelSettings, sizeof(kWheelSettings) / sizeof(Setting));
         MakePicture();
     }
     void Layout(int w, int h) override {
-        int lw = w * 54 / 100, gap = S(8), top = S(90), half = (lw - S(32)) / 2;
+        int lw = w * 54 / 100, gap = S(8), top = S(119), half = (lw - S(32)) / 2;
         SetWindowPos(box_, nullptr, S(8), S(4), lw - S(16), S(20), SWP_NOZORDER);
         SetWindowPos(test_, nullptr, S(14), S(28), half, S(24), SWP_NOZORDER);
         SetWindowPos(detect_, nullptr, S(22) + half, S(28), half, S(24), SWP_NOZORDER);
         SetWindowPos(push_, nullptr, S(14), S(57), half, S(26), SWP_NOZORDER);
         SetWindowPos(forceLabel_, nullptr, S(22) + half, S(61), S(70), S(22), SWP_NOZORDER);
         SetWindowPos(force_, nullptr, S(96) + half, S(58), S(48), S(24), SWP_NOZORDER);
+        SetWindowPos(calib_, nullptr, S(14), S(86), half, S(26), SWP_NOZORDER);
+        SetWindowPos(rec_, nullptr, S(22) + half, S(86), half, S(26), SWP_NOZORDER);
         SetWindowPos(scroller_, nullptr, 0, top, lw, h - top, SWP_NOZORDER);
         SetWindowPos(picture_, nullptr, lw + gap, 0, w - lw - gap, h, SWP_NOZORDER);
         LayoutRows();
@@ -189,6 +206,10 @@ protected:
             if (SendMessageW(test_, BM_GETCHECK, 0, 0) == BST_CHECKED) StartTest(); else StopTest();
         } else if (id == kIdPush && code == BN_CLICKED) {
             StartPush();
+        } else if (id == kIdCalibrate && code == BN_CLICKED) {
+            Calibrate();
+        } else if (id == kIdRecord && code == BN_CLICKED) {
+            ToggleRecord();
         } else if (id == kIdDetect && code == BN_CLICKED) {
             if (SendMessageW(detect_, BM_GETCHECK, 0, 0) == BST_CHECKED && !dev_[kWheel]) {
                 SendMessageW(test_, BM_SETCHECK, BST_CHECKED, 0);
@@ -217,7 +238,8 @@ protected:
 
 private:
     HWND box_ = nullptr, forceLabel_ = nullptr, force_ = nullptr;
-    HWND test_ = nullptr, push_ = nullptr, detect_ = nullptr;
+    HWND test_ = nullptr, push_ = nullptr, detect_ = nullptr, calib_ = nullptr, rec_ = nullptr;
+    std::wstring recStarted_;   // the Started stamp of the recording this app started; empty = not recording
     std::vector<PicHit> hits_;
     IDirectInput8W* di_ = nullptr;
     IDirectInputDevice8W* dev_[kRoles] = {};   // null for a role on the wheel, or whose device was not found
@@ -392,6 +414,93 @@ private:
         assignFocus_ = nullptr;
         if (test_) SendMessageW(test_, BM_SETCHECK, BST_UNCHECKED, 0);
         if (detect_) SendMessageW(detect_, BM_SETCHECK, BST_UNCHECKED, 0);
+    }
+
+    // Sets Steering torque so the game's strongest steering force reaches about 85% of the wheel.
+    void Calibrate() {
+        const std::wstring path = ExeDir() + L"\\FH2SimImmersion_ffb.ini";
+        wchar_t buf[64];
+        GetPrivateProfileStringW(L"Game", L"TorqueMax", L"0", buf, 64, path.c_str());
+        float tmax = (float)_wtof(buf);
+        const bool fromGame = tmax > 0.0f && tmax <= 1.0f;
+        if (!fromGame) tmax = fh2::kDefaultGameTorqueMax;
+        wchar_t what[160];
+        swprintf(what, 160, L"the game's strongest steering force (%.3f, %ls)", tmax,
+                 fromGame ? L"read from the game" : L"the game's default; drive once with the mod to read yours");
+        CalibrateTo(tmax, what);
+    }
+
+    // Sets Steering torque so the force torque reaches about 85% of the wheel; what describes it in the status line.
+    void CalibrateTo(float torque, const wchar_t* what) {
+        Ctl* c = Find("Wheel", "FFBTorqueGain");
+        const float gain = (float)Num("Wheel", "FFBGain", 1.0), minF = (float)Num("Wheel", "FFBMinForce", 0.05);
+        if (!c || !(gain > 0.0f)) {
+            SetStatus(L"Calibrate: Strength is 0%. Raise it first.");
+            return;
+        }
+        const float now = (float)Num("Wheel", "FFBTorqueGain", 1.0);
+        const float set = fh2::CalibratedTorqueGain(torque, gain, minF, 0.85f);
+        char v[16];
+        snprintf(v, sizeof(v), "%.1f", set);
+        SetValue(*c, v);
+        wchar_t msg[500];
+        swprintf(msg, 500, L"Calibrate: %ls would reach %.0f%% of the wheel with Steering torque at %.0f%%. "
+                           L"Set to %.0f%% so it reaches about 85%%%ls. Press Apply to keep it.",
+                 what, fh2::WheelShare(torque, now, gain, minF) * 100.0f, now * 100.0f, set * 100.0f,
+                 set >= 5.0f ? L" (the most it can be)" : L"");
+        SetStatus(msg);
+    }
+
+    std::wstring RecordPath() { return ExeDir() + L"\\FH2SimImmersion_record.ini"; }
+
+    // The Started stamp of a recording in progress (the plugin follows the file), empty when none.
+    std::wstring RecordingStarted() {
+        const std::wstring p = RecordPath();
+        if (GetPrivateProfileIntW(L"Record", L"Active", 0, p.c_str()) == 0) return L"";
+        wchar_t b[64];
+        GetPrivateProfileStringW(L"Record", L"Started", L"", b, 64, p.c_str());
+        return b;
+    }
+
+    // "Record drive": starts a recording, or stops it and calibrates from what the plugin recorded.
+    void ToggleRecord() {
+        const std::wstring p = RecordPath();
+        if (recStarted_.empty()) {
+            SYSTEMTIME st;
+            GetLocalTime(&st);
+            wchar_t when[32];
+            swprintf(when, 32, L"%04d-%02d-%02d %02d:%02d:%02d", (int)st.wYear, (int)st.wMonth, (int)st.wDay,
+                     (int)st.wHour, (int)st.wMinute, (int)st.wSecond);
+            if (!WritePrivateProfileStringW(L"Record", L"Started", when, p.c_str()) ||
+                !WritePrivateProfileStringW(L"Record", L"Active", L"1", p.c_str())) {
+                SetStatus(L"Record drive: could not write " + p + L".");
+                return;
+            }
+            recStarted_ = when;
+            SetWindowTextW(rec_, L"Stop recording and calibrate");
+            SetStatus(L"Recording: start the game (or keep it running) and drive a few minutes, then come back and press "
+                      L"\"Stop recording and calibrate\".");
+            return;
+        }
+        WritePrivateProfileStringW(L"Record", L"Active", L"0", p.c_str());
+        SetWindowTextW(rec_, L"Record drive");
+        const std::wstring started = recStarted_;
+        recStarted_.clear();
+        const std::wstring ffb = ExeDir() + L"\\FH2SimImmersion_ffb.ini";
+        wchar_t got[64], t[32];
+        GetPrivateProfileStringW(L"Recording", L"Started", L"", got, 64, ffb.c_str());
+        const int secs = GetPrivateProfileIntW(L"Recording", L"Seconds", 0, ffb.c_str());
+        GetPrivateProfileStringW(L"Recording", L"Torque99", L"0", t, 32, ffb.c_str());
+        const float t99 = (float)_wtof(t);
+        if (started != got || secs < 20 || !(t99 > 0.0f)) {
+            SetStatus(L"Recording stopped: nothing usable was recorded. Record again and drive at least 20 s with force feedback on "
+                      L"(the game must run with this mod while recording).");
+            return;
+        }
+        wchar_t what[160];
+        swprintf(what, 160, L"the strongest forces of your recorded drive (%.3f over %d %ls)", t99,
+                 secs < 120 ? secs : secs / 60, secs < 120 ? L"s" : L"min");
+        CalibrateTo(t99, what);
     }
 
     void StartPush() {

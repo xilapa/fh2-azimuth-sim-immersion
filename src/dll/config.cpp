@@ -379,6 +379,7 @@ Config loadConfig(const std::wstring& iniPath) {
         std::wstring cars = iniPath;
         size_t sep = cars.find_last_of(L"\\/");
         cars = (sep == std::wstring::npos ? std::wstring() : cars.substr(0, sep + 1)) + L"FH2SimImmersion_cars.ini";
+        c.wheel.ffbStatsPath = (sep == std::wstring::npos ? std::wstring() : cars.substr(0, sep + 1)) + L"FH2SimImmersion_ffb.ini";
         loadCarOverrides(cars, c.sim.carOverrides);
         LOG("config: %d per-car assist overrides", (int)c.sim.carOverrides.size());
         loadSteeringLocks(cars, c.sim.steeringLocks);

@@ -251,6 +251,11 @@ static void wheelTests(uint8_t* base, const uint8_t origFrame[5], FnWCS createSt
     ((FnU64Out)slotOf(reading, 33))(reading, &ts);
     CHECK(std::fabs(steer - 0.25f) < 1e-5f, "reading steering 0.25 (got %f)", steer);
     CHECK(std::fabs(thr - 0.5f) < 1e-5f, "reading throttle 0.5 (got %f)", thr);
+    for (int i = 0; i < 60 && a != 1; ++i) {   // test mode taps A every second: wait for a reading with it down
+        Sleep(25);
+        void* r2 = nullptr;
+        if (((FnPtrOut)slotOf(wheel, 12))(wheel, &r2) == S_OK && r2) ((FnByteOut)slotOf(r2, 6))(r2, &a);
+    }
     CHECK(a == 1, "reading A pressed");
     CHECK(ts != 0, "reading timestamp non-zero");
     ((Fn0)slotOf(reading, 2))(reading);
@@ -838,10 +843,12 @@ static void drawDistTests(uint8_t* base, HMODULE plugin) {
     CHECK(F(0x168) == 100.0f && F(0x404) == 250.0f && F(0x164) == 0.0f && F(0x40c) == 0.0f && F(0x410) == 0.0f,
           "grass and crowd untouched with their settings at 0");
     // D. the calls of the level selection go through a thunk that scales the squared distance by 1 / k^2 (k = 800 / 360)
-    for (uintptr_t rva : {0x11391d4, 0x1353e2e, 0x13545b3, 0x135464a}) {
+    for (uintptr_t rva : {0x1353e2e, 0x13545b3, 0x135464a}) {
         int32_t r; memcpy(&r, base + rva + 1, 4);
         CHECK(base[rva] == 0xE8 && base + rva + 5 + r != base + 0x1139200, "level selection call %llx re-pointed", (unsigned long long)rva);
     }
+    int32_t movedRel; memcpy(&movedRel, base + 0x11391d4 + 1, 4);
+    CHECK(base + 0x11391d4 + 5 + movedRel == base + 0x1139210, "the call Azimuth moved to its later entry is left alone");
     int32_t selRel; memcpy(&selRel, base + 0x1353e2e + 1, 4);
     typedef char (MSABI *FnSelect)(float, uint64_t*, int*, float, uint8_t, float, float, float, float);
     auto select = (FnSelect)(base + 0x1353e2e + 5 + selRel);
@@ -1023,6 +1030,28 @@ static void enableCheckTests(HMODULE plugin) {
     }
 }
 
+static void xinputTests(const std::wstring& logPath) {
+    printf("xinput:\n");
+    HMODULE x = LoadLibraryW(L"xinput1_4.dll");
+    typedef DWORD (WINAPI *FnGetState)(DWORD, void*);
+    FnGetState get = x ? (FnGetState)GetProcAddress(x, "XInputGetState") : nullptr;
+    CHECK(get != nullptr, "xinput1_4.dll XInputGetState found");
+    if (!get) return;
+    const uint8_t* p = (const uint8_t*)get;
+    CHECK(p[0] == 0x48 && p[1] == 0xB8 && p[10] == 0xFF && p[11] == 0xE0, "XInputGetState redirected to the plugin");
+    uint8_t state[16] = {};   // XINPUT_STATE
+    DWORD r = get(0, state);
+    for (int i = 0; i < 60 && r == 0 && !(state[5] & 0x10); ++i) { Sleep(25); r = get(0, state); }   // A is tapped every second
+    CHECK(r == 0, "user 0 reads as connected while the wheel is active (%lu)", r);
+    WORD buttons; memcpy(&buttons, state + 4, 2);
+    CHECK((buttons & 0x1000) && state[7] == 128, "test mode wheel: A and half throttle read as A and right trigger (buttons 0x%04x, RT %u)", buttons, state[7]);
+    // the log line
+    FILE* f = _wfopen(logPath.c_str(), L"rb");
+    std::string text;
+    if (f) { char b[4096]; size_t n; while ((n = fread(b, 1, sizeof(b), f)) > 0) text.append(b, n); fclose(f); }
+    CHECK(text.find("xinput: the wheel's buttons are reported to XInput readers") != std::string::npos, "log: xinput hook installed");
+}
+
 int wmain(int argc, wchar_t** argv) {
     if (HANDLE h = OpenFileMappingW(FILE_MAP_READ, FALSE, L"FT_SharedMem")) { printf("note: a head tracker is running (FT_SharedMem exists); the tracker checks will fail because it overrides the test pose\n"); CloseHandle(h); }
     if (argc < 3) { printf("usage: harness <game.exe> <FH2SimImmersion.dll> [--deep]\n"); return 2; }
@@ -1116,6 +1145,8 @@ int wmain(int argc, wchar_t** argv) {
     *(uint64_t*)(base + 0x2c5cc00) = (uint64_t)&otherModCarUpdate;   // ExtraOptions hooks this slot before the plugin loads
     // another mod (ExtraOptions) replaced the driver camera's GetFOV before the plugin loads
     *(uint64_t*)(base + 0x2e78120 + 14 * 8) = (uint64_t)&otherModFov;
+    // Azimuth's Scenery detail moves a call to a later entry that reads the caller's registers and stack
+    { const int32_t rel = 0x1139210 - (0x11391d4 + 5); memcpy(base + 0x11391d4 + 1, &rel, 4); }
     HMODULE plugin = LoadLibraryW(argv[2]);
     if (!plugin) { printf("LoadLibrary failed %lu\n", GetLastError()); return 2; }
     typedef BOOL (WINAPI *FnPluginInit)(const void*);
@@ -1205,6 +1236,7 @@ int wmain(int argc, wchar_t** argv) {
     assistTests(base, absOrig, stmOrig, tcOrig, clutchOrig);
     cameraTests(base);
     cockpitTests(base, plugin, carUpdateSlotOrig, logPath);
+    xinputTests(logPath);
     drawDistTests(base, plugin);
     enableCheckTests(plugin);
 
