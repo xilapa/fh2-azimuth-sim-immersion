@@ -1,6 +1,6 @@
 # FH2 Sim Immersion for Azimuth
 
-**Status: 0.9.6.** Head tracking was tested with Beam Eye Tracker. The wheel, assists, steering lock, in-game wheel and draw distance are experimental.
+**Status: 0.9.7.** Head tracking was tested with Beam Eye Tracker. The wheel, assists, steering lock, in-game wheel and draw distance are experimental.
 
 Realism and immersion features for Forza Horizon 2 running in Azimuth:
 
@@ -207,7 +207,7 @@ Higher values cost frame rate, most of all `WorldDistance`, `ShadowDistance` and
 A good run logs something like this (`layer` lines only appear in cockpit view):
 
 ```
-FH2 Sim Immersion 0.9.6 loaded into pid ... (...\azimuth.exe)
+FH2 Sim Immersion 0.9.7 loaded into pid ... (...\azimuth.exe)
 waiting for the Forza Horizon 2 image to be mapped...
 game image found at 0000...
 patch: 5 head-tracking inputs redirected (thunks at ...)
@@ -245,7 +245,7 @@ docs/           reverse-engineering notes
 ```
 
 * **Windows (Visual Studio 2022 or MSYS2 MinGW64):** `cmake -S . -B build -A x64`, then `cmake --build build --config Release`.
-* **`./build.sh`** on Linux, WSL or MSYS2 cross-builds. It needs `x86_64-w64-mingw32-g++` and `windres` (mingw-w64), a native `g++`, `python3` and `zip`. It packages `dist/FH2SimImmersion-0.9.6.zip`: one `FH2SimImmersion` folder with `dinput8.dll` and `mods\Sim Immersion\` (plugin, app, `mod.json`, README, `LICENSE.txt`).
+* **`./build.sh`** on Linux, WSL or MSYS2 cross-builds. It needs `x86_64-w64-mingw32-g++` and `windres` (mingw-w64), a native `g++`, `python3` and `zip`. It packages `dist/FH2SimImmersion-0.9.7.zip`: one `FH2SimImmersion` folder with `dinput8.dll` and `mods\Sim Immersion\` (plugin, app, `mod.json`, README, `LICENSE.txt`).
 
 The harness needs your own copy of the game executable; none is included. It maps the game into memory, loads the DLL, sends OpenTrack packets and runs the game's `CameraLayer::EvaluateInput`. Add `--deep` for the fallback memory scan. It runs on Windows or Wine:
 
