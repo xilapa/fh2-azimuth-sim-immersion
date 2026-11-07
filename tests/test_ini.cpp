@@ -3,12 +3,14 @@
 // Build natively: g++ -std=c++17 tests/test_ini.cpp -o build/test_ini
 #include "../src/common/default_ini.h"
 #include "../src/common/ini_parse.h"
+#include "../src/common/ini_migrate.h"
 #include "../src/app/settings_tables.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <map>
 #include <set>
+#include <string>
 
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL line %d: %s\n", __LINE__, #c); ++failures; } } while (0)
@@ -87,6 +89,37 @@ int main() {
         std::string id = e.section + "." + e.key;
         if (id == "Input.ConfigVersion") { CHECK(covered.count(id) == 0); continue; }
         if (covered[id] != 1) { std::printf("key %s is on %d tabs\n", id.c_str(), covered[id]); ++failures; }
+    }
+
+    // Migration: an old file is kept as .old.bak, changed values carry over, old defaults do not.
+    {
+        wchar_t tmp[MAX_PATH];
+        GetTempPathW(MAX_PATH, tmp);
+        const std::wstring ini = std::wstring(tmp) + L"fh2si_test_migrate.ini", bak = ini + L".old.bak";
+        DeleteFileW(ini.c_str());
+        DeleteFileW(bak.c_str());
+        if (FILE* f = _wfopen(ini.c_str(), L"w")) {
+            fputs("[Input]\nConfigVersion=6\n[Network]\nUdpPort=5555\n[Wheel]\nFFBTorqueGain=2.0\nFFBRumbleGain=1.2\n"
+                  "[Rotation]\nYawLeftIsPositive=1\n", f);
+            fclose(f);
+        }
+        int kept = -1;
+        bool created = false;
+        CHECK(fh2::EnsureCurrentIni(ini, &kept, &created));
+        CHECK(created);
+        CHECK(kept == 2);                                                                  // UdpPort, FFBRumbleGain
+        CHECK(GetFileAttributesW(bak.c_str()) != INVALID_FILE_ATTRIBUTES);
+        CHECK(GetPrivateProfileIntW(L"Input", L"ConfigVersion", 0, ini.c_str()) == fh2::kConfigVersion);
+        CHECK(GetPrivateProfileIntW(L"Network", L"UdpPort", 0, ini.c_str()) == 5555);       // changed: kept
+        wchar_t b[32];
+        GetPrivateProfileStringW(L"Wheel", L"FFBTorqueGain", L"", b, 32, ini.c_str());
+        CHECK(wcscmp(b, L"1.0") == 0);                                                     // old default 2.0: new default
+        GetPrivateProfileStringW(L"Wheel", L"FFBRumbleGain", L"", b, 32, ini.c_str());
+        CHECK(wcscmp(b, L"1.2") == 0);                                                     // changed: kept
+        CHECK(GetPrivateProfileIntW(L"Rotation", L"YawLeftIsPositive", 9, ini.c_str()) == 0);   // old backwards default dropped
+        CHECK(!fh2::EnsureCurrentIni(ini));                                                // current file: left alone
+        DeleteFileW(ini.c_str());
+        DeleteFileW(bak.c_str());
     }
 
     if (failures) { std::printf("%d failure(s)\n", failures); return 1; }

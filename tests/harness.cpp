@@ -397,7 +397,7 @@ static void ffbTests(uint8_t* base, HMODULE plugin) {
 }
 
 typedef void (*FnTestCockpit)(uint8_t*, float);
-typedef void (*FnTestCarAssist)(uint8_t*, int, int, int, int, bool);
+typedef void (*FnTestCarAssist)(uint8_t*, int, int, int, int, bool, bool);
 typedef void* (*FnTestRig)(uint8_t*);
 
 static void cockpitTests(uint8_t* base, HMODULE plugin, uint64_t slotOrig, const std::wstring& logPath) {
@@ -473,7 +473,7 @@ static void cockpitTests(uint8_t* base, HMODULE plugin, uint64_t slotOrig, const
         memset(buf, 0, sizeof(buf));
         buf[0x328] = autobrake; buf[0x329] = abs; buf[0x32a] = tc; buf[0x32b] = stm;
         memcpy(buf + 0x330, &shift, 4);
-        for (int i = 0; i < times; ++i) assist(buf, absMode, tcMode, stmMode, clutchMode, forceAuto);
+        for (int i = 0; i < times; ++i) assist(buf, absMode, tcMode, stmMode, clutchMode, forceAuto, i == 0);
     };
     auto shiftOf = [&]() { int32_t v; memcpy(&v, buf + 0x330, 4); return v; };
     run(0, 1, 1, 1, 0, Off, Game, Game, Game, false);
@@ -505,7 +505,7 @@ static void cockpitTests(uint8_t* base, HMODULE plugin, uint64_t slotOrig, const
     auto stateRun = [&](int32_t absV, int32_t tcV, int32_t stmV, int32_t shiftV, int absMode, int tcMode, int stmMode, int clutchMode, bool forceAuto) {
         memset(buf, 0, sizeof(buf));
         setI32(buf, 0x4abc, absV); setI32(buf, 0x4ac0, tcV); setI32(buf, 0x4ac4, stmV); setI32(buf, 0x4ab0, shiftV);
-        assist(buf, absMode, tcMode, stmMode, clutchMode, forceAuto);
+        assist(buf, absMode, tcMode, stmMode, clutchMode, forceAuto, true);
     };
     stateRun(1, 1, 1, 0, Off, Off, Off, Game, false);
     CHECK(i32At(buf, 0x4abc) == 0 && i32At(buf, 0x4ac0) == 0 && i32At(buf, 0x4ac4) == 0, "state fields, modes off: ABS %d TC %d STM %d (0)", i32At(buf, 0x4abc), i32At(buf, 0x4ac0), i32At(buf, 0x4ac4));
@@ -530,7 +530,7 @@ static void cockpitTests(uint8_t* base, HMODULE plugin, uint64_t slotOrig, const
         uint8_t* dyn = obj + 0x3a0;
         memcpy(buf + 0x4c08, &dyn, 8);
         setI32(obj, 0x1364, 7); setI32(obj, 0x1360, 7); setI32(obj, 0x135c, 7);
-        assist(buf, absMode, tcMode, stmMode, Game, false);
+        assist(buf, absMode, tcMode, stmMode, Game, false, true);
     };
     dynRun((uint64_t)(base + 0x2eb4bb8), On, Off, On);
     CHECK(i32At(obj, 0x1364) == 1 && i32At(obj, 0x1360) == 0 && i32At(obj, 0x135c) == 1, "physics fields, ABS on TC off STM on: %d %d %d (1 0 1)", i32At(obj, 0x1364), i32At(obj, 0x1360), i32At(obj, 0x135c));
@@ -540,6 +540,23 @@ static void cockpitTests(uint8_t* base, HMODULE plugin, uint64_t slotOrig, const
     CHECK(i32At(obj, 0x1364) == 7 && i32At(obj, 0x1360) == 7 && i32At(obj, 0x135c) == 7, "physics fields, modes game stay: %d %d %d (7)", i32At(obj, 0x1364), i32At(obj, 0x1360), i32At(obj, 0x135c));
     dynRun(0x1234, On, On, On);
     CHECK(i32At(obj, 0x1364) == 7 && i32At(obj, 0x1360) == 7 && i32At(obj, 0x135c) == 7, "physics fields, unknown dynamics vtable stay: %d %d %d (7)", i32At(obj, 0x1364), i32At(obj, 0x1360), i32At(obj, 0x135c));
+
+    // The next car on the game's settings gets the game's values back from the same car object.
+    memset(buf, 0, sizeof(buf));
+    buf[0x328] = 1; buf[0x329] = 1; buf[0x32a] = 1; buf[0x32b] = 1;   // assisted braking, TC and STM on
+    setI32(buf, 0x330, 1);                                             // manual
+    setI32(buf, 0x4abc, 1); setI32(buf, 0x4ac0, 1); setI32(buf, 0x4ac4, 1); setI32(buf, 0x4ab0, 1);
+    assist(buf, Off, Off, Off, On, false, true);
+    CHECK(buf[0x329] == 0 && buf[0x32a] == 0 && buf[0x32b] == 0 && shiftOf() == 2 && i32At(buf, 0x4abc) == 0,
+          "forced car: ABS %u TC %u STM %u shifting %d state ABS %d", buf[0x329], buf[0x32a], buf[0x32b], shiftOf(), i32At(buf, 0x4abc));
+    assist(buf, Game, Game, Game, Game, false, false);
+    CHECK(buf[0x328] == 1 && buf[0x329] == 1 && buf[0x32a] == 1 && buf[0x32b] == 1 && shiftOf() == 1 && i32At(buf, 0x4abc) == 1 &&
+              i32At(buf, 0x4ac0) == 1 && i32At(buf, 0x4ac4) == 1 && i32At(buf, 0x4ab0) == 1,
+          "game's values back after a forced car: autobrake %u ABS %u TC %u STM %u shifting %d state %d %d %d %d", buf[0x328], buf[0x329],
+          buf[0x32a], buf[0x32b], shiftOf(), i32At(buf, 0x4abc), i32At(buf, 0x4ac0), i32At(buf, 0x4ac4), i32At(buf, 0x4ab0));
+    buf[0x32a] = 0;                                                    // the game copies a new choice: TC off
+    assist(buf, Game, Game, Game, Game, false, false);
+    CHECK(buf[0x32a] == 0, "a new game value is followed: TC %u (0)", buf[0x32a]);
 
     // player car detection (state persists between steps; freshness is 1000 ms)
     typedef uint8_t* (*FnDetect)(uint8_t*, bool);
@@ -1037,7 +1054,11 @@ static void xinputTests(const std::wstring& logPath) {
     CHECK(get != nullptr, "xinput1_4.dll XInputGetState found");
     if (!get) return;
     const uint8_t* p = (const uint8_t*)get;
-    CHECK(p[0] == 0x48 && p[1] == 0xB8 && p[10] == 0xFF && p[11] == 0xE0, "XInputGetState redirected to the plugin");
+    int32_t rel = 0;
+    memcpy(&rel, p + 1, 4);
+    const uint8_t* stub = p + 5 + rel;
+    CHECK(p[0] == 0xE9 && p[5] == 0x56 && p[6] == 0x57 && p[7] == 0x41, "XInputGetState starts with a 5-byte jump, the rest untouched");
+    CHECK(p[0] == 0xE9 && stub[0] == 0x48 && stub[1] == 0xB8 && stub[10] == 0xFF && stub[11] == 0xE0, "XInputGetState redirected to the plugin");
     uint8_t state[16] = {};   // XINPUT_STATE
     DWORD r = get(0, state);
     for (int i = 0; i < 60 && r == 0 && !(state[5] & 0x10); ++i) { Sleep(25); r = get(0, state); }   // A is tapped every second

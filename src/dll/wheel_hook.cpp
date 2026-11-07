@@ -452,9 +452,10 @@ DWORD WINAPI hookXInputGetState(DWORD user, XINPUT_STATE* s) {
     return ERROR_SUCCESS;
 }
 
-// Points XInputGetState at the hook. The hook reads through XInputGetStateEx, a separate function, so no original code
-// has to be copied. shortcut: the 12-byte write is not atomic; a thread inside the first bytes of XInputGetState at that
-// moment would crash. It happens once, right after the mod loads; make it a hot-patch if that ever shows up.
+// Points XInputGetState at the hook: a 5-byte jmp to a stub near xinput1_4.dll replaces exactly its first instruction
+// (mov [rsp+8], rbx), written with one aligned 8-byte atomic store, so a thread calling it meanwhile runs the old code
+// or the hook, never half of each. The hook reads through XInputGetStateEx, a separate function, so no original code
+// has to be copied.
 void installXInputButtons() {
     HMODULE x = LoadLibraryW(L"xinput1_4.dll");      // kept loaded: the hook lives as long as the process
     if (!x) { LOG("xinput: xinput1_4.dll not found; the wheel's buttons are not reported to XInput readers"); return; }
@@ -466,14 +467,30 @@ void installXInputButtons() {
         return;
     }
     g_xinputGetStateEx = ex;
-    uint8_t stub[12] = {0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xE0};   // mov rax, hook ; jmp rax
+    if (reinterpret_cast<uintptr_t>(fn) & 7) {
+        LOG("xinput: XInputGetState is not 8-byte aligned; the wheel's buttons are not reported to XInput readers");
+        return;
+    }
+    auto* stub = static_cast<uint8_t*>(allocNear(reinterpret_cast<uintptr_t>(fn), 64));
+    if (!stub) { LOG("xinput: no memory near xinput1_4.dll; the wheel's buttons are not reported to XInput readers"); return; }
+    const intptr_t rel = reinterpret_cast<intptr_t>(stub) - reinterpret_cast<intptr_t>(fn + 5);
+    if (rel > INT32_MAX || rel < INT32_MIN) { LOG("xinput: stub out of jump range; the wheel's buttons are not reported to XInput readers"); return; }
+    stub[0] = 0x48; stub[1] = 0xB8;                    // mov rax, hook
     const uint64_t to = reinterpret_cast<uint64_t>(&hookXInputGetState);
     std::memcpy(stub + 2, &to, sizeof(to));
+    stub[10] = 0xFF; stub[11] = 0xE0;                  // jmp rax
+    FlushInstructionCache(GetCurrentProcess(), stub, 12);
+    LONG64 code;
+    std::memcpy(&code, fn, sizeof(code));
+    auto* c = reinterpret_cast<uint8_t*>(&code);
+    const int32_t rel32 = static_cast<int32_t>(rel);
+    c[0] = 0xE9;                                       // jmp stub; bytes 5..7 stay the original code
+    std::memcpy(c + 1, &rel32, sizeof(rel32));
     DWORD prot;
-    if (!VirtualProtect(fn, sizeof(stub), PAGE_EXECUTE_READWRITE, &prot)) { LOG("xinput: VirtualProtect failed %lu", GetLastError()); return; }
-    std::memcpy(fn, stub, sizeof(stub));
-    VirtualProtect(fn, sizeof(stub), prot, &prot);
-    FlushInstructionCache(GetCurrentProcess(), fn, sizeof(stub));
+    if (!VirtualProtect(fn, 8, PAGE_EXECUTE_READWRITE, &prot)) { LOG("xinput: VirtualProtect failed %lu", GetLastError()); return; }
+    InterlockedExchange64(reinterpret_cast<volatile LONG64*>(fn), code);
+    VirtualProtect(fn, 8, prot, &prot);
+    FlushInstructionCache(GetCurrentProcess(), fn, 8);
     LOG("xinput: the wheel's buttons are reported to XInput readers as user 0 (Spotify Radio's skip combo)");
 }
 

@@ -181,18 +181,44 @@ int32_t forcedState(int which) {
     return mode == static_cast<int>(AssistMode::On) ? 1 : mode == static_cast<int>(AssistMode::Off) ? 0 : -1;
 }
 
+// The game's own value of each field we overwrite, so a car on the game's setting gets it back after a car we forced.
+// A field still holding what we wrote keeps the game's value from before; any other value is the game's new one.
+// shortcut: if the game itself copies the very value we forced into the car bytes, the older value stays remembered
+// until the car object changes; read the choices object instead if players report it.
+struct Kept { int32_t game = 0, wrote = 0; bool have = false; };
+enum { kKeptAutobrake, kKeptAbs, kKeptTc, kKeptStm, kKeptShift, kKeptState, kKeptStateShift = kKeptState + 3, kKeptObj,
+       kKeptCount = kKeptObj + 3 };
+Kept     g_kept[kKeptCount];   // game thread
+uint8_t* g_keptCar = nullptr;
+uint8_t* g_keptObj = nullptr;
+
+void forget(int from, int to) { for (int i = from; i < to; ++i) g_kept[i] = Kept(); }
+
+template <class T> int32_t gameValue(int i, const uint8_t* p) {
+    T cur;
+    std::memcpy(&cur, p, sizeof(T));
+    Kept& k = g_kept[i];
+    if (!k.have || static_cast<int32_t>(cur) != k.wrote) { k.game = static_cast<int32_t>(cur); k.have = true; }
+    return k.game;
+}
+
+template <class T> void writeKept(int i, uint8_t* p, int32_t v) {
+    const T t = static_cast<T>(v);
+    std::memcpy(p, &t, sizeof(T));
+    g_kept[i].wrote = v;
+}
+
+// Shifting mode out of the game's value: 0..2 mapped, anything else kept.
+int32_t mapShift(int32_t shift) { return shift >= 0 && shift <= 2 ? mapClutch(static_cast<uint8_t>(shift)) : shift; }
+
 // The assist state the pause menu writes straight from its choices (the getters are bypassed).
 void applyStateFields(uint8_t* car) {
     for (int i = 0; i < 3; ++i) {
+        const int32_t game = gameValue<int32_t>(kKeptState + i, car + kStateOffs[i]);
         const int32_t v = forcedState(i);
-        if (v >= 0) std::memcpy(car + kStateOffs[i], &v, sizeof(v));
+        writeKept<int32_t>(kKeptState + i, car + kStateOffs[i], v >= 0 ? v : game);
     }
-    int32_t shift;
-    std::memcpy(&shift, car + kStateShiftOff, sizeof(shift));
-    if (shift >= 0 && shift <= 2) {
-        const int32_t out = mapClutch(static_cast<uint8_t>(shift));
-        if (out != shift) std::memcpy(car + kStateShiftOff, &out, sizeof(out));
-    }
+    writeKept<int32_t>(kKeptStateShift, car + kStateShiftOff, mapShift(gameValue<int32_t>(kKeptStateShift, car + kStateShiftOff)));
 }
 
 // The car dynamics object whose int32 fields the physics reads, or null when the car has none or it is unknown.
@@ -212,24 +238,25 @@ uint8_t* dynObject(uint8_t* car) {
 
 // The game copied the choices to the car before we knew which car it was; map them again with the same rules.
 void applyCarBytes(uint8_t* car) {
-    const uint8_t absChoice = car[kCarAbsOff] ? (car[kCarAutobrakeOff] ? 0 : 1) : 2;
-    const uint8_t absOut = mapAbs(absChoice);
-    car[kCarAutobrakeOff] = absOut == 0;
-    car[kCarAbsOff] = absOut < 2;
-    car[kCarTcOff] = mapTcLike(car[kCarTcOff] ? 0 : 1, g_tcMode, g_loggedTc, "TC") != 1;
-    car[kCarStmOff] = mapTcLike(car[kCarStmOff] ? 0 : 1, g_stmMode, g_loggedStm, "stability control") != 1;
-    int32_t shift;
-    std::memcpy(&shift, car + kCarShiftOff, sizeof(shift));
-    if (shift >= 0 && shift <= 2) {
-        const int32_t out = mapClutch(static_cast<uint8_t>(shift));
-        if (out != shift) std::memcpy(car + kCarShiftOff, &out, sizeof(out));
-    }
+    if (car != g_keptCar) { forget(0, kKeptCount); g_keptCar = car; g_keptObj = nullptr; }
+    const int32_t autobrake = gameValue<uint8_t>(kKeptAutobrake, car + kCarAutobrakeOff);
+    const int32_t abs = gameValue<uint8_t>(kKeptAbs, car + kCarAbsOff);
+    const uint8_t absOut = mapAbs(abs ? (autobrake ? 0 : 1) : 2);
+    writeKept<uint8_t>(kKeptAutobrake, car + kCarAutobrakeOff, absOut == 0);
+    writeKept<uint8_t>(kKeptAbs, car + kCarAbsOff, absOut < 2);
+    const int32_t tc = gameValue<uint8_t>(kKeptTc, car + kCarTcOff);
+    writeKept<uint8_t>(kKeptTc, car + kCarTcOff, mapTcLike(tc ? 0 : 1, g_tcMode, g_loggedTc, "TC") != 1);
+    const int32_t stm = gameValue<uint8_t>(kKeptStm, car + kCarStmOff);
+    writeKept<uint8_t>(kKeptStm, car + kCarStmOff, mapTcLike(stm ? 0 : 1, g_stmMode, g_loggedStm, "stability control") != 1);
+    writeKept<int32_t>(kKeptShift, car + kCarShiftOff, mapShift(gameValue<int32_t>(kKeptShift, car + kCarShiftOff)));
     applyStateFields(car);
     uint8_t* obj = dynObject(car);
     if (!obj) return;
+    if (obj != g_keptObj) { forget(kKeptObj, kKeptCount); g_keptObj = obj; }
     for (int i = 0; i < 3; ++i) {
+        const int32_t game = gameValue<int32_t>(kKeptObj + i, obj + kObjOffs[i]);
         const int32_t v = forcedState(i);
-        if (v >= 0) std::memcpy(obj + kObjOffs[i], &v, sizeof(v));
+        writeKept<int32_t>(kKeptObj + i, obj + kObjOffs[i], v >= 0 ? v : game);
     }
 }
 
@@ -297,7 +324,10 @@ bool patchVtable(uintptr_t vtableRva, const uintptr_t expected[4], void* const f
 // The pause menu changes the assists, then calls this; the physics gearbox setup is only read inside it.
 uint64_t dynApplyHook(void* self, uint8_t* state, uint64_t a3, uint64_t a4) {
     uint8_t* car = g_playerCarPtr.load(std::memory_order_relaxed);
-    if (car && state == car + kCarStateOff) applyStateFields(car);
+    if (car && state == car + kCarStateOff) {
+        forget(kKeptState, kKeptObj);   // the pause menu just wrote the state from the game's choices
+        applyStateFields(car);
+    }
     return reinterpret_cast<uint64_t (*)(void*, uint8_t*, uint64_t, uint64_t)>(g_base + kDynApplyRva)(self, state, a3, a4);
 }
 
@@ -332,7 +362,6 @@ void AssistHook_SetPlayerCar(uint32_t ordinal) {
         car ? word(car->clutch) : "unknown", car ? gearboxWord(car->gearbox) : "unknown");
 }
 
-// shortcut: a car swap keeps a forced value when the next car uses the game's setting, until the game copies the choices again; fix by remembering the game's values if players report it.
 void AssistHook_ApplyToCar(uint8_t* car) {
     if (!g_installed.load(std::memory_order_acquire)) return;
     g_playerCarPtr.store(car, std::memory_order_relaxed);
@@ -377,7 +406,10 @@ void AssistHook_Install(uintptr_t base, const Config& cfg) {
 } // namespace fh2
 
 // Test hook for the integration harness: applies the given modes to a fake car buffer, then restores the defaults.
-extern "C" __declspec(dllexport) void FH2SI_TestCarAssistBytes(uint8_t* car, int absMode, int tcMode, int stmMode, int clutchMode, bool forceAuto) {
+// fresh: start as for a new car; false keeps the remembered game values, as the next frame of the same car does.
+extern "C" __declspec(dllexport) void FH2SI_TestCarAssistBytes(uint8_t* car, int absMode, int tcMode, int stmMode, int clutchMode, bool forceAuto,
+                                                               bool fresh) {
+    if (fresh) fh2::g_keptCar = nullptr;
     fh2::g_absMode = absMode; fh2::g_tcMode = tcMode; fh2::g_stmMode = stmMode; fh2::g_clutchMode = clutchMode;
     fh2::g_forceAuto = forceAuto;
     fh2::applyCarBytes(car);
