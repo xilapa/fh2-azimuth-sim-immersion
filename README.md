@@ -1,189 +1,75 @@
 # FH2 Sim Immersion for Azimuth
 
-**Status: 0.9.6.** Head tracking tested with Beam Eye Tracker (FreeTrack input).
-Steering wheel support, draw distance, per-car realism assists, steering lock, and in-game cockpit wheel are experimental features.
+**Status: 0.9.6.** Head tracking was tested with Beam Eye Tracker. The wheel, assists, steering lock, in-game wheel and draw distance are experimental.
 
-Realism and immersion add-ons for Forza Horizon 2 running in Azimuth:
+Realism and immersion features for Forza Horizon 2 running in Azimuth:
 
-* **Webcam head tracking**: see [Head tracking](#head-tracking) below.
-* **Steering wheel support (experimental)**: Logitech G29 and other DirectInput wheels with force feedback, with separate USB pedals, shifter and handbrake if you have them. See [Steering wheel (experimental)](#steering-wheel-experimental).
-* **Per-car realism assists (experimental)**: ABS, traction control, stability control, and clutch based on the real car's equipment. See [Realistic assists](#realistic-assists-experimental).
-* **Steering lock and in-game wheel (experimental)**: real car's steering lock, max wheel rotation capping or scaling, soft lock force feedback, and an in-game wheel that follows the real one. See [Steering lock and the in-game wheel](#steering-lock-and-the-in-game-wheel).
-* **Draw distance**: raise how far the game draws scenery, traffic, shadows and props. See [Draw distance](#draw-distance).
+* [Head tracking](#head-tracking): webcam head tracking in the cockpit camera.
+* [Steering wheel](#steering-wheel-experimental) (experimental): DirectInput wheels with force feedback, pedals, shifter and handbrake.
+* [Realistic assists](#realistic-assists-experimental) (experimental): ABS, traction control, stability control and clutch per real car.
+* [Steering lock and in-game wheel](#steering-lock-and-the-in-game-wheel) (experimental): real lock-to-lock rotation and a cockpit wheel that turns like the real one.
+* [Draw distance](#draw-distance): scenery, traffic, shadows and props drawn further.
 
-**Unofficial.** Not affiliated with Azimuth / Almost There Games, Microsoft or Playground Games. The Azimuth developer does not support modified setups: **before reporting any Azimuth bug, remove `dinput8.dll`, the `mods\Sim Immersion` folder and ExtraOptions (its `winmm.dll` and `mods` folder), and reproduce it.**
+**Unofficial.** Not affiliated with Azimuth / Almost There Games, Microsoft or Playground Games. **Before reporting any Azimuth bug, remove `dinput8.dll`, the `mods\Sim Immersion` folder and ExtraOptions (its `winmm.dll` and `mods` folder), and reproduce it.**
 
-**Supported:** Forza Horizon 2 **1.0.0.64** (with or without Storm Island) on Azimuth 1.0.4 with ExtraOptions 0.4.4 or newer.
-On any other game build the plugin detects the difference, changes nothing, and logs why.
+**Supported:** Forza Horizon 2 **1.0.0.64** (with or without Storm Island) on Azimuth 1.0.4 with ExtraOptions 0.4.4 or newer. On any other build the plugin changes nothing and logs why.
 
 ## How it works
 
-ExtraOptions (its `winmm.dll` next to `azimuth.exe`) loads the mods in `mods`, and one of them is `mods\Sim Immersion\plugins\FH2SimImmersion.dll`, the plugin. `dinput8.dll` next to `azimuth.exe` only keeps Azimuth from opening the wheel (see [Install](#install)). `FH2SimImmersion.exe` is the settings window and does not touch the game. The plugin waits until the game image is mapped, checks that it is the known build (by hash and by an opcode skeleton), and only then patches it in memory. No Azimuth or game file is edited, and this repository contains no game code or data.
+ExtraOptions (its `winmm.dll` next to `azimuth.exe`) loads `mods\Sim Immersion\plugins\FH2SimImmersion.dll`. The `dinput8.dll` next to `azimuth.exe` only keeps Azimuth off the wheel. `FH2SimImmersion.exe` is the settings window. The plugin checks the build (by hash and an opcode skeleton) and patches memory only. No game or Azimuth file is edited, and this repository has no game code or data.
 
-* **Head tracking.** The game evaluates a head-tracking input for each camera layer every frame (`HeadTrackingX/Y/Z/Yaw/Pitch` in CameraPhysics.xml). In this build the Kinect side of those inputs is almost empty: X, Y and Z come from a function that always returns zero, pitch is always zero, and yaw is only body lean, capped at about 12 degrees. The plugin redirects those five input reads and, for the cockpit layers, supplies your head pose from FreeTrack shared memory (Beam Eye Tracker, OpenTrack) or OpenTrack UDP. Rotation goes through the cockpit `HeadTrackingYaw -> CameraSpaceYPROffset` layer and position through the cockpit `HeadTrackingX -> CarSpaceXYZOffset` layer. The game applies them with its own layer maths and spring smoothing; the layer ranges are widened in memory (Camera.zip is not modified).
-* **Steering wheel.** The game supports the Logitech G920 on Xbox, but Azimuth 0.9 only passes gamepads to it and Azimuth 1.0 has its own wheel support. The plugin adds a virtual Xbox wheel to the game's controller list and feeds it from your DirectInput wheel. The game then uses its own wheel controls and steering. The game's force feedback programs (steering torque, centring spring, damping, rumble) are emulated and played on the real wheel as one DirectInput force.
-* **Assists.** The plugin replaces the getters the game uses to read the ABS, traction control, stability control and shifting-mode choices for the car you drive. Each car gets what its real counterpart had, from `data/car_assists.csv`, or a per-car override. Your menu choices stay untouched for everything the plugin does not decide.
-* **Steering lock.** The game steers every car through one fixed rotation. With the real lock-to-lock rotation of each car (`data/car_assists.csv`), the plugin changes how many degrees of your wheel make full in-game steering, caps or scales it to what your wheel can turn, builds a soft end stop with force feedback, and can make the in-game steering wheel (and the cockpit model) turn as far as the real one.
+* Head tracking feeds the game's own Kinect head-tracking camera layers.
+* The wheel is a virtual Xbox wheel. The game drives it with its own steering and force feedback.
 
 ## Install
 
 ### Requirements
 
-* **Azimuth 1.0.4.**
-* **[ExtraOptions](https://github.com/RokkuDayo/ForzaHorizon2_ExtraOptions) 0.4.4 or newer** (the Azimuth build). This mod is loaded by ExtraOptions and only works with it.
-* Optional: [FH2 Streaming Radio](https://github.com/RussFactorShow/FH2-Streaming-Radio), see [Other mods](#other-mods).
+* Azimuth 1.0.4.
+* [ExtraOptions](https://github.com/RokkuDayo/ForzaHorizon2_ExtraOptions) 0.4.4 or newer (the Azimuth build).
+* Optional: [FH2 Streaming Radio](https://github.com/RussFactorShow/FH2-Streaming-Radio).
 
 ### Steps
 
-1. **Install ExtraOptions** by following its own readme: extract the files and the `mods` folder from the `Azimuth` folder of its zip into the folder of `azimuth.exe`.
-2. **Copy the mod** from this mod's zip (its `FH2SimImmersion` folder):
-   * `dinput8.dll` into the folder of `azimuth.exe`, replacing any older copy;
-   * the `mods\Sim Immersion` folder into the `mods` folder.
-3. **Start Azimuth once**, then check that the mod loaded. ExtraOptions adds the mod to `mods\loadorder.txt` by itself. Either open `FH2_ExtraOptions.log` and look for the `PLUGINS: ...FH2SimImmersion.dll | initialized` line, or open `mods\Sim Immersion\FH2SimImmersion.exe` and look at the **Setup** section on its Logging tab.
-4. **Settings** (optional): run `mods\Sim Immersion\FH2SimImmersion.exe`. See [Settings window](#settings-window).
+1. Install ExtraOptions by its own readme: copy the files and the `mods` folder from the `Azimuth` folder of its zip into the folder of `azimuth.exe`.
+2. From this mod's zip (its `FH2SimImmersion` folder), copy `dinput8.dll` into the folder of `azimuth.exe` (replacing any older copy), and the `mods\Sim Immersion` folder into `mods`.
+3. Start Azimuth once. Check `FH2_ExtraOptions.log` for `FH2SimImmersion.dll | initialized`, or the **Setup** section on the Logging tab of `FH2SimImmersion.exe`.
 
 ### Before you play
 
-1. **Set up a head tracker** (optional, but head tracking will not work without one). Either of these works; when both are running, FreeTrack is used:
-   * **Beam Eye Tracker:** Game Connection -> **Head Tracking Device Emulation**, with Driver set to `Compatibility`. Beam then publishes the FreeTrack/TrackIR shared memory, and the plugin reads it directly.
-   * **[OpenTrack](https://github.com/opentrack/opentrack/releases)** with a webcam:
-     * **Input:** `neuralnet tracker`.
-     * **Output:** `freetrack 2.0 Enhanced`, or `UDP over network` (`127.0.0.1`, port `4242`).
-     * **Filter:** `Accela`.
-     * Bind a key to **Center**.
-
-2. **Plug in the wheel** (if using one) before starting the game. Set the rotation in your wheel's software, such as Logitech G HUB (900 degrees recommended), and disable any game profile there that remaps the wheel.
-
-3. **Start Azimuth** as usual, then **drive in the cockpit camera** to use head tracking. (Steering wheel works in any camera.)
+* **Beam Eye Tracker:** Game Connection -> **Head Tracking Device Emulation**, Driver `Compatibility`.
+* **[OpenTrack](https://github.com/opentrack/opentrack/releases)** with a webcam: Input `neuralnet tracker`; Output `freetrack 2.0 Enhanced` or `UDP over network` (`127.0.0.1`, port `4242`); Filter `Accela`; bind a key to **Center**. If both trackers run, FreeTrack is used.
+* **Wheel:** plug it in before the game. Set its rotation in your wheel software (900 degrees recommended, e.g. Logitech G HUB) and disable any game profile that remaps it.
+* Head tracking works in the **cockpit camera** only.
 
 ### Why dinput8.dll is still needed
 
-ExtraOptions loads its mods from `winmm.dll`, but Azimuth opens DirectInput (the wheel) before ExtraOptions loads any mod, so `dinput8.dll` has to stay next to `azimuth.exe`. While the Wheel tab's check is on, it keeps Azimuth from opening the wheel, because Azimuth 1.0 holds the wheel exclusively otherwise and the mod's force feedback would not work. It does nothing unless ExtraOptions and this mod are installed.
+ExtraOptions loads from `winmm.dll`, but Azimuth opens DirectInput before any mod loads, so `dinput8.dll` must stay next to `azimuth.exe`. While the Wheel check is on, it stops Azimuth from taking the wheel exclusively, which would block force feedback.
 
 ### Upgrading from 0.9.x
 
-* Delete the old `FH2SimImmersion.dll` and `FH2SimImmersion.exe` from the folder of `azimuth.exe`. Keep `dinput8.dll` there and replace it with the new one.
-* Move `FH2SimImmersion.ini` and `FH2SimImmersion_cars.ini` from the folder of `azimuth.exe` into `mods\Sim Immersion` (do step 2 of the steps above first, so that the folder exists).
+* Delete the old `FH2SimImmersion.dll` and `FH2SimImmersion.exe` from the folder of `azimuth.exe`, and replace `dinput8.dll`.
+* Move `FH2SimImmersion.ini` and `FH2SimImmersion_cars.ini` into `mods\Sim Immersion` (do step 2 first).
 
 ### Other mods
 
-[FH2 Streaming Radio, ExtraOptions Edition](https://github.com/RussFactorShow/FH2-Streaming-Radio) works with this mod. Put its folder in `mods` as well. Its skip-song combo (LB+X by default) works from the wheel too: the wheel's buttons are also reported to mods that read an Xbox controller (XInput), so press the left paddle (LB) and X together.
+Put [FH2 Streaming Radio](https://github.com/RussFactorShow/FH2-Streaming-Radio) in `mods`. Its skip-song combo (LB+X) also works from the wheel: press the left paddle and X together.
 
 ### Uninstall
 
-Delete `dinput8.dll` from the folder of `azimuth.exe`, and delete the `mods\Sim Immersion` folder (with its settings and log files). ExtraOptions drops it from `mods\loadorder.txt` on its next start. Nothing else was changed by this mod.
+Delete `dinput8.dll` from the folder of `azimuth.exe` and the `mods\Sim Immersion` folder. ExtraOptions drops the mod from `loadorder.txt` on its next start.
 
 ## Settings window
 
-`FH2SimImmersion.exe` is the settings window. Change values, then press **Apply**. They are saved in `FH2SimImmersion.ini` next to it and take effect the next time the game starts (the plugin reads the file when it loads). **Revert** reloads the saved values of the current tab, and **Defaults (this tab)** puts the default values in the current tab's controls (press Apply to keep them). Hover a setting for its explanation.
+**Apply** saves to `FH2SimImmersion.ini` next to the window; the game reads it at start. **Revert** reloads the saved values of the current tab. **Defaults (this tab)** fills in the defaults. Hover a setting for help.
 
-![Settings window - TODO: add screenshot](docs/screenshots/settings-window.png)
-* **Head tracking:** tracker input and network, smoothing, every rotation and position gain, invert and limit, the hotkeys and the recenter buttons. The picture shows a head from above, the side and the front with the axis you are editing highlighted. **Live preview** reads your tracker the way the game does (FreeTrack, or UDP while the game is closed) and draws the head pose after this tab's gains, inverts and limits; **Center** takes the current pose as the centre.
-* **Wheel (experimental):** a **Test wheel** box (input test, press to assign, a force test with its own force), then the wheel mapping (devices, axes, buttons, H-shifter, handbrake), the force feedback of the game's own forces, the extra effects of this mod, and Advanced. The picture shows the wheel, pedals, handbrake and shifter with each part's setting; pressed buttons and the selected gear light up, and clicking a part selects its setting.
-* **Simulation:** realistic assists, the steering wheel group (real steering lock, maximum wheel rotation, in-game wheel, hiding the driver) and a list of all known cars with what the real car had (ABS, TC, STM, clutch, gearbox, lock). Select a car and choose how its ABS / traction control is forced (auto, on or off), including whether it has a clutch or always shifts automatically, and optionally a steering lock override.
-* **Draw distance:** a slider per distance with a picture of the distances to scale.
-* **Logging:** a check that turns `FH2SimImmersion.log` on or off, a check for detailed logs, and a status box with what the window did and the last lines of the log. The **Setup** section says what is missing (ExtraOptions, `dinput8.dll` or the plugin), or "Setup complete".
+* **Head tracking:** source, smoothing, gains, invert, limits, hotkeys and recenter buttons, with a live preview.
+* **Wheel (experimental):** Test wheel box, wheel mapping, force feedback and Advanced.
+* **Simulation:** realistic assists, the Steering wheel group, and a car list with what each real car had.
+* **Draw distance:** a slider per distance, starting at the game's value.
+* **Logging:** the log switch, detailed logs, and a Setup section that says what is missing (ExtraOptions, `dinput8.dll` or the plugin).
 
-The INI file still works when edited by hand, and everything the window does is also described below.
-
-## Head tracking
-
-The plugin reads your head pose from one of two sources (`Source=auto` picks FreeTrack when its shared memory exists, otherwise UDP):
-
-* **FreeTrack 2.0 shared memory**, written by Beam Eye Tracker (Head Tracking Device Emulation) or by OpenTrack's `freetrack 2.0 Enhanced` output.
-* **OpenTrack UDP** on `127.0.0.1`, port `4242` (`UdpPort`).
-
-The pose has yaw, pitch and roll (rotation) plus lean left/right (X), up/down (Y) and forward/back (Z). The plugin centres and smooths it on its own thread and hands it to the game's own head-tracking camera layers, the ones built for Kinect. Rotation is applied through the cockpit `CameraSpaceYPROffset` layer and position through the `CarSpaceXYZOffset` layer, so you get the game's own camera physics. Head tracking acts in the **cockpit camera**.
-
-Set up your tracker as described under [Install](#install), look straight ahead and recenter (see [Controls](#controls)). Then adjust, if needed (see [Tuning](#tuning)):
-
-* **Direction:** the `...Invert` keys per axis, and `RotOrder` / `PosOrder` to swap axes.
-* **Strength:** the curves in your tracker, or `YawGain`, `PitchGain` and so on.
-* **Range:** `Limit` per axis; the defaults keep the view inside the cabin.
-* **Left/right balance:** `YawLeftGain` / `YawRightGain`.
-* **Smoothing:** `Smoothing` (for example `0.2` against jitter).
-
-## Controls
-
-| Action | Default |
-|---|---|
-| Recenter | **L3 + R3** on an Xbox controller (both sticks clicked together) |
-| Toggle head tracking | `End`, or `Ctrl+Shift+Y` |
-
-Both clicks also reach the game, as usual. You can also recenter in your tracker (Beam / OpenTrack). All of these are remappable in `FH2SimImmersion.ini`:
-
-* `RecenterButtons`, e.g. `BACK+START` (also on the Head tracking tab).
-* `WheelRecenterButtons`: steering wheel buttons held together to recenter (default `4+5`, both G29 shift paddles).
-* `RecenterKey` / `ChordRecenterKey` to add a keyboard key. The file is `mods\Sim Immersion\FH2SimImmersion.ini`, created on the first run. Edit it, then restart the game.
-
-## Steering wheel (experimental)
-
-The game supports the Logitech G920 on Xbox, but Azimuth 0.9 only passes gamepads to it and Azimuth 1.0 has its own wheel support. The plugin adds a virtual Xbox wheel to the game's controller list and feeds it from your DirectInput wheel. The game then uses its own wheel controls and steering. Tested with a Logitech G29, with pedals and the Driving Force Shifter.
-
-### What works
-
-* Steering, throttle, brake and clutch.
-* A/B/X/Y, View, Menu, D-pad and the shift paddles.
-* The H-shifter (set the game's transmission to **Manual with clutch**).
-* Force feedback: the game's steering torque, centring spring, damping and rumble, played as one DirectInput force.
-
-### Not supported
-
-* Buttons the G920 does not have (G29 L2/R2, L3/R3, +/-, dial, Enter, PS) do nothing.
-
-### Setup
-
-1. Plug in the wheel before starting the game. Set the rotation in your wheel's software, such as Logitech G HUB (900 degrees recommended), and disable any game profile there that remaps the wheel.
-2. Start the game as usual. The wheel is on by default; set `Enabled=0` under `[Wheel]` in `FH2SimImmersion.ini` to turn it off.
-3. The log shows `wheel: using "..."` and `wheel: virtual wheel added to the controller list`.
-
-### Configuration
-
-`[Wheel]` settings in `FH2SimImmersion.ini`:
-
-* `DeviceMatch`: part of the wheel's name. Leave it empty (the default) to use the first wheel with force feedback. If nothing matches, the same rule picks the wheel. The list in the Wheel tab shows the connected devices.
-* `PedalsDevice`, `ShifterDevice`, `HandbrakeDevice`: part of the name of pedals, a shifter or a handbrake on their own USB connection. Empty means they are on the wheel. `ThrottleAxis`, `GearButtons`, `HandbrakeAxis` and the others then refer to that device. Plug it in before starting the game. If one is missing or stops responding, it counts as released and the log says so.
-* `WheelRange`: the rotation set in your wheel's software, in degrees.
-* `SteeringAxis`, `ThrottleAxis`, `BrakeAxis`, `ClutchAxis`, `PedalsInverted`, `PedalDeadzone`: axis mapping. The defaults fit the G29. A pedal counts as released until it first moves, because some pedals report a false value until then.
-* `ButtonA` ... `ButtonRB`: DirectInput button numbers (0-based) for the game's buttons.
-* `HShifter=1` with `GearButtons` / `ReverseButton` for the shifter.
-* `UserMode=none` if the game ignores the wheel or acts oddly in menus.
-* `FFB=0` turns force feedback off. `FFBGain` sets its strength (1.0 = the game's own force, where 1.0 is the wheel's maximum). `FFBInvert=1` reverses it: use this if the wheel pushes away from the centre in menus instead of returning to it.
-* `FFBMinForce` (default `0.05`, 0 - 0.3): the smallest force sent to the wheel. Gear and belt wheels such as the G29 do not move for a force of a few percent, so without it the centre feels empty and the force jumps in once you turn. Raise it if the centre still feels dead, lower it if the wheel feels notchy at the centre. Use `0` on a direct drive wheel.
-* `FFBLimitUnknown` (default `1`): on wheels other than the Logitech gear wheels (G25, G27, G29, G920, G923, Driving Force), the soft lock uses at most half of the force, because full force can hurt on a strong wheel. `0` removes the limit.
-* `FFBForeground` (default `0`): `1` takes the force only while the game has the focus, for wheel drivers that refuse force in the background. Use it if the wheel gets no force and the log says `exclusive cooperative level failed`.
-* The force goes to the axis the wheel reports as having a motor. If that is not the steering axis, the log line `wheel ffb: force axis offset` shows it.
-* Setting up another wheel in the Wheel tab: **Test force: push right** pushes the wheel for half a second with the force set next to it (15% by default) (if it turns left, tick **Invert force direction**). **Press to assign** turns the input test on: click a button or axis row (or that part of the picture), then press that button or move that axis far, and press Apply.
-* **Calibrate force** (Wheel tab): sets **Steering torque** (`FFBTorqueGain`) so the strongest steering force the game can send reaches about 85% of the wheel, with the Strength and Smallest force set there; press Apply to keep it. No drive is needed: the game's force is its tyre force (at most 1) times two fixed factors and the in-game force feedback scale. The mod saves that maximum in `FH2SimImmersion_ffb.ini` when you are in a car (so a changed in-game scale is followed); before that the button uses the game's default (0.205).
-* **Record drive** (Wheel tab): calibrates from your own driving. Press it, start the game and drive a few minutes, then come back and press **Stop recording and calibrate**: Steering torque is set so the strongest forces of that drive (the 1% strongest moments) reach about 85% of the wheel. The app and the mod talk through `FH2SimImmersion_record.ini` and `FH2SimImmersion_ffb.ini`; restarting the game during a recording starts it again.
-
-### Force feedback tuning
-
-By default the wheel gets the game's own forces plus a kept share of the centring spring. A force of 1.0 is the wheel's maximum, and nothing is capped before that. The game's torque stays well below 1.0, so if the wheel feels light, raise `FFBGain`; that keeps the balance. To get only the game's forces, set `FFBSlipSpringFloor` to 0.
-
-On top of that:
-
-* **Steady damping:** damping is worked out from real elapsed time, so it feels the same at any update rate.
-* **Soft lock:** a firm end stop at the car's steering lock.
-* **Per-car steering lock:** each car can turn through its real lock-to-lock rotation.
-* **Adjustable forces:** each force has its own strength setting, listed below.
-* **The game's steering force:** the game's torque comes from the front tyres. It builds up as you turn, levels off, goes light when the front tyres slide past their grip, and pulls the wheel toward the direction of travel in a slide. Extra counter-steer and front-slip forces were removed after a recorded lap showed they only doubled or fought it.
-
-* `FFBTorqueGain`: the game's steering torque (1.0 = game default).
-* `FFBSpringGain`: the centring spring.
-* `FFBSlipSpringFloor` (0.4, 0 = the game's behaviour): share of the centring spring kept when the rear slides. If the wheel feels too light off-road, raise `FFBTorqueGain` or `FFBSlipSpringFloor`.
-* `FFBRumbleGain` (1.0, 0 - 5): scales the road-surface and impact vibration (kerbs, cobblestones, gravel). 1.0 = game default.
-* `FFBLockStrength` / `FFBLockRampDeg`: the soft lock, see [Steering lock](#steering-lock-and-the-in-game-wheel).
-* **Handbrake:** the game reads the handbrake only as a button (its wheel layouts use **B**, layout 4 uses **A**). Set `HandbrakeButton` (a DirectInput button number, -1 = none) and/or `HandbrakeAxis` (an axis name, NONE = none; `HandbrakeAxisInvert=1` if it reads maximum when released, `HandbrakeThreshold` = travel from 0.05 to 0.95 that counts as pulled). While the handbrake is pulled the plugin presses the game button named by `HandbrakeGameButton` (A, B, X, Y, LB or RB; default B). The settings window has a Handbrake group and a lever in the wheel picture.
-
-To find axis and button numbers, set `Diagnostics=1` (under `[Input]`). Every 2 seconds the log shows a `wheel diag raw:` line with every axis value and the pressed buttons.
-## Field of view
-
-Field of view: use the camera settings of [ExtraOptions](https://github.com/RokkuDayo/ForzaHorizon2_ExtraOptions). This mod no longer changes it.
-
-## Choosing what the mod does
-
-Every tab of the settings window starts with a check that turns that whole part on or off, so you can use only what you want, for example the simulation features without the draw distance:
+Each tab starts with a check that turns that part on or off:
 
 | Tab | INI key | Off means |
 |---|---|---|
@@ -193,46 +79,79 @@ Every tab of the settings window starts with a check that turns that whole part 
 | Draw distance | `[DrawDistance] Enabled` | distances stay with the game and Azimuth's own settings |
 | Logging | `[Logging] Enabled` | no `FH2SimImmersion.log` is written |
 
-## Draw distance
+Field of view is set in [ExtraOptions](https://github.com/RokkuDayo/ForzaHorizon2_ExtraOptions)' camera settings; this mod no longer changes it.
 
-The `[DrawDistance]` section raises how far the game draws things. All values are **metres**. `0` (the default) leaves the game's own value alone, and a value at or below the game's own changes nothing: the plugin only ever raises a distance (`new = max(game value, setting)`).
+## Head tracking
 
-`Enabled=0` in this section turns all of it off, and the distances stay with the game and Azimuth's own settings.
+`Source=auto` (default) uses FreeTrack shared memory (Beam, or OpenTrack's `freetrack 2.0 Enhanced`) when it exists, otherwise OpenTrack UDP on `127.0.0.1`, port `4242` (`UdpPort`). The plugin centres and smooths the pose and feeds the cockpit camera layers, so the game's camera physics apply.
 
-Nothing in the game files is edited; the values are changed in memory while the game loads each track. In the settings window (**Draw distance** tab) every setting is a slider that starts at the game's own value (far left = game default).
+Look straight ahead and recenter:
 
-![Draw distance tab - TODO: add screenshot](docs/screenshots/draw-distance-tab.png)
+| Action | Default |
+|---|---|
+| Recenter | **L3 + R3** on an Xbox controller |
+| Toggle head tracking | `End`, or `Ctrl+Shift+Y` |
 
-| Key | What it controls | Game value | Range |
-|---|---|---|---|
-| `ShadowDistance` | how far shadows are drawn: the track's shadow end and the shadow cascade tables (the ones Azimuth's Shadow distance setting patches). Only ever raises them, so it works on top of Azimuth's setting. Azimuth's Shadow detail keeps long shadows sharp | 85 m | up to 1000 |
-| `WorldDistance` | scenery and trees: the cull distance, plus the distance of every model's detail levels, scaled by this value divided by the game's (at most 8 times). This is the same method as Azimuth's **Scenery detail**, which doubles (High) or quadruples (Ultra) them; if both are on, Azimuth's decides most models' detail levels, so set Azimuth's to Default. Where a finer level is not loaded yet, the next coarser one is drawn, so far terrain has no holes. | 360 m (200 m on some tracks) | up to 3000 |
-| `PropsDistance` | props that can be knocked over: fences, signs, bollards | 450 m | up to 3000 |
-| `CrowdDistance` | spectators (their model and fade distances follow) | 250 m | up to 1000 |
-| `GrassDistance` | grass (the start of its fade and its detail level follow) | 100 m | up to 500 |
-| `TrafficDistance` | traffic cars: how far their medium detail level reaches. **Experimental:** the game's fade settings for traffic turned out to be unused, and no other limit has been found yet, so this may not change how far you see traffic | 120 m | up to 500 |
-| `RacerDistance` | racer cars: distance of the farthest car detail level; the nearer levels (15 / 25 / 50 m in the game) scale with it | 75 m | up to 1000 |
+You can also recenter in your tracker. Remap in `mods\Sim Immersion\FH2SimImmersion.ini` (restart the game after editing): `RecenterButtons` (e.g. `BACK+START`), `WheelRecenterButtons` (default `4+5`, both G29 paddles), `RecenterKey` / `ChordRecenterKey`.
 
-The game has **no separate terrain and city distances**: all scenery shares `WorldDistance`, and only props that can be knocked over have their own (`PropsDistance`).
+Tuning (the defaults were tested with Beam):
 
-Higher values cost performance, most of all `WorldDistance`, `ShadowDistance` and `PropsDistance`; raise them one at a time and watch the frame rate. Settings are read when the game starts. The log shows what was changed (`drawdist: ...` lines): the track values, `drawdist: scenery level of detail distances ...` and `drawdist: shadow splits ...` each time a track's settings load, `drawdist: traffic medium detail ...` and `drawdist: car LOD distances ...`. If the game build differs from the one the offsets were taken from, the log says `mismatch; unchanged` and that part does nothing.
+* **Direction:** `YawInvert`, `PitchInvert`, `RollInvert`, `XInvert`, `YInvert`, `ZInvert` set to `1` if an axis is backwards. `RotOrder` / `PosOrder` swap axes.
+* **Strength:** the curves in your tracker, or `YawGain`, `PitchGain` and so on.
+* **Left/right balance:** `YawLeftGain` / `YawRightGain`. If sides are swapped, set `YawLeftIsPositive=1`.
+* **Range:** `Limit` per axis; `Limit=0` turns an axis off.
+* **Smoothing:** `Smoothing` (e.g. `0.2`).
+
+## Steering wheel (experimental)
+
+The game supports the Logitech G920 on Xbox. The plugin adds a virtual Xbox wheel and feeds it from your DirectInput wheel, instead of Azimuth's own wheel support. Tested with a G29, pedals and the Driving Force Shifter.
+
+* **Works:** steering, throttle, brake, clutch, A/B/X/Y, View, Menu, D-pad, shift paddles, the H-shifter (set the game's transmission to **Manual with clutch**) and force feedback.
+* **Not supported:** buttons the G920 does not have (G29 L2/R2, L3/R3, +/-, dial, Enter, PS).
+
+The wheel is on by default. The log shows `wheel: using "..."` and `wheel: virtual wheel added to the controller list`.
+
+`[Wheel]` settings:
+
+* `DeviceMatch`: part of the wheel's name; empty uses the first wheel with force feedback.
+* `PedalsDevice`, `ShifterDevice`, `HandbrakeDevice`: part of the name of separate USB devices; empty means they are on the wheel.
+* `WheelRange`: the rotation set in your wheel software, in degrees.
+* `SteeringAxis`, `ThrottleAxis`, `BrakeAxis`, `ClutchAxis`, `PedalsInverted`, `PedalDeadzone`: axis mapping (the G29 defaults fit).
+* `ButtonA` ... `ButtonRB`: DirectInput button numbers, 0-based. `HShifter=1` with `GearButtons` / `ReverseButton` for the shifter. `UserMode=none` if the game ignores the wheel in menus.
+* Handbrake: `HandbrakeButton`, `HandbrakeAxis`, `HandbrakeAxisInvert`, `HandbrakeThreshold`. While pulled, the game button in `HandbrakeGameButton` (default `B`) is pressed.
+* To find numbers, use **Test input** or **Press to assign** on the Wheel tab, or `Diagnostics=1` (under `[Input]`) for `wheel diag raw:` lines.
+
+### Force feedback
+
+The wheel gets the game's own forces as one DirectInput force: steering torque (it builds as you turn, levels off and goes light when the front tyres slide), centring spring, damping and rumble. The mod adds a soft lock at the car's steering lock and the Smallest force lift. Extra forces were tried and removed: a recorded lap showed the game's steering torque already behaves like a real front tyre.
+
+* `FFB=0` turns force feedback off. `FFBInvert=1` reverses it, for a wheel that pushes away from the centre in menus.
+* `FFBGain` (1.0): strength; 1.0 is the game's own force, and a force of 1.0 is the wheel's maximum. Raise it if the wheel feels light.
+* `FFBTorqueGain` (steering torque), `FFBSpringGain` (centring spring), `FFBRumbleGain` (kerbs, cobbles, gravel; 0 - 5). 1.0 is the game default.
+* `FFBMinForce` (`0.05`, 0 - 0.3): the smallest force sent. Gear and belt wheels such as the G29 do not move for a few percent, so without it the centre feels empty. Use `0` on direct drive.
+* `FFBLockStrength` / `FFBLockRampDeg`: the soft lock, see [Steering lock](#steering-lock-and-the-in-game-wheel).
+* `FFBLimitUnknown` (`1`): on wheels other than the G25, G27, G29, G920, G923 and Driving Force, the soft lock uses at most half the force. `0` removes the limit.
+* `FFBForeground` (`0`): `1` sends force only while the game has focus. Use it if the log says `exclusive cooperative level failed`.
+* The force goes to the axis the wheel reports as motorised. If that is not steering, the log shows `wheel ffb: force axis offset`.
+
+Calibration (Wheel tab):
+
+* **Test force: push right** pushes the wheel for half a second. If it turns left, tick **Invert force direction**.
+* **Calibrate force** sets `FFBTorqueGain` so the strongest steering force reaches about 85% of the wheel. No drive is needed: the game's force is its tyre force (at most 1) times fixed factors and the in-game force feedback scale. The mod saves that maximum in `FH2SimImmersion_ffb.ini` when you are in a car; before that, the default 0.205 is used. Press Apply to keep the result.
+* **Record drive:** press it, drive a few minutes, then **Stop recording and calibrate**. The strongest 1% of that drive is set to reach about 85%; press Apply to keep it. The app and mod talk through `FH2SimImmersion_record.ini` and `FH2SimImmersion_ffb.ini`. Restarting the game during a recording starts it again.
 
 ## Realistic assists (experimental)
 
-Forza lets you switch ABS, traction control and stability control on or off for every car. With this option each car gets what its real counterpart had: a 1960s Ferrari drives without any of them, a modern supercar with all three. The assists are independent: each has its own switch and its own research data. The plugin overrides the game's assist settings for the car you are driving, so your menu choices stay untouched for everything it does not decide.
+Each car gets the assists its real counterpart had: a 1960s Ferrari has none, a modern supercar has all three. Only what the plugin decides is overridden; the rest of your menu choices stay.
 
-### Configuration
+Keys in `[Simulation]`:
 
-The `[Simulation]` section has the keys:
+* `RealisticABS=1`, `RealisticTC=1`, `RealisticSTM=1` turn on each assist (default `0`: the game setting is used).
+* `OptionalAssists=game|on|off`: for cars where the real car had the aid only as an option. `game` (default) keeps your setting. It applies to the three assists and the clutch.
+* `RealisticClutch=1`: cars with a clutch get "manual with clutch", cars without one get "manual without clutch". Only manual driving changes; automatic stays automatic. Works alone or with `RealisticAutomatic`.
+* `RealisticAutomatic=1`: cars whose real gearbox was automatic-only (`at`, `cvt`, `ev`) always shift automatically.
 
-* `RealisticABS=1`, `RealisticTC=1` and `RealisticSTM=1` turn the feature on for ABS, traction control and stability control, each on its own (default `0`: the game setting is used for every car).
-* `OptionalAssists=game|on|off` is what to do for cars where the real car had the aid only as an option: `game` keeps your game setting (default), `on` or `off` forces it. It applies to all three assists and the clutch.
-* `RealisticClutch=1` (default `0`) gives cars that had a clutch the game's "manual with clutch" shifting and cars without one (sequential or dual-clutch gearboxes) "manual without clutch". It only changes the choice of a player who drives manual: if you drive with automatic gears in the game, the car stays automatic. Cars where the clutch was optional follow `OptionalAssists`.
-* `RealisticAutomatic=1` (default `0`) makes automatic-only cars always shift automatically, whatever you chose in the game: cars whose real gearbox was a traditional automatic without a manual mode (`at`), a CVT (`cvt`) or a single-speed electric drive (`ev`). The Gearbox column of the car list in the Simulation tab shows the real gearbox of each car. It works on its own or together with `RealisticClutch`.
-
-### Per-car overrides
-
-Per-car overrides go in an optional file `FH2SimImmersion_cars.ini` in `mods\Sim Immersion`, next to the settings file:
+Per-car overrides go in `mods\Sim Immersion\FH2SimImmersion_cars.ini`:
 
 ```
 [Cars]
@@ -241,23 +160,17 @@ Per-car overrides go in an optional file `FH2SimImmersion_cars.ini` in `mods\Sim
 1105=on,auto,off,on
 ```
 
-Old lines with two or three fields (`Id=ABS,TC`, `Id=ABS,TC,STM`) still work; the missing ones are `auto`. A clutch override of `on` or `off` cancels `RealisticAutomatic` for that car.
+Old lines with two or three fields still work; the missing ones are `auto`. A clutch override of `on` or `off` cancels `RealisticAutomatic` for that car.
 
-The data comes from research of each real car, checked by hand, and is in `data/car_assists.csv` (Id, name, year, ABS, TC, STM, clutch, gearbox, steering lock and notes for every car). It can contain mistakes: corrections are welcome. Cars marked unknown, and cars that are not in the list, keep your game setting.
-
-To check that it works, look in `FH2SimImmersion.log` for `car: <id> <name> (ABS ..., TC ..., STM ..., clutch ..., gearbox ...)` when a race starts, and `assists: ABS forced ... for <name>` (likewise `TC`, `stability control`, `automatic shifting` and `clutch`). With `Diagnostics=1` the log also shows `assists diag:` lines with how often the game asked for the settings.
-
-![Simulation tab with car list - TODO: add screenshot](docs/screenshots/simulation-tab.png)
+The data is `data/car_assists.csv`, checked by hand but possibly wrong. Unknown cars keep the game's setting and rotation. To check it, look for `car: <id> <name> (ABS ..., TC ..., ...)` and `assists: ABS forced ... for <name>` in the log.
 
 ## Steering lock and the in-game wheel
 
-Every real car turns its steering wheel a different amount from lock to lock: about 540 degrees for a race car, 900 to 1080 for most road cars, 1500 or more for a truck or an old car. The game steers every car through one fixed rotation. These options let your wheel turn like the real one.
+Real cars turn their wheel from about 540 degrees lock to lock (race car) to 900-1080 (most road cars) or more (trucks, old cars). The game uses one fixed rotation for every car.
 
-**Important:** Set the rotation in your wheel's software to the same value as `WheelRange` in the Wheel tab (900 for the G29), or the degrees shown below will not be right.
+**Set your wheel software's rotation to the same value as `WheelRange` (900 for the G29), or the degrees below will be wrong.**
 
-### Per-car lock
-
-`RealisticSteeringLock=1` (`[Simulation]`, default `0`) makes full in-game steering happen at the real car's lock-to-lock rotation instead of the game's own rotation setting. The data is in `data/car_assists.csv` (column `SteeringLockDeg`) and in the **Lock** column of the car list in the Simulation tab. The data can contain mistakes. To correct a car, select it in the car list and type the degrees in **Lock override**, or edit `FH2SimImmersion_cars.ini` by hand:
+* `RealisticSteeringLock=1` (`[Simulation]`, default `0`) makes full steering happen at the real car's lock. The data is `SteeringLockDeg` in `data/car_assists.csv` and the **Lock** column of the car list. Fix a car with **Lock override** or in `FH2SimImmersion_cars.ini`:
 
 ```
 [SteeringLock]
@@ -265,41 +178,33 @@ Every real car turns its steering wheel a different amount from lock to lock: ab
 1105=720
 ```
 
-Unknown cars use the game's own rotation. In the log, `steering lock: car <id> <name> real <deg> deg -> wheel <deg> deg (<source>)` shows what was chosen for the car you drive.
+* `MaxWheelRotation` (degrees, `0` = `WheelRange`) is the most your wheel may turn. `SteeringLockMode=cap` (default) uses it for bigger locks and keeps smaller ones 1:1: a 1080 degree truck uses 900, a 540 degree car stays 540. `scale` shrinks every car proportionally so the largest lock (1908 degrees) uses the maximum: 1908 becomes 900, 540 becomes 255.
+* **Soft lock:** `FFBLockStrength` (default `1.0`, `0` = off) builds an end stop at the lock. `FFBLockRampDeg` (default `3`): full force comes a third of this many degrees past the lock; larger is softer.
+* **In-game wheel:** `RealCockpitWheel=1` turns the cockpit model's wheel by your wheel's full angle, not at most 90 degrees each way. Add `HideDriverInCockpit=1`, since the arms cannot follow past 90 degrees. `CockpitWheelDirection` (`1` or `-1`) fixes a reversed turn.
 
-### Maximum wheel rotation
+The log shows `steering lock: car <id> <name> real <deg> deg -> wheel <deg> deg (<source>)` and `cockpit: in-game wheel follows the real wheel`. The options are in the Simulation tab (Steering wheel group); the soft lock is on the Wheel tab.
 
-`MaxWheelRotation` (degrees, `0` = `WheelRange`) is the most your wheel may turn from lock to lock (the G29: 900). A car with a bigger real lock cannot be turned that far, so `SteeringLockMode` decides what happens:
+## Draw distance
 
-* `cap` (default): cars whose lock is more than `MaxWheelRotation` use `MaxWheelRotation`; the others stay 1:1. With 900: a 1080 degree truck uses 900, a 540 degree race car stays 540.
-* `scale`: every car is scaled so the car with the largest lock in the list (1908 degrees) uses `MaxWheelRotation`, and all cars keep their proportions. With 900: 1908 becomes 900, 540 becomes 255.
+`[DrawDistance]` raises how far the game draws. Values are **metres**. `0` (default) keeps the game's value. The plugin only raises: `new = max(game value, setting)`. Values change in memory as each track loads; `Enabled=0` turns the section off.
 
-With `RealisticSteeringLock=0` only the maximum applies to the game's own rotation. With both options off the steering is the same as in 0.9.5.
+| Key | What it controls | Game value | Range |
+|---|---|---|---|
+| `ShadowDistance` | shadow end and cascades (the ones Azimuth's Shadow distance patches). Works on top of Azimuth's setting; Azimuth's Shadow detail keeps long shadows sharp | 85 m | up to 1000 |
+| `WorldDistance` | scenery and trees: cull distance and every model's detail levels, scaled by the setting divided by the game's value (at most 8 times). Same method as Azimuth's **Scenery detail**; if both are on, set Azimuth's to Default. Where a finer level is not loaded, the next coarser is drawn, so far terrain has no holes | 360 m (200 m on some tracks) | up to 3000 |
+| `PropsDistance` | props that can be knocked over: fences, signs, bollards | 450 m | up to 3000 |
+| `CrowdDistance` | spectators | 250 m | up to 1000 |
+| `GrassDistance` | grass | 100 m | up to 500 |
+| `TrafficDistance` | traffic: medium detail level. **Experimental:** the game's traffic fade settings are unused, so this may not change how far you see traffic | 120 m | up to 500 |
+| `RacerDistance` | racer cars: farthest detail level | 75 m | up to 1000 |
 
-### Soft lock
+The game has **no separate terrain and city distances**: scenery shares `WorldDistance`.
 
-When the real wheel can turn further than the car's lock, force feedback builds up an end stop at the lock (`[Wheel]`):
+Higher values cost frame rate, most of all `WorldDistance`, `ShadowDistance` and `PropsDistance`; raise one at a time. The log shows `drawdist: ...` lines per track load. If the game build differs from the offsets, it says `mismatch; unchanged` and that part does nothing.
 
-* `FFBLockStrength` (default `1.0`, `0` = off, `1` = the wheel's full force).
-* `FFBLockRampDeg` (default `3`): full force is reached a third of `FFBLockRampDeg` degrees past the lock, and a larger value is softer.
+## Troubleshooting
 
-It also damps the wheel inside the end stop and works in menus too. It does not apply when the lock is as big as the wheel's own range.
-
-### In-game wheel
-
-`RealCockpitWheel=1` makes the steering wheel of the cockpit model turn the same number of degrees as your real wheel instead of at most 90 degrees each way. The driver's arms cannot follow past 90 degrees, so use `HideDriverInCockpit=1` with it: the driver (arms and hands) is hidden while the cockpit camera is active and shown again in the other cameras. `CockpitWheelDirection` (`1` or `-1`, default `1`) reverses the in-game wheel if it turns the wrong way.
-
-These need the wheel and the plugin's car tracking; the log shows `cockpit: in-game wheel follows the real wheel`, `cockpit: driver hidden` and `cockpit: driver shown`.
-
-All of these are in the Simulation tab, group Steering wheel; the soft lock is on the Wheel tab.
-
-## Azimuth's own wheel and head tracking
-
-Azimuth 0.9.10 has no wheel support; Azimuth 1.0 has its own. By default the plugin uses its own wheel with force feedback: `dinput8.dll` keeps Azimuth from opening the wheel, and the plugin hides any wheel Azimuth provides. Turn the Wheel tab's check off (`Enabled=0` in `[Wheel]`) to leave the wheel to Azimuth. In the same way `OverrideAzimuthHeadTracking=1` in `[General]` (default) keeps this plugin in charge of the game's head-tracking camera; with `0` the plugin leaves that camera to Azimuth and its own head tracking is off. That switch is also in the settings window (Head tracking tab).
-
-## Checking that it works
-
-`FH2SimImmersion.log` is written in `mods\Sim Immersion` unless `[Logging] Enabled=0`. A good run looks like this:
+A good run logs something like this (`layer` lines only appear in cockpit view):
 
 ```
 FH2 Sim Immersion 0.9.6 loaded into pid ... (...\azimuth.exe)
@@ -312,93 +217,46 @@ layer ... input 31 output 4 Param.x 12.000 -> rotation (cockpit)
 layer ... input 28 output 2 Param.x 0.030 -> position (cockpit)
 ```
 
-The `layer ...` lines only appear once you are driving in cockpit view.
+* **No log file:** set `[Logging] Enabled=1`. If still none, the plugin did not load: check the Setup section, `FH2_ExtraOptions.log`, and antivirus.
+* **"this game build is not recognised":** not FH2 1.0.0.64. Nothing was changed.
+* **"bind ... failed":** another program uses UDP port 4242. Change `UdpPort` here and in OpenTrack.
+* **No head tracking:** check the tracker runs, the log shows `freetrack: shared memory found` or UDP packets, you are in the cockpit camera, and `End` did not turn it off.
+* **Patched, but no `layer` lines in cockpit view:** report it with the log.
+* **View moves more than your head (Beam):** Beam's Immersive Camera amplifies rotation and eye-gaze extension. Lower it in Beam, or reduce `YawGain` / `PitchGain`. If `in yaw` keeps growing while your head is still, the tracker causes it.
+* **Jitter:** better face lighting, OpenTrack's Accela filter, or `Smoothing=0.2`.
+* **Recenter does not work:** without an Xbox controller, use `WheelRecenterButtons`, the keyboard key, or your tracker.
+* **Wheel not found:** plug it in before the game, check `Enabled=1` and `DeviceMatch`, and close programs that grab the wheel.
+* **Wheel ignored or odd in menus:** `UserMode=none`; if it pushes away from the centre, `FFBInvert=1`.
+* **Wrong pedals or axes:** read the `wheel diag raw:` lines (or **Test input**), then fix the axes and `PedalsInverted`.
+* **Steering degrees wrong:** `WheelRange` must match your wheel software.
+* **`mismatch; unchanged`:** the game build differs from the offsets; that part does nothing.
+* **Azimuth bug:** reproduce it without the mod before reporting (see the Unofficial note at the top).
 
 ## Building from source
 
 ```
-src/dll/        plugin loaded into azimuth.exe (hook, tracker, config, wheel, assists, draw distance)
-src/common/     shared headers: default settings text, car database (generated from data/car_assists.csv)
-src/proxy/      dinput8.dll: keeps Azimuth off the wheel while the mod drives it
-src/app/        FH2SimImmersion.exe: settings window (Win32, GDI pictures, app.rc/app.manifest)
+src/dll/        plugin loaded into azimuth.exe
+src/common/     shared headers, car database (generated from data/car_assists.csv)
+src/proxy/      dinput8.dll: keeps Azimuth off the wheel
+src/app/        FH2SimImmersion.exe: settings window
 tests/          unit tests, integration harness, fake azimuth.exe
 tools/          gen_car_db.py (generates src/common/car_db.h)
 docs/           reverse-engineering notes
 ```
 
-Clone the repository, then use either build:
+* **Windows (Visual Studio 2022 or MSYS2 MinGW64):** `cmake -S . -B build -A x64`, then `cmake --build build --config Release`.
+* **`./build.sh`** on Linux, WSL or MSYS2 cross-builds. It needs `x86_64-w64-mingw32-g++` and `windres` (mingw-w64), a native `g++`, `python3` and `zip`. It packages `dist/FH2SimImmersion-0.9.6.zip`: one `FH2SimImmersion` folder with `dinput8.dll` and `mods\Sim Immersion\` (plugin, app, `mod.json`, README, `LICENSE.txt`).
 
-* **Windows (Visual Studio 2022 or MSYS2 MinGW64):** CMake.
-  ```
-  cmake -S . -B build -A x64
-  cmake --build build --config Release
-  ```
-* **Cross-build with `./build.sh`** on Linux (or WSL / MSYS2): needs `x86_64-w64-mingw32-g++` and `windres` (mingw-w64), a native `g++`, `python3` and `zip`.
-
-### Development requirements
-
-* CMake, or mingw-w64 (via MSYS2 on Windows) for the Windows binaries.
-* Native g++ and python3 for the unit tests and the car database generator.
-* Wine, only to run the integration harness on Linux.
-
-### Build
-
-```bash
-./build.sh
-```
-
-It regenerates `src/common/car_db.h` from `data/car_assists.csv`, builds and runs the unit tests (pose, force feedback, settings parser, steering lock, steering wheel bone, cars), builds the DLL, the app and the harness, and packages the result:
-
-```
-dist/FH2SimImmersion-0.9.6.zip
-```
-
-The zip has one `FH2SimImmersion` folder with `dinput8.dll` and `mods\Sim Immersion\` (`plugins\FH2SimImmersion.dll`, `FH2SimImmersion.exe`, `mod.json`, this README and `LICENSE.txt`).
-
-### Integration test (harness)
-
-`harness.exe` needs your own copy of the game executable; none is included. It maps the real game executable into memory the way a loader would, loads the DLL (which must find, verify and patch the image), sends OpenTrack packets and runs the game's own `CameraLayer::EvaluateInput` against fake layers. Add `--deep` to exercise the fallback memory scan. It runs on Windows or Wine; the result is printed to the console, and the DLL's own log (`FH2SimImmersion.log`) shows the patch and layer lines:
+The harness needs your own copy of the game executable; none is included. It maps the game into memory, loads the DLL, sends OpenTrack packets and runs the game's `CameraLayer::EvaluateInput`. Add `--deep` for the fallback memory scan. It runs on Windows or Wine:
 
 ```
 harness.exe "<game>\Mount\forza_durango_release_final.exe" build\FH2SimImmersion.dll [--deep]
 ```
 
-How the game was analysed, and every address and offset used, is documented in [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md) and `src/dll/game_layout.h`. Code is matched by hash and by an opcode skeleton.
-
-## Tuning
-
-### Head tracking
-
-The defaults have been tested with Beam. Use these settings if your tracker behaves differently:
-
-* **Direction:** if an axis moves the wrong way, set its `Invert` to `1`: `YawInvert`, `PitchInvert`, `RollInvert`, `XInvert`, `YInvert`, `ZInvert`. To swap axes, use `RotOrder=` / `PosOrder=`.
-* **Strength:** set the curves in your tracker (Beam's sensitivity, or OpenTrack's Mapping window), or use `YawGain`, `PitchGain` and so on here.
-* **Left/right balance:** `YawLeftGain` and `YawRightGain` add strength to one side only (for example `YawLeftGain=1.3` if looking left feels shorter than looking right). If left and right are swapped, set `YawLeftIsPositive=1` (the default is `0`).
-* **Range:** `Limit` caps the camera movement. The defaults keep the view inside the cabin. `Limit=0` turns an axis off.
-
-## Troubleshooting
-
-* **No log file:** check the Logging tab (`[Logging] Enabled=1`). Otherwise the plugin was not loaded: check the **Setup** section of the Logging tab and `FH2_ExtraOptions.log`, make sure ExtraOptions is installed and `mods\Sim Immersion` is in `mods`, and that antivirus (Windows Defender) did not block the files.
-* **"this game build is not recognised":** you have a different FH2 version than 1.0.0.64. Nothing was changed.
-* **"bind ... failed":** another program is already using UDP port 4242 (e.g. a second tracker). Change `UdpPort` here and in OpenTrack.
-* **No head tracking:** check the tracker is running with the output described under Install, that the log shows `freetrack: shared memory found` or UDP packets, and that you are in the cockpit camera. Recenter, and check the toggle (`End`) did not switch it off.
-* **Patched, but no `layer` lines in cockpit view:** the game is not evaluating its head-tracking layers in your setup. Please report it, with the log.
-* **The view moves much more than your head, or keeps turning after you face forward (Beam):** Beam's "Immersive Camera" already amplifies head rotation and adds eye-gaze extension, so the view keeps panning while your eyes rest near the edge of the screen. Lower the camera sensitivity or turn off eye-based extension in Beam, or reduce `YawGain`/`PitchGain` here. Set `Diagnostics=1` and the log shows what arrives every 2 seconds (`diag freetrack: in yaw ...`). If `in yaw` keeps growing while your head is still, the extra movement comes from the tracker.
-* **Jitter:** improve the lighting on your face, use OpenTrack's Accela filter, or set `Smoothing=0.2`.
-* **Recenter does not work:** with no Xbox controller, use the wheel recenter buttons (`WheelRecenterButtons`, default both G29 paddles), the keyboard key, or recenter in your tracker.
-* **Wheel not found / no `wheel:` lines in the log:** plug it in before starting the game, check `Enabled=1` and `DeviceMatch` (empty uses the first wheel with force feedback), and close other programs that grab the wheel exclusively.
-* **Wheel is ignored or acts oddly in menus:** try `UserMode=none`. If it pushes away from the centre in menus, set `FFBInvert=1`.
-* **Wrong or reversed pedals/axes:** set `Diagnostics=1`, read the `wheel diag raw:` lines (or use **Test input**) and fix the axis and `PedalsInverted` settings.
-* **Steering degrees feel wrong:** `WheelRange` must equal the rotation set in your wheel's software.
-* **Part of the plugin does nothing and the log says `mismatch; unchanged`:** the game build differs from the one the offsets were taken from.
-* **Azimuth bug:** remove `dinput8.dll`, the `mods\Sim Immersion` folder and ExtraOptions, and reproduce it before reporting it to the Azimuth developer.
+The analysis and every offset are in [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md) and `src/dll/game_layout.h`.
 
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
 
 Forza Horizon 2 is a trademark of Microsoft. This project is unofficial and not affiliated with Microsoft, Playground Games, Turn 10 or Almost There Games (Azimuth).
-
-## Contributing
-
-Corrections to the car data (`data/car_assists.csv`) are welcome. Please open an issue or submit a pull request.

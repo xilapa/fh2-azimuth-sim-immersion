@@ -203,13 +203,11 @@ static void readWheel(const wchar_t* ini, WheelConfig& w) {
         FfbTuning& t = w.ffbTuning;
         t.torqueGain      = clampCfg(ini, "FFBTorqueGain", (float)readF(ini, "Wheel", "FFBTorqueGain", 1.0), 0.0f, 5.0f);
         t.springGain      = clampCfg(ini, "FFBSpringGain", (float)readF(ini, "Wheel", "FFBSpringGain", 1.0), 0.0f, 5.0f);
-        t.slipSpringFloor = clampCfg(ini, "FFBSlipSpringFloor", (float)readF(ini, "Wheel", "FFBSlipSpringFloor", 0.4), 0.0f, 1.0f);
         t.rumbleGain     = clampCfg(ini, "FFBRumbleGain", (float)readF(ini, "Wheel", "FFBRumbleGain", 1.0), 0.0f, 5.0f);
         w.ffbLockStrength = clampCfg(ini, "FFBLockStrength", (float)readF(ini, "Wheel", "FFBLockStrength", 1.0), 0.0f, 1.0f);
         w.ffbLockRampDeg  = clampCfg(ini, "FFBLockRampDeg", (float)readF(ini, "Wheel", "FFBLockRampDeg", 3.0), 0.5f, 30.0f);
-        LOG("config: ffb torque %.2f spring %.2f floor %.2f rumble %.2f lock %.2f ramp %.1f",
-            t.torqueGain, t.springGain, t.slipSpringFloor,
-            t.rumbleGain, w.ffbLockStrength, w.ffbLockRampDeg);
+        LOG("config: ffb torque %.2f spring %.2f rumble %.2f lock %.2f ramp %.1f",
+            t.torqueGain, t.springGain, t.rumbleGain, w.ffbLockStrength, w.ffbLockRampDeg);
     }
     LOG("config: wheel pedals '%s' shifter '%s' handbrake '%s' limit unknown %d foreground %d min force %.2f", w.pedalsDevice.c_str(),
         w.shifterDevice.c_str(), w.handbrakeDevice.c_str(), w.ffbLimitUnknown, w.ffbForeground, w.ffbMinForce);

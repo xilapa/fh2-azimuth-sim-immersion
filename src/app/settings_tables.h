@@ -97,7 +97,6 @@ inline constexpr Setting kWheelSettings[] = {
     ST_PCT  ("Wheel", "FFBSpringGain", "Centring spring (%)", "Force feedback: the game's forces", "ffb", 0, 5, 0.1),
     ST_PCT  ("Wheel", "FFBRumbleGain", "Road vibration strength (%)", "Force feedback: the game's forces", "ffb", 0, 5, 0.1),
 
-    ST_PCT  ("Wheel", "FFBSlipSpringFloor", "Spring kept in a slide (%)", "Force feedback: extra effects (Sim Immersion only)", "ffb", 0, 1, 0.05),
     ST_PCT  ("Wheel", "FFBLockStrength", "Soft lock strength (%)", "Force feedback: extra effects (Sim Immersion only)", "ffb", 0, 1, 0.05),
     ST_FLOAT("Wheel", "FFBLockRampDeg", "Soft lock ramp (degrees)", "Force feedback: extra effects (Sim Immersion only)", "ffb", 0.5, 30, 0.5),
 

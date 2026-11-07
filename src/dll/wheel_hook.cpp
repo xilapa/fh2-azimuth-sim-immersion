@@ -366,9 +366,7 @@ extern "C" void hookFfbUpdate(uint8_t* slot, const float* in, void** carElem) {
         const float* d = *reinterpret_cast<float* const*>(slot + 0x10c0);
         if (d) {
             g.gain = d[0];
-            g.dynScale = d[0x28 / 4]; g.dynMax = d[0x2c / 4]; g.springParam = d[0x48 / 4];
-            g.slip0 = d[0x54 / 4]; g.slip1 = d[0x58 / 4]; g.slipScale0 = d[0x5c / 4]; g.slipScale1 = d[0x60 / 4];
-            g.speed0 = d[0x64 / 4]; g.speed1 = d[0x68 / 4]; g.speedScale0 = d[0x6c / 4]; g.speedScale1 = d[0x70 / 4];
+            g.dynScale = d[0x28 / 4]; g.dynMax = d[0x2c / 4];
             VirtualWheel_SetGameFfbInput(g);
         }
     }

@@ -66,35 +66,21 @@ int main() {
         t.torqueGain = 2.0f;
         assert(near(FfbForce(p, t, 0, 0, 0, nullptr), 0.2f));
     }
-    // 10. game-driven spring with slip floor
+    // 10. the centring spring is the game's own spring variable, with or without the game's input
     auto game = [] {
         FfbParams p = live(true);
         p.haveGame = true; p.raceSpringMax = 0.5f; p.raceSpringScale = 0.9f;
-        GameFfbInput& g = p.game;
-        g.speed = 20; g.slip = 0.6f; g.gain = 1; g.springParam = 0.5f;
-        g.slip0 = 0.32f; g.slip1 = 0.55f; g.slipScale0 = 1; g.slipScale1 = 0;
-        g.speed0 = 2; g.speed1 = 15; g.speedScale0 = 0.15f; g.speedScale1 = 1;
+        p.game.speed = 20; p.game.slip = 0.6f; p.game.gain = 1;
         return p;
     };
     {
         FfbParams p = game();
-        FfbTuning t; t.torqueGain = 1; t.slipSpringFloor = 0.4f;
+        FfbTuning t;
         FfbTerms tm{};
         FfbForce(p, t, 0.5f, 0, 0, &tm);
-        assert(near(tm.spring, -0.1f));
-        t.slipSpringFloor = 0;                       // no floor: the game's own spring variable, as its program uses
-        assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), -0.45f));
-        t.slipSpringFloor = 0.4f;
-        p.game.slip = 0.1f; p.game.speed = 1.0f;      // slow, no slip: speedF clamps to 0.15
-        assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), -(0.15f * 1.0f * 0.5f) * 0.5f));
-        t.springGain = 2.0f;
-        assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), -(0.15f * 0.5f) * 2.0f * 0.5f));
-        // swapped / equal points
-        p.game.speed = 8.5f; p.game.speed0 = 15; p.game.speed1 = 2; p.game.speedScale0 = 1; p.game.speedScale1 = 0.15f;
-        t.springGain = 1.0f;
-        assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), -(0.575f * 0.5f) * 0.5f));
-        p.game.speed0 = p.game.speed1 = 5; p.game.speedScale0 = 0.3f; p.game.speedScale1 = 0.8f;
-        assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), -(0.8f * 0.5f) * 0.5f));
+        assert(near(tm.spring, -0.45f));
+        t.springGain = 2.0f;                          // limited by the game's own maximum
+        assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), -0.5f));
     }
     // 14. rumble gain
     {
@@ -110,11 +96,11 @@ int main() {
         FfbForce(p, t, 0, 0, 10.0, &tm);
         assert(tm.rumble == 0.0f);
     }
-    // 12. no game input: fall back to the captured spring scale
+    // 12. no game input: the same spring
     {
         FfbParams p = game();
         p.haveGame = false;
-        FfbTuning t; t.torqueGain = 1; t.slipSpringFloor = 0.4f; t.springGain = 1.0f;
+        FfbTuning t; t.torqueGain = 1; t.springGain = 1.0f;
         FfbTerms tm{};
         FfbForce(p, t, 0.5f, 0, 0, &tm);
         assert(near(tm.spring, -0.45f));
@@ -122,13 +108,13 @@ int main() {
         assert(near(FfbForce(p, t, 0.5f, 0, 0, nullptr), -0.225f));
     }
 
-    // 15. default tuning: the game's torque unchanged, plus the extra forces
+    // 15. default tuning: the game's torque and spring unchanged
     {
         FfbParams p = game();
         p.torque = 0.1f;
         FfbTerms tm{};
         FfbForce(p, FfbTuning(), 0.5f, 0, 0, &tm);
-        assert(near(tm.torque, 0.1f) && near(tm.spring, -0.1f));
+        assert(near(tm.torque, 0.1f) && near(tm.spring, -0.45f));
     }
     // 8. device magnitude
     assert(FfbDeviceMagnitude(0.25f, 1.0f, false) == -2500);

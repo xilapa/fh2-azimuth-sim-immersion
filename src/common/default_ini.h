@@ -150,8 +150,6 @@ inline constexpr char kDefaultIni[] =
 "FFBTorqueGain=1.0\n"
 "; Strength of the centring spring. 1.0 = game default.\n"
 "FFBSpringGain=1.0\n"
-"; The game removes the centring spring when the rear slides; keep at least this fraction of it (0 = game behaviour).\n"
-"FFBSlipSpringFloor=0.4\n"
 "; Strength of road-surface and impact vibration (kerbs, cobblestones, gravel). 1.0 = game default.\n"
 "FFBRumbleGain=1.0\n"
 "; Soft lock: force at the end of the steering lock (0 = off, 1 = the wheel's full force). The ramp sets how\n"

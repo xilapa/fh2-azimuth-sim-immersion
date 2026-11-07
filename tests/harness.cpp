@@ -346,8 +346,7 @@ static void ffbTests(uint8_t* base, HMODULE plugin) {
     CHECK(got, "plugin captured the input");
     CHECK(std::fabs(g.rawTorque - 0.5f) < 1e-6f && std::fabs(g.speed - 20.0f) < 1e-6f && std::fabs(g.slip - 0.1f) < 1e-6f &&
           std::fabs(g.gain - 1.0f) < 1e-6f, "captured raw %f speed %f slip %f gain %f", g.rawTorque, g.speed, g.slip, g.gain);
-    CHECK(std::fabs(g.dynScale - 0.42f) < 1e-6f && std::fabs(g.springParam - 0.5f) < 1e-6f && std::fabs(g.slip1 - 0.55f) < 1e-6f &&
-          std::fabs(g.speed0 - 2.0f) < 1e-6f && std::fabs(g.speedScale1 - 1.0f) < 1e-6f, "captured driver parameters");
+    CHECK(std::fabs(g.dynScale - 0.42f) < 1e-6f && std::fabs(g.dynMax - 1.0f) < 1e-6f, "captured driver parameters");
 
     // fake car: the plugin reads the car id from it
     alignas(16) static uint8_t carBuf[0x4c10];
