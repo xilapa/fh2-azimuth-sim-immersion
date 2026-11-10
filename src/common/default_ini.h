@@ -10,7 +10,7 @@ inline constexpr char kDefaultIni[] =
 "; FH2 Sim Immersion for Azimuth - settings. Edit, then restart the game.\n"
 "\n"
 "[Input]\n"
-"ConfigVersion=9\n"
+"ConfigVersion=12\n"
 "; auto      = FreeTrack/TrackIR shared memory when present (Beam \"Head Tracking Device\n"
 ";             Emulation\", OpenTrack \"freetrack 2.0 Enhanced\"), otherwise UDP\n"
 "; freetrack = shared memory only\n"
@@ -193,16 +193,17 @@ inline constexpr char kDefaultIni[] =
 "CockpitWheelDirection=1\n"
 "\n"
 "[DrawDistance]\n"
-"; 1 = use this plugin's draw distances, on top of Azimuth's settings; 0 = all off, draw distance is left to the game and Azimuth.\n"
+"; 1 = use this plugin's pop-in killer, on top of Azimuth's settings; 0 = all off, left to the game and Azimuth.\n"
 "Enabled=1\n"
-"; Metres. 0 = game default. Values below the game's own are ignored.\n"
-"ShadowDistance=0\n"
-"WorldDistance=0\n"
-"PropsDistance=0\n"
-"CrowdDistance=0\n"
-"GrassDistance=0\n"
-"TrafficDistance=0\n"
-"RacerDistance=0\n"
+"; Pop-in killer: each value moves where the game switches things to a coarser model farther out, 1 to 8 times. 0 = game default. Far trees and billboards keep the game's own distances. Higher values cost frame rate.\n"
+"; Buildings, props, terrain and other scenery. Azimuth's Scenery detail Ultra is 4; the stronger of the two applies. How far trees and scenery are drawn grows by the larger of this and TreeDetail.\n"
+"SceneryDetail=0\n"
+"; Trees and bushes (game: full trees to about 100 m, billboards past about 190 m). Full trees show as far as the game has them loaded (a few hundred metres); past that their billboards stay, as in the game. Azimuth does not reach them. How far trees and scenery are drawn (game: 360 m) grows by the larger of this and SceneryDetail, up to 3000 m.\n"
+"TreeDetail=0\n"
+"; Fences, barriers and other things that can be knocked over (game: the simpler fence from about 100 m). How far they are drawn (game: 450 m) grows with it, up to 3000 m.\n"
+"FenceDetail=0\n"
+"; Grass and crops (game: grass to about 100 m). Grass is drawn at most 500 m away.\n"
+"GrassDetail=0\n"
 "\n"
 "[Logging]\n"
 "; 1 = write FH2SimImmersion.log next to the plugin. 0 = no log, and the log of the last run is removed.\n"
@@ -210,6 +211,6 @@ inline constexpr char kDefaultIni[] =
 
 // Bumped when a change makes older settings files unusable; the old file is kept as .old.bak.
 // Must equal the ConfigVersion= line above (checked by tests/test_ini.cpp).
-inline constexpr int kConfigVersion = 9;
+inline constexpr int kConfigVersion = 12;
 
 } // namespace fh2

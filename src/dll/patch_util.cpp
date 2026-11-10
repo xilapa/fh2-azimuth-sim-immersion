@@ -47,13 +47,14 @@ void Suspended::resumeAll() {
     handles.clear();
 }
 
-bool patchCallRel32(uintptr_t callSite, void* target, void* thunkMem, bool passRsiAsR8) {
+bool patchCallRel32(uintptr_t callSite, void* target, void* thunkMem, bool passRsiAsR8, const uint8_t* prefix, size_t prefixLen) {
     uint8_t* t = static_cast<uint8_t*>(thunkMem);
     intptr_t rel = reinterpret_cast<intptr_t>(t) - static_cast<intptr_t>(callSite + 5);
     if (rel > INT32_MAX || rel < INT32_MIN) { LOG("patch: thunk out of rel32 range"); return false; }
     int32_t rel32 = static_cast<int32_t>(rel);
 
     uint8_t* p = t;
+    if (prefixLen) { std::memcpy(p, prefix, prefixLen); p += prefixLen; }
     if (passRsiAsR8) { *p++ = 0x49; *p++ = 0x89; *p++ = 0xF0; }   // mov r8, rsi
     *p++ = 0x48; *p++ = 0xB8;                         // mov rax, imm64
     uint64_t a = reinterpret_cast<uint64_t>(target); std::memcpy(p, &a, 8); p += 8;

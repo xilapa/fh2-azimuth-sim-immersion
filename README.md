@@ -8,7 +8,7 @@ Realism and immersion features for Forza Horizon 2 running in Azimuth:
 * [Steering wheel](#steering-wheel-experimental) (experimental): DirectInput wheels with force feedback, pedals, shifter and handbrake.
 * [Realistic assists](#realistic-assists-experimental) (experimental): ABS, traction control, stability control and clutch per real car.
 * [Steering lock and in-game wheel](#steering-lock-and-the-in-game-wheel) (experimental): real lock-to-lock rotation and a cockpit wheel that turns like the real one.
-* [Draw distance](#draw-distance): scenery, traffic, shadows and props drawn further.
+* [Pop-in killer](#pop-in-killer): scenery, trees, fences and grass keep their detail farther away.
 
 **Unofficial.** Not affiliated with Azimuth / Almost There Games, Microsoft or Playground Games. **Before reporting any Azimuth bug, remove `dinput8.dll`, the `mods\Sim Immersion` folder and ExtraOptions (its `winmm.dll` and `mods` folder), and reproduce it.**
 
@@ -66,7 +66,7 @@ Delete `dinput8.dll` from the folder of `azimuth.exe` and the `mods\Sim Immersio
 * **Head tracking:** source, smoothing, gains, invert, limits, hotkeys and recenter buttons, with a live preview.
 * **Wheel (experimental):** Test wheel box, wheel mapping, force feedback and Advanced.
 * **Simulation:** realistic assists, the Steering wheel group, and a car list with what each real car had.
-* **Draw distance:** a slider per distance, starting at the game's value.
+* **Pop-in killer:** a slider per kind of scenery, from the game's x1 to x8.
 * **Logging:** the log switch, detailed logs, and a Setup section that says what is missing (ExtraOptions, `dinput8.dll` or the plugin).
 
 Each tab starts with a check that turns that part on or off:
@@ -76,7 +76,7 @@ Each tab starts with a check that turns that part on or off:
 | Head tracking | `[General] OverrideAzimuthHeadTracking` | head tracking is left to Azimuth |
 | Wheel | `[Wheel] Enabled` | the steering wheel is left to Azimuth |
 | Simulation | `[Simulation] Enabled` | no realistic assists, steering lock or in-game wheel changes |
-| Draw distance | `[DrawDistance] Enabled` | distances stay with the game and Azimuth's own settings |
+| Pop-in killer | `[DrawDistance] Enabled` | detail switches stay with the game and Azimuth's own settings |
 | Logging | `[Logging] Enabled` | no `FH2SimImmersion.log` is written |
 
 Field of view is set in [ExtraOptions](https://github.com/RokkuDayo/ForzaHorizon2_ExtraOptions)' camera settings; this mod no longer changes it.
@@ -184,23 +184,21 @@ Real cars turn their wheel from about 540 degrees lock to lock (race car) to 900
 
 The log shows `steering lock: car <id> <name> real <deg> deg -> wheel <deg> deg (<source>)` and `cockpit: in-game wheel follows the real wheel`. The options are in the Simulation tab (Steering wheel group); the soft lock is on the Wheel tab.
 
-## Draw distance
+## Pop-in killer
 
-`[DrawDistance]` raises how far the game draws. Values are **metres**. `0` (default) keeps the game's value. The plugin only raises: `new = max(game value, setting)`. Values change in memory as each track loads; `Enabled=0` turns the section off.
+`[DrawDistance]` fights pop-in: the game switches trees, buildings, fences and grass to a coarser model (or a flat billboard) close to you. Each value is a **multiplier** of where that switch happens, `1` to `8`; `0` (default) keeps the game's. Far trees and billboards keep the game's own distances. Values change in memory as the game loads; `Enabled=0` turns the section off.
 
 | Key | What it controls | Game value | Range |
 |---|---|---|---|
-| `ShadowDistance` | shadow end and cascades (the ones Azimuth's Shadow distance patches). Works on top of Azimuth's setting; Azimuth's Shadow detail keeps long shadows sharp | 85 m | up to 1000 |
-| `WorldDistance` | scenery and trees: cull distance and every model's detail levels, scaled by the setting divided by the game's value (at most 8 times). Same method as Azimuth's **Scenery detail**; if both are on, set Azimuth's to Default. Where a finer level is not loaded, the next coarser is drawn, so far terrain has no holes | 360 m (200 m on some tracks) | up to 3000 |
-| `PropsDistance` | props that can be knocked over: fences, signs, bollards | 450 m | up to 3000 |
-| `CrowdDistance` | spectators | 250 m | up to 1000 |
-| `GrassDistance` | grass | 100 m | up to 500 |
-| `TrafficDistance` | traffic: medium detail level. **Experimental:** the game's traffic fade settings are unused, so this may not change how far you see traffic | 120 m | up to 500 |
-| `RacerDistance` | racer cars: farthest detail level | 75 m | up to 1000 |
+| `SceneryDetail` | buildings, props, terrain and other scenery drawn per model. Azimuth's **Scenery detail** Ultra is 4; with both on, the stronger applies. Farther out, the finest loaded level at or past the scaled choice is drawn as well; the level the game draws itself is never hidden, so far stand-ins keep the terrain whole. How far trees and scenery are drawn grows by the larger of this and `TreeDetail` | x1 | up to 8 |
+| `TreeDetail` | trees and bushes: where full trees switch to simpler ones and to billboards. Full trees are drawn that many times farther, as far as the game has them loaded: the game only loads tree models within its own streaming distance (a few hundred metres), which no setting here changes. The billboards keep the game's distances and stay behind the full tree, so where a full tree cannot be drawn yet its billboard still is, and nothing disappears. Azimuth does not reach them. How far trees and scenery are drawn (game: 360 m, 200 m on some tracks) grows by the larger of this and `SceneryDetail`, up to 3000 m | full trees to about 100 m, billboards from about 190 m | up to 8 |
+| `FenceDetail` | fences, barriers and things that can be knocked over (signs, bollards): where they switch to a simpler model. How far they are drawn (game: 450 m) grows with it, up to 3000 m | about 100 m | up to 8 |
+| `GrassDetail` | grass and crops: how far their detail reaches. Grass is drawn at most 500 m away | about 100 m | up to 8 |
 
-The game has **no separate terrain and city distances**: scenery shares `WorldDistance`.
+How it works: trees, fences and grass are placed from the game's template libraries. As each library loads, the plugin multiplies the end of every near detail range that ends by 500 m, and where a coarser object takes over there (a fence's simpler model), moves its start along; the coarser object's own end caps the move. A tree's billboard is not moved: it stays under the full tree. Ranges that end farther out are left alone.
 
-Higher values cost frame rate, most of all `WorldDistance`, `ShadowDistance` and `PropsDistance`; raise one at a time. The log shows `drawdist: ...` lines per track load. If the game build differs from the offsets, it says `mismatch; unchanged` and that part does nothing.
+Higher values cost frame rate; raise one at a time. The log shows `drawdist: ...` lines as the game loads. If the game build differs from the offsets, it says `mismatch; unchanged` and that part does nothing.
+
 
 ## Troubleshooting
 

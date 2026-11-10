@@ -24,7 +24,9 @@ struct Suspended {
 // or the call site cannot be made writable.
 // With `passRsiAsR8` the stub first runs `mov r8, rsi` (15 bytes), handing the caller's rsi to the
 // target as its third argument.
-bool patchCallRel32(uintptr_t callSite, void* target, void* thunkMem, bool passRsiAsR8 = false);
+// `prefix` (prefixLen bytes) is copied to the start of the stub, before everything else.
+bool patchCallRel32(uintptr_t callSite, void* target, void* thunkMem, bool passRsiAsR8 = false,
+                    const uint8_t* prefix = nullptr, size_t prefixLen = 0);
 
 // True if [p, p+n) is committed, readable and not a guard page. Caches the last region per thread
 // (for a short time) to stay cheap on hot paths.

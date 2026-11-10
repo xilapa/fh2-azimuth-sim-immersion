@@ -842,86 +842,223 @@ static void drawDistTests(uint8_t* base, HMODULE plugin) {
     CHECK(jmp[0] == 0xE9, "thunk keeps the jmp opcode");
     CHECK(target != base + 0x1144320, "track settings jmp re-pointed away from Serialize (%p)", (void*)target);
     typedef void (MSABI *FnApplyTrack)(uint8_t*);
-    typedef void (MSABI *FnApplyTraffic)();
     auto applyTrack = (FnApplyTrack)GetProcAddress(plugin, "FH2SI_TestApplyTrackOverrides");
-    auto applyTraffic = (FnApplyTraffic)GetProcAddress(plugin, "FH2SI_TestApplyTrafficOverrides");
-    CHECK(applyTrack && applyTraffic, "test exports found");
-    if (!applyTrack || !applyTraffic) return;
+    CHECK(applyTrack != nullptr, "test export found");
+    if (!applyTrack) return;
 
     alignas(16) static uint8_t ts[0x600];
     memset(ts, 0, sizeof(ts));
     auto F = [&](int off) -> float& { return *(float*)(ts + off); };
     F(0x234) = 85.0f; F(0x5e4) = 360.0f; F(0x32c) = 4000.0f; F(0x168) = 100.0f; F(0x404) = 250.0f;
     applyTrack(ts);
-    CHECK(F(0x234) == 200.0f && F(0x5f4) == 200.0f, "shadow 85 -> %.0f, screen-area shadow 0 -> %.0f", F(0x234), F(0x5f4));
-    CHECK(F(0x5e4) == 800.0f, "world objects 360 -> %.0f", F(0x5e4));
-    CHECK(F(0x32c) == 4000.0f, "props: larger game value kept (%.0f)", F(0x32c));
-    CHECK(F(0x168) == 100.0f && F(0x404) == 250.0f && F(0x164) == 0.0f && F(0x40c) == 0.0f && F(0x410) == 0.0f,
-          "grass and crowd untouched with their settings at 0");
-    // D. the calls of the level selection go through a thunk that scales the squared distance by 1 / k^2 (k = 800 / 360)
+    CHECK(F(0x234) == 85.0f && F(0x5f4) == 0.0f && F(0x404) == 250.0f && F(0x40c) == 0.0f, "shadows and crowd keep the game's values");
+    CHECK(F(0x5e4) == 720.0f && F(0x32c) == 4000.0f, "trees and scenery x2: drawn to %.0f (720); props: the game's 4000 is past 3000 and kept (%.0f)", F(0x5e4), F(0x32c));
+    applyTrack(ts);                       // a track file without these keys keeps the values of the last load
+    CHECK(F(0x5e4) == 720.0f && F(0x32c) == 4000.0f, "a second load does not grow them again: %.0f %.0f (720 4000)", F(0x5e4), F(0x32c));
+    F(0x32c) = 450.0f;                    // the next track sets the props distance
+    applyTrack(ts);
+    CHECK(F(0x32c) == 900.0f, "props x2: 450 -> %.0f (900)", F(0x32c));
+    CHECK(F(0x168) == 200.0f && F(0x164) == 150.0f, "GrassDetail x2: grass 100 -> %.0f, its start %.0f (200 150)", F(0x168), F(0x164));
+    // Grass lines: derived from GrassDetail, and stable over track loads
+    {
+        typedef void (MSABI *FnTrackLines)(uint8_t*, float);
+        auto trackLines = (FnTrackLines)GetProcAddress(plugin, "FH2SI_TestTrackLines");
+        CHECK(trackLines != nullptr, "FH2SI_TestTrackLines exported");
+        if (trackLines) {
+            alignas(16) static uint8_t ts2[0x600];
+            memset(ts2, 0, sizeof(ts2));
+            auto G = [&](int off) -> float& { return *(float*)(ts2 + off); };
+            G(0x168) = 100.0f; G(0x164) = 75.0f; G(0x358) = 40.0f; G(0x35c) = 50.0f;
+            trackLines(ts2, 2.0f);
+            CHECK(G(0x168) == 200.0f && G(0x164) == 150.0f && G(0x358) == 80.0f && G(0x35c) == 100.0f,
+                  "grass x2, the other lines follow: %.0f %.0f %.0f %.0f (200 150 80 100)", G(0x168), G(0x164), G(0x358), G(0x35c));
+            G(0x168) = 100.0f;                    // the next track file sets only the grass end
+            trackLines(ts2, 2.0f);
+            CHECK(G(0x358) == 80.0f && G(0x35c) == 100.0f, "grass detail lines stable on a second load: %.0f %.0f (80 100)", G(0x358), G(0x35c));
+            trackLines(ts2, 2.0f);   // a track file without grass keys keeps every value
+            CHECK(G(0x358) == 80.0f && G(0x35c) == 100.0f, "grass detail lines stable when nothing is reloaded: %.0f %.0f (80 100)", G(0x358), G(0x35c));
+        }
+    }
+    // C. the calls of the level selection go through stubs that keep the caller's model (r15) and renderer (rbx) in TLS
     for (uintptr_t rva : {0x1353e2e, 0x13545b3, 0x135464a}) {
         int32_t r; memcpy(&r, base + rva + 1, 4);
-        CHECK(base[rva] == 0xE8 && base + rva + 5 + r != base + 0x1139200, "level selection call %llx re-pointed", (unsigned long long)rva);
+        const uint8_t* stub = base + rva + 5 + r;
+        CHECK(base[rva] == 0xE8 && stub != base + 0x1139200, "level selection call %llx re-pointed", (unsigned long long)rva);
+        const uint8_t keepModel[] = {0x65, 0x4C, 0x89, 0x3C, 0x25}, keepRender[] = {0x65, 0x48, 0x89, 0x1C, 0x25};
+        CHECK(memcmp(stub, keepModel, 5) == 0 && memcmp(stub + 9, keepRender, 5) == 0, "call %llx: its stub keeps r15 and rbx in TLS", (unsigned long long)rva);
     }
     int32_t movedRel; memcpy(&movedRel, base + 0x11391d4 + 1, 4);
     CHECK(base + 0x11391d4 + 5 + movedRel == base + 0x1139210, "the call Azimuth moved to its later entry is left alone");
-    int32_t selRel; memcpy(&selRel, base + 0x1353e2e + 1, 4);
-    typedef char (MSABI *FnSelect)(float, uint64_t*, int*, float, uint8_t, float, float, float, float);
-    auto select = (FnSelect)(base + 0x1353e2e + 5 + selRel);
-    uint64_t lodFlags = 0x3cULL << 48;   // the model has all four levels
-    int level = -1;
-    char culled = select(150.0f * 150.0f, &lodFlags, &level, 0.0f, 0, 900.0f, 3600.0f, 8100.0f, 10000.0f);
-    CHECK(!culled && level == 2, "150 m with distances 30/60/90/100 x2.2: level %d, culled %d (want 2, 0)", level, (int)culled);
-    culled = select(250.0f * 250.0f, &lodFlags, &level, 0.0f, 0, 900.0f, 3600.0f, 8100.0f, 10000.0f);
-    CHECK(culled && level == 4, "250 m is past the last distance: level %d, culled %d (want 4, 1)", level, (int)culled);
-    uint64_t coarseOnly = 1ULL << 53;   // only level 3 is loaded
-    culled = select(150.0f * 150.0f, &coarseOnly, &level, 0.0f, 0, 900.0f, 3600.0f, 8100.0f, 10000.0f);
-    CHECK(!culled && level == 3, "150 m, level 2 not loaded: the coarser level 3 is drawn (level %d, culled %d)", level, (int)culled);
-    uint64_t fineOnly = 1ULL << 50;     // only level 0 is loaded: no coarser level, the game's own choice stands
-    culled = select(150.0f * 150.0f, &fineOnly, &level, 0.0f, 0, 900.0f, 3600.0f, 8100.0f, 10000.0f);
-    CHECK(culled && level == 4, "150 m, only level 0 loaded: the game's own choice (level %d, culled %d)", level, (int)culled);
-
-    // E. shadow cascades: ShadowDistance 200 on the game's own tables, raised at install and never lowered
-    const auto closeTo = [](float a, float b) { return std::fabs(a - b) < 0.01f; };
-    const float* splitsA = (const float*)(base + 0x2207288);
-    const float* splitsB = (const float*)(base + 0x2207298);
-    CHECK(closeTo(splitsA[0], 9.44f) && closeTo(splitsA[1], 72.22f) && closeTo(splitsA[2], 200.0f), "shadow splits A %.2f %.2f %.2f", splitsA[0], splitsA[1], splitsA[2]);
-    CHECK(closeTo(splitsB[0], 2.22f) && closeTo(splitsB[1], 33.33f) && closeTo(splitsB[2], 150.0f), "shadow splits B %.2f %.2f %.2f", splitsB[0], splitsB[1], splitsB[2]);
-    typedef void (MSABI *FnSplits)();
-    auto raiseSplits = (FnSplits)GetProcAddress(plugin, "FH2SI_TestRaiseShadowSplits");
-    CHECK(raiseSplits != nullptr, "FH2SI_TestRaiseShadowSplits exported");
-    if (raiseSplits) raiseSplits();
-    CHECK(closeTo(splitsA[2], 200.0f), "shadow splits unchanged on a second run");
-
-    // B. traffic: the game's static initializers did not run here, so lay the registry variables out first
-    struct Var { uintptr_t rva; float def, max; };
-    const Var vars[] = {{0x36e8160, 30.0f, 1000.0f}, {0x36e8048, 120.0f, 1000.0f}};
-    for (auto& v : vars) {
-        *(float*)(base + v.rva + 0x10) = v.def;
-        *(float*)(base + v.rva + 0x14) = v.def;
-        *(float*)(base + v.rva + 0x20) = v.max;
+    // E. placed libraries: near detail switches move out as they load; a fence's stand-in moves along, a tree's billboard stays
+    CHECK(base[0x1867a9d] == 0xE8 && memcmp(base + 0x1867aa2, "\x0F\x1F\x44\x00\x00", 5) == 0, "the placed objects' pass calls the plugin first");
+    {
+        typedef void (MSABI *FnScaleLib)(uint8_t*, float, float, float);
+        auto scaleLib = (FnScaleLib)GetProcAddress(plugin, "FH2SI_TestScaleLibrary");
+        CHECK(scaleLib != nullptr, "FH2SI_TestScaleLibrary exported");
+        // ranges: start, start - fade-in, end, end + fade-out, two squares, fade-in, fade-out, 4 more floats; in list 4 only
+        static float tree[3][12] = {{0, 0, 100, 100}, {100, 100, 190, 190}, {190, 190, 190, 190, 0, 0, 0, 30}};
+        static float board[2][12] = {{190, 190, 1000, 1000, 0, 0, 30, 50}, {1000, 1000, 2750, 2750}};
+        static float bush[2][12] = {{0, 0, 70, 70}, {70, 70, 150, 150}};
+        static float farBoard[1][12] = {{0, 0, 2000, 2000}};
+        static float tree2[2][12] = {{0, 0, 190, 190}, {190, 190, 190, 190, 0, 0, 0, 30}};   // a second tree sharing the billboard
+        float* const ranges[5][2] = {{tree[0], tree[0] + 36}, {board[0], board[0] + 24}, {bush[0], bush[0] + 24}, {farBoard[0], farBoard[0] + 12},
+                                     {tree2[0], tree2[0] + 24}};
+        const uint32_t type3d = 3;                       // the tree and bush models are 3D ranges (type in the last slot)
+        for (float* r : {tree[0], tree[1], bush[0], bush[1], tree2[0]}) memcpy(r + 11, &type3d, 4);
+        alignas(16) static uint8_t objs[5 * 0x2a8];
+        memset(objs, 0, sizeof objs);
+        for (int o = 0; o < 5; ++o) { memcpy(objs + 0x2a8 * o + 0x28 * 4, &ranges[o][0], 8); memcpy(objs + 0x2a8 * o + 0x28 * 4 + 8, &ranges[o][1], 8); }
+        alignas(16) static uint8_t lib[0x60];
+        const auto setLib = [&](const char* n, uint8_t* first, uint8_t* last) {   // the name as an MSVC std::string on the heap, then the objects
+            const uint64_t len = strlen(n), cap = 31;
+            memset(lib, 0, sizeof lib);
+            memcpy(lib, &n, 8); memcpy(lib + 0x10, &len, 8); memcpy(lib + 0x18, &cap, 8); memcpy(lib + 0x28, &first, 8); memcpy(lib + 0x30, &last, 8);
+        };
+        if (scaleLib) {
+            setLib("TREEANDBUSHTEMPLATE", objs, objs + 5 * 0x2a8);
+            scaleLib(lib, 8.0f, 0.0f, 0.0f);
+            CHECK(tree[0][2] == 800.0f && tree[0][3] == 800.0f && tree[1][0] == 800.0f && tree[1][1] == 800.0f && tree[1][2] == 1520.0f &&
+                  tree[2][0] == 1520.0f && tree[2][2] == 1520.0f && tree[2][7] == 30.0f,
+                  "trees x8: full model to %.0f, simpler one to %.0f, its fade at %.0f (800 1520 1520)", tree[0][2], tree[1][2], tree[2][0]);
+            CHECK(board[0][0] == 190.0f && board[0][1] == 190.0f && board[0][2] == 1000.0f && board[0][6] == 30.0f && board[1][0] == 1000.0f && board[1][2] == 2750.0f,
+                  "the tree's billboards keep the game's ranges: %.0f to %.0f, %.0f to %.0f (190 to 1000, 1000 to 2750)", board[0][0], board[0][2], board[1][0], board[1][2]);
+            CHECK(bush[0][2] == 560.0f && bush[1][0] == 560.0f && bush[1][2] == 1200.0f,
+                  "a bush with nothing taking over: %.0f, %.0f to %.0f (560, 560 to 1200)", bush[0][2], bush[1][0], bush[1][2]);
+            CHECK(farBoard[0][2] == 2000.0f, "a billboard from 0 to %.0f is left alone (2000)", farBoard[0][2]);
+            CHECK(tree2[0][2] == 1520.0f && tree2[1][0] == 1520.0f, "a second tree: full model to %.0f (1520)", tree2[0][2]);
+            scaleLib(lib, 0.0f, 2.0f, 2.0f);
+            CHECK(bush[1][2] == 1200.0f, "trees at the game's x1: not moved (%.0f, 1200)", bush[1][2]);
+            static float nearFence[1][12] = {{0, 0, 100, 100, 0, 0, 0, 20}};
+            static float fenceStandIn[1][12] = {{100, 100, 500, 500, 0, 0, 20, 50}};
+            static float nearFence2[1][12] = {{0, 0, 100, 100}};                     // a second fence sharing the stand-in
+            float* const fr[3][2] = {{nearFence[0], nearFence[0] + 12}, {fenceStandIn[0], fenceStandIn[0] + 12}, {nearFence2[0], nearFence2[0] + 12}};
+            alignas(16) static uint8_t fences[3 * 0x2a8];
+            memset(fences, 0, sizeof fences);
+            for (int o = 0; o < 3; ++o) { memcpy(fences + 0x2a8 * o + 0x28 * 4, &fr[o][0], 8); memcpy(fences + 0x2a8 * o + 0x28 * 4 + 8, &fr[o][1], 8); }
+            setLib("BARRIERTEMPLATE", fences, fences + 3 * 0x2a8);
+            scaleLib(lib, 0.0f, 8.0f, 0.0f);
+            CHECK(nearFence[0][2] == 500.0f && fenceStandIn[0][0] == 500.0f && fenceStandIn[0][2] == 500.0f && nearFence2[0][2] == 500.0f,
+                  "fences x8: both near fences to %.0f and %.0f, capped by the simpler one's end; it starts at %.0f (500 500 500)",
+                  nearFence[0][2], nearFence2[0][2], fenceStandIn[0][0]);
+            setLib("CROWDTEMPLATE", fences, fences + 3 * 0x2a8);
+            scaleLib(lib, 8.0f, 8.0f, 8.0f);
+            CHECK(nearFence[0][2] == 500.0f, "another library is not scaled: %.0f (500)", nearFence[0][2]);
+        }
     }
-    applyTraffic();
-    float thigh = *(float*)(base + 0x36e8160 + 0x10), tmed = *(float*)(base + 0x36e8048 + 0x10);
-    CHECK(tmed == 300.0f && thigh == 30.0f, "medium LOD %.0f (want 300), high LOD %.0f unchanged", tmed, thigh);
-    // a mismatching layout is left alone
-    *(float*)(base + 0x36e8048 + 0x14) = 999.0f;
-    *(float*)(base + 0x36e8048 + 0x10) = 120.0f;
-    applyTraffic();
-    CHECK(*(float*)(base + 0x36e8048 + 0x10) == 120.0f, "registry mismatch: unchanged");
+    // Azimuth's Scenery detail: a jump at the level selection to a function that loads its factor 0x4e bytes in
+    {
+        typedef bool (MSABI *FnAzimuthLod)(float, float*, float*);
+        auto azimuthLod = (FnAzimuthLod)GetProcAddress(plugin, "FH2SI_TestAzimuthLod");
+        CHECK(azimuthLod != nullptr, "FH2SI_TestAzimuthLod exported");
+        alignas(16) static uint8_t fakeAzimuth[0x80];
+        memset(fakeAzimuth, 0xCC, sizeof(fakeAzimuth));
+        const uint8_t load[] = {0xF3, 0x0F, 0x10, 0x0D}, mul[] = {0xF3, 0x0F, 0x59, 0xC8};
+        memcpy(fakeAzimuth + 0x4e, load, 4);
+        const int32_t factorRel = 0x70 - 0x56;                     // the factor sits at fakeAzimuth + 0x70
+        memcpy(fakeAzimuth + 0x52, &factorRel, 4);
+        memcpy(fakeAzimuth + 0x5b, mul, 4);
+        float* factor = (float*)(fakeAzimuth + 0x70);
+        uint8_t saved[14];
+        memcpy(saved, base + 0x1139200, 14);
+        DWORD prot;
+        VirtualProtect(base + 0x1139200, 14, PAGE_EXECUTE_READWRITE, &prot);
+        uint8_t jmp[14] = {0xFF, 0x25, 0, 0, 0, 0};
+        const uint64_t to = (uint64_t)fakeAzimuth;
+        memcpy(jmp + 6, &to, 8);
+        memcpy(base + 0x1139200, jmp, 14);
+        float after = -1.0f, wrap = -1.0f;
+        if (azimuthLod) {
+            *factor = 0.0625f;                                         // Ultra: 4x
+            CHECK(azimuthLod(1.0f / 64.0f, &after, &wrap) && after == 0.0625f && wrap == 1.0f / 64.0f,
+                  "SceneryDetail 8x over Azimuth's 4x: Azimuth's factor stays %.4f, the hook scales %.5f (0.01563)", after, wrap);
+            CHECK(azimuthLod(0.25f, &after, &wrap) && after == 0.0625f && wrap == 0.0625f,
+                  "SceneryDetail 2x under Azimuth's 4x: Azimuth's stays %.4f, the hook scales %.4f (0.0625)", after, wrap);
+            fakeAzimuth[0x5b] = 0x90;                                  // not Azimuth's code
+            CHECK(!azimuthLod(0.25f, &after, &wrap) && wrap == 0.25f,
+                  "unknown code behind the jump: the hook scales %.3f (0.25) on its own", wrap);
+        }
+        memcpy(base + 0x1139200, saved, 14);
+        VirtualProtect(base + 0x1139200, 14, prot, &prot);
+    }
+    // the hooked selection on a fake model: one level per model, the finest ready one at or past the scaled pick
+    {
+        typedef char (MSABI *FnTestSelect)(void*, void*, float, float, uint64_t, int*, uint8_t, float, float, float, float);
+        auto testSelect = (FnTestSelect)GetProcAddress(plugin, "FH2SI_TestSelect");
+        CHECK(testSelect != nullptr, "FH2SI_TestSelect exported");
+        struct FakeResource { const uint64_t* vt; };
+        static uint64_t vtSettled[16], vtChanging[16];
+        vtSettled[0x70 / 8] = (uint64_t)(bool (MSABI *)(uintptr_t))[](uintptr_t) -> bool { return false; };
+        vtChanging[0x70 / 8] = (uint64_t)(bool (MSABI *)(uintptr_t))[](uintptr_t) -> bool { return true; };
+        static FakeResource settled{vtSettled}, changing{vtChanging};
+        alignas(16) static uint8_t model[0x100], hopA[0x10], hopB[0x10], desc[0x80], render[0x35e0], emptyModel[0x100];
+        static uint64_t resources[8];
+        static uint64_t* resourceTable = resources;
+        *(uint64_t*)(model + 0xb0) = (uint64_t)hopA;
+        *(uint64_t*)(hopA + 8) = (uint64_t)hopB;
+        *(uint64_t*)(hopB + 8) = (uint64_t)desc;
+        *(uint64_t*)(render + 0x35d0) = (uint64_t)&resourceTable;
+        const uint32_t none = *(const uint32_t*)(base + 0x2ebd1cc);     // the id of a level without a resource
+        CHECK(none < 4 || none > 7, "the no-resource id %x is not one of the fake ids 4..7", none);
+        // level j has resource id 4 + j; state: 's' settled, 'c' changing, '0' not loaded, '-' no resource
+        const auto levels = [&](const char* state) {
+            for (int j = 0; j < 4; ++j) {
+                *(uint32_t*)(desc + 0x6c + 4 * j) = state[j] == '-' ? none : 4 + j;
+                resources[4 + j] = state[j] == 's' ? (uint64_t)&settled : state[j] == 'c' ? (uint64_t)&changing : 0;
+            }
+        };
+        const uint64_t all = 0x3cULL << 48;
+        const float t0 = 900.0f, t1 = 3600.0f, t2 = 8100.0f, t3 = 10000.0f;   // 30/60/90/100 m, scaled x2 by m = 0.25
+        int level = -1;
+        if (testSelect) {
+            levels("ssss");
+            char culled = testSelect(model, render, 0.25f, 150.0f * 150.0f, all, &level, 0, t0, t1, t2, t3);
+            CHECK(!culled && level == 2, "150 m, all levels ready: level %d, culled %d (want 2, 0)", level, (int)culled);
+            culled = testSelect(model, render, 0.25f, 250.0f * 250.0f, all, &level, 0, t0, t1, t2, t3);
+            CHECK(culled && level == 4, "250 m is past the last scaled distance: level %d, culled %d (want 4, 1)", level, (int)culled);
+            levels("sscs");
+            culled = testSelect(model, render, 0.25f, 150.0f * 150.0f, all, &level, 0, t0, t1, t2, t3);
+            CHECK(!culled && level == 3, "150 m, level 2 still changing: level %d, culled %d (want 3, 0)", level, (int)culled);
+            levels("ss00");
+            culled = testSelect(model, render, 0.25f, 150.0f * 150.0f, all, &level, 0, t0, t1, t2, t3);
+            CHECK(culled && level == 4, "150 m, levels 2 and 3 not loaded: the game's own pick (level %d, culled %d; want 4, 1)", level, (int)culled);
+            levels("ss-s");
+            culled = testSelect(model, render, 0.25f, 150.0f * 150.0f, all, &level, 0, t0, t1, t2, t3);
+            CHECK(!culled && level == 2, "150 m, level 2 has no resource to wait for: level %d, culled %d (want 2, 0)", level, (int)culled);
+            levels("ssss");
+            culled = testSelect(model, render, 0.25f, 150.0f * 150.0f, 1ULL << 53, &level, 0, t0, t1, t2, t3);
+            CHECK(culled && level == 4, "150 m, an item holding only level 3 is not drawn over level 2: level %d, culled %d (want 4, 1)", level, (int)culled);
+            culled = testSelect(model, render, 0.25f, 45.0f * 45.0f, all, &level, 0, t0, t1, t2, t3);
+            CHECK(!culled && level == 0, "45 m, the game picks level 1 and the item holds level 0: level %d, culled %d (want 0, 0)", level, (int)culled);
+            levels("ccss");
+            culled = testSelect(model, render, 0.25f, 45.0f * 45.0f, 1ULL << 52, &level, 0, t0, t1, t2, t3);
+            CHECK(culled && level == 1, "45 m, levels 0 and 1 still changing: level 2 is not drawn closer than the game's level 1 (level %d, culled %d; want 1, 1)", level, (int)culled);
+            levels("ssss");
+            culled = testSelect(model, render, 0.25f, 45.0f * 45.0f, 1ULL << 51, &level, 0, t0, t1, t2, t3);
+            CHECK(!culled && level == 1, "45 m, an item holding only the game's level 1 is still drawn although level 0 is picked: level %d, culled %d (want 1, 0)", level, (int)culled);
+            culled = testSelect(emptyModel, render, 0.25f, 150.0f * 150.0f, all, &level, 0, t0, t1, t2, t3);
+            CHECK(culled && level == 4, "150 m, a model laid out differently: the game's own pick (level %d, culled %d; want 4, 1)", level, (int)culled);
+            culled = testSelect(model, render, 1.0f, 50.0f * 50.0f, all, &level, 0, t0, t1, t2, t3);
+            CHECK(!culled && level == 1, "no scaling, 50 m: the game's level %d, culled %d (want 1, 0)", level, (int)culled);
+            culled = testSelect(model, render, 0.25f, 10.0f * 10.0f, all, &level, 1, t0, t1, t2, t3);
+            CHECK(!culled && level == 1, "10 m with the finest level barred: level %d (want 1)", level);
+            culled = testSelect(model, render, 0.25f, 10.0f * 10.0f, all, &level, 0, t0, t1, t2, t3);
+            CHECK(!culled && level == 0, "10 m: level %d (want 0)", level);
+            // without scaling the hook is the game's own function (still unpatched at 0x1139200), on every input
+            typedef char (MSABI *FnGameSelect)(float, uint64_t*, int*, float, uint8_t, float, float, float, float);
+            auto game = (FnGameSelect)(base + 0x1139200);
+            int differ = 0;
+            for (float d : {0.0f, 10.0f, 29.9f, 30.0f, 45.0f, 60.0f, 75.0f, 90.0f, 95.0f, 100.0f, 120.0f})
+                for (uint64_t f : {all, 1ULL << 50, 1ULL << 51, 1ULL << 52, 1ULL << 53, 3ULL << 50, 0ULL})
+                    for (uint8_t noFinest : {0, 1}) {
+                        int lg = -7, lh = -7;
+                        const char cg = game(d * d, &f, &lg, 0.0f, noFinest, t0, t1, t2, t3);
+                        const char ch = testSelect(model, render, 1.0f, d * d, f, &lh, noFinest, t0, t1, t2, t3);
+                        if (cg != ch || lg != lh) ++differ;
+                    }
+            CHECK(differ == 0, "the hook's copy of the game's level selection matches the game's on 154 inputs (%d differ)", differ);
+        }
+    }
 
-    // C. racer cars: CarLODTransDist parse / defaults slots
-    uint64_t* slots = (uint64_t*)(base + 0x2eb9bc0);
-    CHECK(slots[0] == (uint64_t)(base + 0x1307230), "CarLODTransDist name getter slot unchanged");
-    CHECK(slots[1] != (uint64_t)(base + 0x12ffa90), "parse slot re-pointed");
-    CHECK(slots[2] != (uint64_t)(base + 0x130bb20), "defaults slot re-pointed");
-    alignas(16) static uint8_t obj[0x40];
-    memset(obj, 0, sizeof(obj));
-    typedef uint64_t (MSABI *FnCar)(void*, void*, void*, void*);
-    ((FnCar)slots[2])(obj, nullptr, nullptr, nullptr);
-    float* lod = (float*)(obj + 8);
-    CHECK(lod[0] == 30.0f && lod[1] == 50.0f && lod[2] == 100.0f && lod[3] == 120.0f,
-          "default car LOD distances %.0f/%.0f/%.0f/%.0f (want 30/50/100/120: built-in defaults 15/25/50/60 x2)", lod[0], lod[1], lod[2], lod[3]);
 }
 
 typedef HRESULT (WINAPI *FnProxyCreate)(HINSTANCE, DWORD, REFIID, void**, void*);
@@ -1023,12 +1160,12 @@ static void enableCheckTests(HMODULE plugin) {
     CHECK(loadCfg != nullptr, "FH2SI_TestLoadConfig exported");
     if (loadCfg) {
         int out[5] = {};
-        writeText(cfg, "[Input]\nConfigVersion=9\nDiagnostics=1\n[General]\nOverrideAzimuthHeadTracking=1\n"
-                       "[Simulation]\nEnabled=1\nRealisticABS=1\n[DrawDistance]\nEnabled=1\nShadowDistance=200\n[Logging]\nEnabled=1\n");
+        writeText(cfg, "[Input]\nConfigVersion=12\nDiagnostics=1\n[General]\nOverrideAzimuthHeadTracking=1\n"
+                       "[Simulation]\nEnabled=1\nRealisticABS=1\n[DrawDistance]\nEnabled=1\nSceneryDetail=2\n[Logging]\nEnabled=1\n");
         loadCfg(cfg.c_str(), out);
-        CHECK(out[0] == 1 && out[1] == 1 && out[2] == 200 && out[3] == 1 && out[4] == 1, "checks on: settings used (%d %d %d %d %d)", out[0], out[1], out[2], out[3], out[4]);
-        writeText(cfg, "[Input]\nConfigVersion=9\nDiagnostics=1\n[General]\nOverrideAzimuthHeadTracking=0\n"
-                       "[Simulation]\nEnabled=0\nRealisticABS=1\n[DrawDistance]\nEnabled=0\nShadowDistance=200\n[Logging]\nEnabled=0\n");
+        CHECK(out[0] == 1 && out[1] == 1 && out[2] == 2 && out[3] == 1 && out[4] == 1, "checks on: settings used (%d %d %d %d %d)", out[0], out[1], out[2], out[3], out[4]);
+        writeText(cfg, "[Input]\nConfigVersion=12\nDiagnostics=1\n[General]\nOverrideAzimuthHeadTracking=0\n"
+                       "[Simulation]\nEnabled=0\nRealisticABS=1\n[DrawDistance]\nEnabled=0\nSceneryDetail=2\n[Logging]\nEnabled=0\n");
         loadCfg(cfg.c_str(), out);
         CHECK(out[0] == 0 && out[1] == 0 && out[2] == 0 && out[3] == 0 && out[4] == 0, "checks off: settings ignored (%d %d %d %d %d)", out[0], out[1], out[2], out[3], out[4]);
         writeText(cfg, "[Input]\nConfigVersion=6\n[Wheel]\nFFBGain=0.90\nFFBTorqueGain=2.0\nFFBSlipGain=0.7\nFFBAlignGain=0.60\n[Rotation]\nYawLeftIsPositive=1\n");
@@ -1108,7 +1245,7 @@ int wmain(int argc, wchar_t** argv) {
         size_t sep = iniPath.find_last_of(L"\\/");
         carsPath = (sep == std::wstring::npos ? std::wstring() : iniPath.substr(0, sep + 1)) + L"FH2SimImmersion_cars.ini";
         logPath = (sep == std::wstring::npos ? std::wstring() : iniPath.substr(0, sep + 1)) + L"FH2SimImmersion.log";
-        WritePrivateProfileStringW(L"Input", L"ConfigVersion", L"9", iniPath.c_str());
+        WritePrivateProfileStringW(L"Input", L"ConfigVersion", L"12", iniPath.c_str());
         WritePrivateProfileStringW(L"Wheel", L"TestMode", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealisticABS", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealisticTC", L"1", iniPath.c_str());
@@ -1118,10 +1255,8 @@ int wmain(int argc, wchar_t** argv) {
         WritePrivateProfileStringW(L"Simulation", L"RealisticSteeringLock", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"RealCockpitWheel", L"1", iniPath.c_str());
         WritePrivateProfileStringW(L"Simulation", L"HideDriverInCockpit", L"1", iniPath.c_str());
-        WritePrivateProfileStringW(L"DrawDistance", L"ShadowDistance", L"200", iniPath.c_str());
-        WritePrivateProfileStringW(L"DrawDistance", L"WorldDistance", L"800", iniPath.c_str());
-        WritePrivateProfileStringW(L"DrawDistance", L"TrafficDistance", L"300", iniPath.c_str());
-        WritePrivateProfileStringW(L"DrawDistance", L"RacerDistance", L"150", iniPath.c_str());
+        for (const wchar_t* k : {L"SceneryDetail", L"TreeDetail", L"FenceDetail", L"GrassDetail"})
+            WritePrivateProfileStringW(L"DrawDistance", k, L"2", iniPath.c_str());
         // per-car overrides: old two-field format (ABS off, TC on, STM auto) and the three-field format
         const ShiftPicks sp = pickShiftCars();
         const fh2::CarInfo* ov = sp.ov;
@@ -1149,7 +1284,7 @@ int wmain(int argc, wchar_t** argv) {
             WritePrivateProfileStringW(L"Simulation", L"RealisticSteeringLock", L"0", p.c_str());
             WritePrivateProfileStringW(L"Simulation", L"RealCockpitWheel", L"0", p.c_str());
             WritePrivateProfileStringW(L"Simulation", L"HideDriverInCockpit", L"0", p.c_str());
-            for (const wchar_t* k : {L"ShadowDistance", L"WorldDistance", L"TrafficDistance", L"RacerDistance"})
+            for (const wchar_t* k : {L"SceneryDetail", L"TreeDetail", L"FenceDetail", L"GrassDetail"})
                 WritePrivateProfileStringW(L"DrawDistance", k, L"0", p.c_str());
             DeleteFileW(cars.c_str());
         }

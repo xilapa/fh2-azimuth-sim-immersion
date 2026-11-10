@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Draw distance: raises the game's own shadow, world-object, prop, crowd, grass, traffic and
-// racer-car detail distances (never lowers them). Values are metres, 0 = leave the game value.
+// Pop-in killer: moves the game's detail switches of scenery, trees, fences and grass farther out (never closer).
+// Values are multipliers, 0 or 1 = leave the game's.
 #pragma once
 #include <cstdint>
 #include "config.h"

@@ -143,17 +143,14 @@ inline constexpr Setting kSimSettings[] = {
      0, 0, 0, "1|-1", "Advanced", nullptr, false, false},
 };
 
-// Draw distance (metres). The INI stores 0 = game default; the page shows a slider from the game's own
-// value up to the maximum (pages_draw.cpp), the table range here is the range of the stored value.
+// Pop-in killer: multipliers of the game's detail switches. The INI stores 0 = game default; the page shows a slider
+// from the game's own x1 up to x8 (pages_draw.cpp).
 inline constexpr Setting kDrawDistSettings[] = {
-    ST_BOOL ("DrawDistance", "Enabled", "Use Sim Immersion draw distances (on top of Azimuth's)", "Sim Immersion", nullptr),
-    ST_SLIDER("DrawDistance", "ShadowDistance",  "Shadows (game: 85 m)",         "Draw distance (metres)", "shadow",  0, 1000, 1),
-    ST_SLIDER("DrawDistance", "WorldDistance",   "Scenery and trees (game: 360 m)",  "Draw distance (metres)", "world",   0, 3000, 1),
-    ST_SLIDER("DrawDistance", "PropsDistance",   "Props (game: 450 m)",          "Draw distance (metres)", "props",   0, 3000, 1),
-    ST_SLIDER("DrawDistance", "CrowdDistance",   "Crowd (game: 250 m)",          "Draw distance (metres)", "crowd",   0, 1000, 1),
-    ST_SLIDER("DrawDistance", "GrassDistance",   "Grass (game: 100 m)",          "Draw distance (metres)", "grass",   0, 500, 1),
-    ST_SLIDER("DrawDistance", "TrafficDistance", "Traffic cars, medium detail (game: 120 m)",   "Draw distance (metres)", "traffic", 0, 500, 1),
-    ST_SLIDER("DrawDistance", "RacerDistance",   "Racer cars, full detail (game: 75 m)", "Draw distance (metres)", "racer", 0, 1000, 1),
+    ST_BOOL ("DrawDistance", "Enabled", "Use the pop-in killer (on top of Azimuth's)", "Sim Immersion", nullptr),
+    ST_SLIDER("DrawDistance", "SceneryDetail", "Buildings and scenery, times farther (game: x1)", "Detail switch", "scenery", 0, 8, 1),
+    ST_SLIDER("DrawDistance", "TreeDetail",    "Trees and bushes, times farther (game: x1)",      "Detail switch", "trees", 0, 8, 1),
+    ST_SLIDER("DrawDistance", "FenceDetail",   "Fences and barriers, times farther (game: x1)",   "Detail switch", "fences", 0, 8, 1),
+    ST_SLIDER("DrawDistance", "GrassDetail",   "Grass and crops, times farther (game: x1)",       "Detail switch", "grass", 0, 8, 1),
 };
 
 inline constexpr Setting kMainSettings[] = {

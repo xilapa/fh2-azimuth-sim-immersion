@@ -363,15 +363,12 @@ Config loadConfig(const std::wstring& iniPath) {
     }
     if (readI(ini, "DrawDistance", "Enabled", 1) != 0) {
         DrawDistConfig& d = c.drawDist;
-        d.shadow  = clampCfg(ini, "ShadowDistance", (float)readF(ini, "DrawDistance", "ShadowDistance", 0.0), 0.0f, 1000.0f);
-        d.world   = clampCfg(ini, "WorldDistance", (float)readF(ini, "DrawDistance", "WorldDistance", 0.0), 0.0f, 3000.0f);
-        d.props   = clampCfg(ini, "PropsDistance", (float)readF(ini, "DrawDistance", "PropsDistance", 0.0), 0.0f, 3000.0f);
-        d.crowd   = clampCfg(ini, "CrowdDistance", (float)readF(ini, "DrawDistance", "CrowdDistance", 0.0), 0.0f, 1000.0f);
-        d.grass   = clampCfg(ini, "GrassDistance", (float)readF(ini, "DrawDistance", "GrassDistance", 0.0), 0.0f, 500.0f);
-        d.traffic = clampCfg(ini, "TrafficDistance", (float)readF(ini, "DrawDistance", "TrafficDistance", 0.0), 0.0f, 500.0f);
-        d.racer   = clampCfg(ini, "RacerDistance", (float)readF(ini, "DrawDistance", "RacerDistance", 0.0), 0.0f, 1000.0f);
-        LOG("config: drawdist shadow %.0f world %.0f props %.0f crowd %.0f grass %.0f traffic %.0f racer %.0f",
-            d.shadow, d.world, d.props, d.crowd, d.grass, d.traffic, d.racer);
+        auto times = [&](const char* key) { return clampCfg(ini, key, (float)readF(ini, "DrawDistance", key, 0.0), 0.0f, 8.0f); };
+        d.scenery = times("SceneryDetail");
+        d.trees   = times("TreeDetail");
+        d.fences  = times("FenceDetail");
+        d.grass   = times("GrassDetail");
+        LOG("config: pop-in killer scenery x%.1f trees x%.1f fences x%.1f grass x%.1f", d.scenery, d.trees, d.fences, d.grass);
     }
     {
         std::wstring cars = iniPath;
@@ -398,7 +395,7 @@ extern "C" __declspec(dllexport) void FH2SI_TestLoadConfig(const wchar_t* ini, i
     const fh2::Config c = fh2::loadConfig(ini);
     out[0] = c.simEnabled;
     out[1] = c.sim.realisticAbs;
-    out[2] = (int)c.drawDist.shadow;
+    out[2] = (int)c.drawDist.scenery;
     out[3] = c.overrideAzimuthHeadTracking;
     out[4] = c.diagnostics;
 }

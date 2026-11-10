@@ -74,8 +74,8 @@ struct SimConfig {
     std::vector<std::pair<unsigned, unsigned>> steeringLocks;   // [SteeringLock] car Id -> degrees (from the cars INI)
 };
 
-struct DrawDistConfig {                      // metres; 0 = game default
-    float shadow = 0, world = 0, props = 0, crowd = 0, grass = 0, traffic = 0, racer = 0;
+struct DrawDistConfig {                      // multipliers of the game's detail distances, 1 to 8; 0 or 1 = the game's
+    float scenery = 0, trees = 0, fences = 0, grass = 0;
 };
 
 struct Config {

@@ -37,11 +37,4 @@ struct WheelPicState {
 struct PicHit { RECT r; std::string part; };          // a clickable area of the picture
 void DrawWheelPicture(HDC dc, const RECT& rc, const WheelPicState& st, int dpi, HFONT font, std::vector<PicHit>* hits);
 
-struct DrawDistPicState {
-    std::string part;                  // shadow world props crowd grass traffic racer
-    // effective distances in metres (the game's own value where the setting is the game default)
-    double shadow = 85, world = 360, props = 450, crowd = 250, grass = 100, traffic = 150, racer = 75;
-};
-void DrawDrawDistPicture(HDC dc, const RECT& rc, const DrawDistPicState& st, int dpi, HFONT font);
-
 } // namespace app
