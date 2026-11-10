@@ -945,6 +945,66 @@ static void drawDistTests(uint8_t* base, HMODULE plugin) {
             CHECK(nearFence[0][2] == 500.0f, "another library is not scaled: %.0f (500)", nearFence[0][2]);
         }
     }
+    // F. loaded grass patches are added to the frame's item list
+    CHECK(base[0x1336445] == 0xE8 && memcmp(base + 0x133644a, "\x0F\x1F\x44\x00\x00\x0F\x1F\x44\x00\x00", 10) == 0 && base[0x1336454] == 0x48,
+          "the view's item list set-up calls the plugin first");
+    {
+        typedef void (MSABI *FnShowGrass)(uint8_t*, uint8_t*);
+        auto showGrass = (FnShowGrass)GetProcAddress(plugin, "FH2SI_TestShowGrass");
+        CHECK(showGrass != nullptr, "FH2SI_TestShowGrass exported");
+        // six streamed items: 0 grass (listed), 1 grass, 2 a tree patch, 3 not loaded, 4 grass still loading, 5 another class
+        const uint64_t resVt = (uint64_t)(base + 0x2f5a830), grassVt = (uint64_t)(base + 0x2f5a470), treeVt = (uint64_t)(base + 0x2f5a300);
+        static uint64_t item[6];
+        alignas(16) static uint8_t res[6][0x120], handle[6][0x40], zone[0x1c0];
+        static uint8_t view[0x35b8];
+        static uint64_t entries[6][2];
+        static uint32_t listA[8], listB[8];
+        memset(res, 0, sizeof res); memset(handle, 0, sizeof handle); memset(zone, 0, sizeof zone); memset(entries, 0, sizeof entries);
+        for (int i = 0; i < 6; ++i) {
+            item[i] = i == 2 ? treeVt : grassVt;
+            const uint64_t vt = i == 5 ? treeVt : resVt, it = (uint64_t)&item[i], r = (uint64_t)res[i];
+            memcpy(res[i], &vt, 8); res[i][0x34] = 4; res[i][0x35] = i == 4 ? 3 : 4; memcpy(res[i] + 0x118, &it, 8);
+            memcpy(handle[i] + 0x28, &r, 8);
+            if (i != 3) entries[i][0] = (uint64_t)handle[i];
+        }
+        const uint64_t arr[2] = {(uint64_t)entries, (uint64_t)(entries + 6)};
+        const uint64_t arrPtr = (uint64_t)arr;
+        memcpy(view + 0x35b0, &arrPtr, 8);
+        const auto setList = [&](int which, uint32_t* buf, int size, int cap) {
+            const uint64_t v[3] = {(uint64_t)buf, (uint64_t)(buf + size), (uint64_t)(buf + cap)};
+            memcpy(zone + 0x188 + 0x18 * which, v, 24);
+        };
+        const auto listed = [&](int which) { uint64_t v[2]; memcpy(v, zone + 0x188 + 0x18 * which, 16); return (int)((v[1] - v[0]) / 4); };
+        if (showGrass) {
+            listA[0] = 2; listA[1] = 0;
+            setList(0, listA, 2, 8);
+            setList(1, listB, 0, 8);
+            showGrass(zone, view);
+            CHECK(listed(0) == 3 && listA[0] == 2 && listA[1] == 0 && listA[2] == 1,
+                  "loaded grass not on the list is added once: %d items, the last is %u (3, 1)", listed(0), listA[2]);
+            showGrass(zone, view);
+            CHECK(listed(0) == 3, "a second frame adds nothing: %d items (3)", listed(0));
+            res[4][0x35] = 4;
+            showGrass(zone, view);
+            CHECK(listed(0) == 4 && listA[3] == 4, "grass that finished loading is added: %d items, the last is %u (4, 4)", listed(0), listA[3]);
+            const uint32_t one = 1;
+            memcpy(zone + 0x1b8, &one, 4);                       // the game switched to its other list, still empty
+            showGrass(zone, view);
+            CHECK(listed(1) == 3 && listed(0) == 4, "a new list gets every loaded grass patch at once: %d items, the old list keeps %d (3, 4)", listed(1), listed(0));
+            res[1][0x34] = 0;                                     // patch 1 is unloaded
+            setList(1, listB, 0, 8);
+            showGrass(zone, view);
+            CHECK(listed(1) == 2 && listB[0] != 1 && listB[1] != 1, "an unloaded patch is not added again: %d items (2)", listed(1));
+            setList(1, listB, 0, 1);
+            showGrass(zone, view);
+            CHECK(listed(1) == 1, "a full list is not written past its end: %d items (1)", listed(1));
+            const uint32_t two = 2;
+            memcpy(zone + 0x1b8, &two, 4);
+            setList(0, listA, 0, 8);
+            showGrass(zone, view);
+            CHECK(listed(0) == 0, "an unknown list number changes nothing: %d items (0)", listed(0));
+        }
+    }
     // Azimuth's Scenery detail: a jump at the level selection to a function that loads its factor 0x4e bytes in
     {
         typedef bool (MSABI *FnAzimuthLod)(float, float*, float*);

@@ -202,7 +202,7 @@ inline constexpr char kDefaultIni[] =
 "TreeDetail=0\n"
 "; Fences, barriers and other things that can be knocked over (game: the simpler fence from about 100 m). How far they are drawn (game: 450 m) grows with it, up to 3000 m.\n"
 "FenceDetail=0\n"
-"; Grass and crops (game: grass to about 100 m). Grass is drawn at most 500 m away.\n"
+"; Grass and crops (game: grass to about 100 m). Grass is drawn at most 500 m away, and only where the game has it loaded.\n"
 "GrassDetail=0\n"
 "\n"
 "[Logging]\n"

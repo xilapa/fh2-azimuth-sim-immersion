@@ -4,7 +4,8 @@
 //     multipliers, and the scenery multiplier applied per track;
 //  C. scenery level of detail (buildings, props and everything else drawn per model): the render loop's calls of the level selection
 //     also draw a finer level farther away when its resource is ready; the level the game draws itself is never hidden;
-//  E. placed trees, fences and grass: their detail switches move out as their template library loads.
+//  E. placed trees, fences and grass: their detail switches move out as their template library loads;
+//  F. grass patches the game has loaded but does not list for its current zone are drawn as well.
 #include "drawdist_hook.h"
 #include <windows.h>
 #include <algorithm>
@@ -12,6 +13,7 @@
 #include <cmath>
 #include <cstring>
 #include <intrin.h>
+#include <iterator>
 #include <vector>
 #include "patch_util.h"
 #include "log.h"
@@ -51,6 +53,19 @@ constexpr size_t    kPlacedObjectSize = 0x2a8, kPlacedLists = 16, kPlacedListStr
 constexpr float     kNearDetailMax = 500.0f;          // metres: ranges from 0 ending here or nearer are near detail
 constexpr size_t    kRangeType = 11;                  // the float slot holding a range's type
 constexpr uint32_t  kRangeType3d = 3;                 // a 3D tree model (0 and 1: plain models and billboards)
+
+// ---- F. grass patches are streamed scene items. Each frame the game draws the items on its current zone's baked list,
+// which holds the grass patches within the game's own grass distance only (about 200 m). Patches farther away are loaded
+// (the neighbouring zones need them) but not listed, so grass shows up in whole blocks as the zone changes. The hook
+// runs where a frame's view takes that list (rdx: the zone state, rsi: the view) and adds the loaded grass patches.
+constexpr uintptr_t kViewListRva = 0x1336445;         // movsxd rax,[rdx+0x1b8] ; lea rcx,[rax*2+0x31]
+constexpr uint8_t   kViewListBytes[15] = {0x48, 0x63, 0x82, 0xB8, 0x01, 0x00, 0x00, 0x48, 0x8D, 0x0C, 0x45, 0x31, 0x00, 0x00, 0x00};
+constexpr int       kOffZoneLists = 0x188, kOffZoneListIndex = 0x1b8;   // the two item lists, and which one is current
+constexpr int       kOffViewItems = 0x35b0;           // the view's pointer to the world's streamed items
+constexpr uintptr_t kStreamedItemVtable = 0x2f5a830, kGrassPatchVtable = 0x2f5a470;
+constexpr int       kOffHandleResource = 0x28, kOffResourceState = 0x34, kOffResourceItem = 0x118;
+constexpr uint8_t   kResourceLoaded = 4;              // both state bytes hold it once the item can be used
+constexpr size_t    kItemsPerFrame = 4096;            // streamed items looked at per frame for newly loaded grass
 
 uintptr_t      g_base = 0;
 DrawDistConfig g_cfg;
@@ -324,54 +339,131 @@ void scaleLibrary(uint8_t* lib) {
     LOG("drawdist: %.*s: %d detail switches moved x%.1f", (int)len, name, moved, k);
 }
 
-void installPlacementHook() {
-    uint8_t* const site = reinterpret_cast<uint8_t*>(g_base + kPlacedPassRva);
-    if (!readable(site, sizeof kPlacedPassBytes) || std::memcmp(site, kPlacedPassBytes, sizeof kPlacedPassBytes) != 0) {
-        LOG("drawdist: placed objects pass mismatch; unchanged");
-        return;
+// Replaces the n bytes at rva (whole instructions that use neither rip nor rsp; n is 5 plus a multiple of 5) by a call
+// to a stub. The stub keeps the registers the game's code may still read (the volatile ones and xmm0-5), loads fn's
+// arguments with `args`, calls fn, then runs the replaced instructions. rsp must be 16-aligned at the site: after the
+// call and 7 pushes it is again, and stays so through the 0x80 bytes reserved (shadow space and the saved xmm registers).
+bool installStubCall(uintptr_t rva, const uint8_t* orig, size_t n, const uint8_t* args, size_t argLen, void* fn, const char* what) {
+    uint8_t* const site = reinterpret_cast<uint8_t*>(g_base + rva);
+    if (!readable(site, n) || std::memcmp(site, orig, n) != 0) {
+        LOG("drawdist: %s mismatch; unchanged", what);
+        return false;
     }
-    // The stub keeps the registers the pass may still read (the volatile ones and xmm0-5), calls scaleLibrary(r12),
-    // then runs the two instructions its call replaced. rsp is 16-aligned at the call site: after the call and 7 pushes
-    // it is again, and stays so through the 0x80 bytes reserved (shadow space and the saved xmm registers).
-    static const uint8_t pre[] = {
+    static const uint8_t save[] = {
         0x50, 0x51, 0x52, 0x41, 0x50, 0x41, 0x51, 0x41, 0x52, 0x41, 0x53,          // push rax, rcx, rdx, r8, r9, r10, r11
         0x48, 0x81, 0xEC, 0x80, 0x00, 0x00, 0x00,                                // sub rsp, 0x80
         0xF3, 0x0F, 0x7F, 0x44, 0x24, 0x20, 0xF3, 0x0F, 0x7F, 0x4C, 0x24, 0x30,  // movdqu [rsp+0x20], xmm0 ; [rsp+0x30], xmm1
         0xF3, 0x0F, 0x7F, 0x54, 0x24, 0x40, 0xF3, 0x0F, 0x7F, 0x5C, 0x24, 0x50,  // xmm2 ; xmm3
-        0xF3, 0x0F, 0x7F, 0x64, 0x24, 0x60, 0xF3, 0x0F, 0x7F, 0x6C, 0x24, 0x70,  // xmm4 ; xmm5
-        0x4C, 0x89, 0xE1,                                                        // mov rcx, r12
-        0x48, 0xB8};                                                             // mov rax, imm64 (scaleLibrary)
-    static const uint8_t post[] = {
+        0xF3, 0x0F, 0x7F, 0x64, 0x24, 0x60, 0xF3, 0x0F, 0x7F, 0x6C, 0x24, 0x70}; // xmm4 ; xmm5
+    static const uint8_t restore[] = {
         0xFF, 0xD0,                                                              // call rax
         0xF3, 0x0F, 0x6F, 0x44, 0x24, 0x20, 0xF3, 0x0F, 0x6F, 0x4C, 0x24, 0x30,  // movdqu xmm0, [rsp+0x20] ; xmm1
         0xF3, 0x0F, 0x6F, 0x54, 0x24, 0x40, 0xF3, 0x0F, 0x6F, 0x5C, 0x24, 0x50,  // xmm2 ; xmm3
         0xF3, 0x0F, 0x6F, 0x64, 0x24, 0x60, 0xF3, 0x0F, 0x6F, 0x6C, 0x24, 0x70,  // xmm4 ; xmm5
         0x48, 0x81, 0xC4, 0x80, 0x00, 0x00, 0x00,                                // add rsp, 0x80
-        0x41, 0x5B, 0x41, 0x5A, 0x41, 0x59, 0x41, 0x58, 0x5A, 0x59, 0x58,          // pop r11, r10, r9, r8, rdx, rcx, rax
-        0x49, 0x8B, 0x5C, 0x24, 0x28, 0x49, 0x8D, 0x74, 0x24, 0x40,              // mov rbx, [r12+0x28] ; lea rsi, [r12+0x40]
-        0xC3};                                                                   // ret
-    uint8_t* const stub = static_cast<uint8_t*>(allocNear(g_base + kPlacedPassRva, sizeof pre + 8 + sizeof post));
-    if (!stub) { LOG("drawdist: could not allocate placed objects memory; unchanged"); return; }
-    const uint64_t fn = reinterpret_cast<uint64_t>(&scaleLibrary);
-    std::memcpy(stub, pre, sizeof pre);
-    std::memcpy(stub + sizeof pre, &fn, 8);
-    std::memcpy(stub + sizeof pre + 8, post, sizeof post);
-    FlushInstructionCache(GetCurrentProcess(), stub, sizeof pre + 8 + sizeof post);
-    uint8_t call[10] = {0xE8, 0, 0, 0, 0, 0x0F, 0x1F, 0x44, 0x00, 0x00};     // call stub ; 5-byte nop
-    const int32_t rel = static_cast<int32_t>(reinterpret_cast<intptr_t>(stub) - static_cast<intptr_t>(g_base + kPlacedPassRva + 5));
-    std::memcpy(call + 1, &rel, 4);
+        0x41, 0x5B, 0x41, 0x5A, 0x41, 0x59, 0x41, 0x58, 0x5A, 0x59, 0x58};         // pop r11, r10, r9, r8, rdx, rcx, rax
+    const uint64_t target = reinterpret_cast<uint64_t>(fn);
+    const uint8_t* const targetBytes = reinterpret_cast<const uint8_t*>(&target);
+    std::vector<uint8_t> code(std::begin(save), std::end(save));
+    code.insert(code.end(), args, args + argLen);
+    code.insert(code.end(), {0x48, 0xB8});                                       // mov rax, imm64 (fn)
+    code.insert(code.end(), targetBytes, targetBytes + 8);
+    code.insert(code.end(), std::begin(restore), std::end(restore));
+    code.insert(code.end(), orig, orig + n);
+    code.push_back(0xC3);                                                        // ret
+    uint8_t* const stub = static_cast<uint8_t*>(allocNear(g_base + rva, code.size()));
+    if (!stub) { LOG("drawdist: could not allocate memory for %s; unchanged", what); return false; }
+    std::memcpy(stub, code.data(), code.size());
+    FlushInstructionCache(GetCurrentProcess(), stub, code.size());
+    std::vector<uint8_t> call(n);
+    call[0] = 0xE8;                                                              // call stub ; 5-byte nops
+    const int32_t rel = static_cast<int32_t>(reinterpret_cast<intptr_t>(stub) - static_cast<intptr_t>(g_base + rva + 5));
+    std::memcpy(&call[1], &rel, 4);
+    static const uint8_t nop5[5] = {0x0F, 0x1F, 0x44, 0x00, 0x00};
+    for (size_t i = 5; i + 5 <= n; i += 5) std::memcpy(&call[i], nop5, 5);
     DWORD prot;
-    if (!VirtualProtect(site, sizeof call, PAGE_EXECUTE_READWRITE, &prot)) {
-        LOG("drawdist: placed objects pass VirtualProtect failed %lu; unchanged", GetLastError());
-        return;
+    if (!VirtualProtect(site, n, PAGE_EXECUTE_READWRITE, &prot)) {
+        LOG("drawdist: %s VirtualProtect failed %lu; unchanged", what, GetLastError());
+        return false;
     }
     Suspended sus;
     sus.suspendOthers();
-    std::memcpy(site, call, sizeof call);
-    FlushInstructionCache(GetCurrentProcess(), site, sizeof call);
+    std::memcpy(site, call.data(), n);
+    FlushInstructionCache(GetCurrentProcess(), site, n);
     sus.resumeAll();
-    VirtualProtect(site, sizeof call, prot, &prot);
-    LOG("drawdist: placed trees x%.1f, fences x%.1f, grass x%.1f, applied as their libraries load", g_cfg.trees, g_cfg.fences, g_cfg.grass);
+    VirtualProtect(site, n, prot, &prot);
+    return true;
+}
+
+void installPlacementHook() {
+    static const uint8_t args[] = {0x4C, 0x89, 0xE1};                            // mov rcx, r12
+    if (installStubCall(kPlacedPassRva, kPlacedPassBytes, sizeof kPlacedPassBytes, args, sizeof args, reinterpret_cast<void*>(&scaleLibrary), "placed objects pass"))
+        LOG("drawdist: placed trees x%.1f, fences x%.1f, grass x%.1f, applied as their libraries load", g_cfg.trees, g_cfg.fences, g_cfg.grass);
+}
+
+// ---------------------------------------------------------------------------
+// F
+// ---------------------------------------------------------------------------
+struct ItemList { uint32_t* begin; uint32_t* end; uint32_t* capacity; };   // an MSVC std::vector<uint32_t> of item numbers
+struct ItemEntry { uint8_t* handle; void* count; };                        // a shared pointer; null while the item is not loaded
+struct ItemArray { ItemEntry* begin; ItemEntry* end; };
+
+// Only the thread that prepares the frame runs this hook, so its state needs no lock.
+ItemEntry* g_items = nullptr;            // the world's streamed items the state below belongs to
+size_t g_itemCount = 0, g_nextItem = 0;  // how many there are, and where the search for new grass goes on
+std::vector<uint32_t> g_grassItems;      // the loaded grass patches found so far
+
+// True when this streamed item is a loaded grass patch. The pointers are the game's own, read as the game reads them.
+bool loadedGrass(const ItemEntry& e) {
+    if (!e.handle) return false;
+    uint8_t* const res = at<uint8_t*>(e.handle, kOffHandleResource);
+    if (!res || at<uintptr_t>(res, 0) != g_base + kStreamedItemVtable) return false;
+    if (at<uint8_t>(res, kOffResourceState) != kResourceLoaded || at<uint8_t>(res, kOffResourceState + 1) != kResourceLoaded) return false;
+    uint8_t* const item = at<uint8_t*>(res, kOffResourceItem);
+    return item && at<uintptr_t>(item, 0) == g_base + kGrassPatchVtable;
+}
+
+// Adds the loaded grass patches to the view's current item list. The game reserves that list for every item of the
+// world, so adding never reallocates; the game's range checks then draw each patch as far as GrassDetail says.
+extern "C" void showLoadedGrass(uint8_t* zone, uint8_t* view) {
+    if (!readable(zone + kOffZoneLists, kOffZoneListIndex + 4 - kOffZoneLists) || !readable(view + kOffViewItems, 8)) return;
+    const uint32_t which = at<uint32_t>(zone, kOffZoneListIndex);
+    ItemArray* const items = at<ItemArray*>(view, kOffViewItems);
+    if (which > 1 || !readable(items, sizeof *items) || !items->begin || items->end <= items->begin) return;
+    const size_t count = static_cast<size_t>(items->end - items->begin);
+    ItemList& list = *reinterpret_cast<ItemList*>(zone + kOffZoneLists + sizeof(ItemList) * which);
+    if (count > (1u << 24) || !readable(items->begin, count * sizeof(ItemEntry))) return;
+    if (!list.begin || list.end < list.begin || list.capacity < list.end ||
+        !readable(list.begin, static_cast<size_t>(list.capacity - list.begin) * sizeof(uint32_t))) return;
+    if (items->begin != g_items || count != g_itemCount) {       // another world: start over
+        g_items = items->begin;
+        g_itemCount = count;
+        g_nextItem = 0;
+        g_grassItems.clear();
+    }
+    const auto show = [&list](uint32_t i) {
+        if (list.end == list.capacity || std::find(list.begin, list.end, i) != list.end) return;
+        *list.end = i;
+        __atomic_store_n(&list.end, list.end + 1, __ATOMIC_RELEASE);   // the item first, then the new end
+    };
+    // The patches found before come first, so a new zone's list is complete in its first frame.
+    g_grassItems.erase(std::remove_if(g_grassItems.begin(), g_grassItems.end(),
+                                      [](uint32_t i) { return !loadedGrass(g_items[i]); }), g_grassItems.end());
+    for (uint32_t i : g_grassItems) show(i);
+    for (size_t n = std::min(kItemsPerFrame, count); n > 0; --n) {
+        const uint32_t i = static_cast<uint32_t>(g_nextItem);
+        g_nextItem = (g_nextItem + 1) % count;
+        if (loadedGrass(g_items[i]) && std::find(g_grassItems.begin(), g_grassItems.end(), i) == g_grassItems.end()) {
+            g_grassItems.push_back(i);
+            show(i);
+        }
+    }
+}
+
+void installGrassHook() {
+    static const uint8_t args[] = {0x48, 0x89, 0xD1, 0x48, 0x89, 0xF2};          // mov rcx, rdx ; mov rdx, rsi
+    if (installStubCall(kViewListRva, kViewListBytes, sizeof kViewListBytes, args, sizeof args, reinterpret_cast<void*>(&showLoadedGrass), "view item list"))
+        LOG("drawdist: loaded grass patches are added to each frame's item list");
 }
 
 void logAzimuthScenery() {
@@ -414,6 +506,7 @@ void DrawDist_Install(uintptr_t base, const Config& cfg) {
     // Also with Azimuth's Scenery detail alone: its own fallback draws the coarse level over the fine one.
     if (d.scenery > 1 || findAzimuthScale()) installLodHook();
     if (d.trees > 1 || d.fences > 1 || d.grass > 1) installPlacementHook();   // Azimuth's Scenery detail does not reach them
+    if (d.grass > 1) installGrassHook();
 }
 
 } // namespace fh2
@@ -470,3 +563,6 @@ extern "C" __declspec(dllexport) void FH2SI_TestScaleLibrary(uint8_t* lib, float
     fh2::scaleLibrary(lib);
     fh2::g_cfg = keep;
 }
+
+// Test hook: adds the loaded grass patches to the zone state's current item list, as the frame hook does.
+extern "C" __declspec(dllexport) void FH2SI_TestShowGrass(uint8_t* zone, uint8_t* view) { fh2::showLoadedGrass(zone, view); }
