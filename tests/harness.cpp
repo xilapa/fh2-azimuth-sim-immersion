@@ -879,13 +879,14 @@ static void drawDistTests(uint8_t* base, HMODULE plugin) {
             CHECK(G(0x358) == 80.0f && G(0x35c) == 100.0f, "grass detail lines stable when nothing is reloaded: %.0f %.0f (80 100)", G(0x358), G(0x35c));
         }
     }
-    // C. the calls of the level selection go through stubs that keep the caller's model (r15) and renderer (rbx) in TLS
+    // C. the calls of the level selection go through stubs that keep the caller's model (r15), renderer (rbx) and view type (rsi) in TLS
     for (uintptr_t rva : {0x1353e2e, 0x13545b3, 0x135464a}) {
         int32_t r; memcpy(&r, base + rva + 1, 4);
         const uint8_t* stub = base + rva + 5 + r;
         CHECK(base[rva] == 0xE8 && stub != base + 0x1139200, "level selection call %llx re-pointed", (unsigned long long)rva);
-        const uint8_t keepModel[] = {0x65, 0x4C, 0x89, 0x3C, 0x25}, keepRender[] = {0x65, 0x48, 0x89, 0x1C, 0x25};
-        CHECK(memcmp(stub, keepModel, 5) == 0 && memcmp(stub + 9, keepRender, 5) == 0, "call %llx: its stub keeps r15 and rbx in TLS", (unsigned long long)rva);
+        const uint8_t keepModel[] = {0x65, 0x4C, 0x89, 0x3C, 0x25}, keepRender[] = {0x65, 0x48, 0x89, 0x1C, 0x25}, keepView[] = {0x65, 0x48, 0x89, 0x34, 0x25};
+        CHECK(memcmp(stub, keepModel, 5) == 0 && memcmp(stub + 9, keepRender, 5) == 0 && memcmp(stub + 18, keepView, 5) == 0,
+              "call %llx: its stub keeps r15, rbx and rsi in TLS", (unsigned long long)rva);
     }
     int32_t movedRel; memcpy(&movedRel, base + 0x11391d4 + 1, 4);
     CHECK(base + 0x11391d4 + 5 + movedRel == base + 0x1139210, "the call Azimuth moved to its later entry is left alone");
@@ -1116,6 +1117,89 @@ static void drawDistTests(uint8_t* base, HMODULE plugin) {
                         if (cg != ch || lg != lh) ++differ;
                     }
             CHECK(differ == 0, "the hook's copy of the game's level selection matches the game's on 154 inputs (%d differ)", differ);
+            // main view: the object of the game's level hides only while the finer object of the same placed model is in
+            // the frame's list, gets through the render loop's checks, and drew at its last call
+            typedef void (MSABI *FnTestSetView)(uint32_t);
+            auto setView = (FnTestSetView)GetProcAddress(plugin, "FH2SI_TestSetView");
+            CHECK(setView != nullptr, "FH2SI_TestSetView exported");
+            if (setView) {
+                enum { kCoarse, kFine, kPart, kObjects };          // list order: the coarser object is called first
+                alignas(16) static uint8_t list[kObjects][0x100], blocks[kObjects][0xd0], otherHop[0x10], otherDesc[0x80];
+                static uint64_t listEnds[2];
+                const uint64_t fineFlags = 1ULL << 50, coarseFlags = 1ULL << 51;
+                const float place[3] = {100.0f, 5.0f, -200.0f};
+                const uint16_t ends[4] = {30, 60, 90, 100};
+                for (int i = 0; i < kObjects; ++i) {
+                    *(uint64_t*)(list[i] + 0xb0) = (uint64_t)blocks[i];
+                    *(uint64_t*)(blocks[i] + 8) = (uint64_t)hopB;              // every object shares the level resources
+                    *(uint64_t*)(list[i] + 0xb8) = i == kCoarse ? coarseFlags : fineFlags;
+                    memcpy(list[i] + 0x24, place, 12);
+                    memcpy(list[i] + 0xf0, ends, 8);
+                    list[i][0xc4] = 0x1f;
+                }
+                *(uint64_t*)(otherHop + 8) = (uint64_t)otherDesc;
+                const uint32_t otherIds[4] = {4, 5, 6, 3};
+                memcpy(otherDesc + 0x6c, otherIds, 16);
+                listEnds[0] = (uint64_t)list[0];
+                listEnds[1] = (uint64_t)(list + kObjects);
+                *(uint64_t*)(render + 0x35a8) = (uint64_t)listEnds;
+                // 45 m: the game picks level 1, the scaled distance level 0
+                const auto call = [&](int i) {
+                    level = -1;
+                    return testSelect(list[i], render, 0.25f, 45.0f * 45.0f, *(uint64_t*)(list[i] + 0xb8), &level, 0, t0, t1, t2, t3);
+                };
+                const auto coarseShown = [&] { const char c = call(kCoarse); return !c && level == 1; };
+                levels("ssss");
+                setView(18);
+                CHECK(coarseShown(), "main view, 45 m: the finer object has not drawn yet, so the game's level 1 is drawn");
+                culled = call(kFine);
+                CHECK(!culled && level == 0, "main view, 45 m: the finer object draws level 0 (level %d, culled %d)", level, (int)culled);
+                CHECK(call(kCoarse) == 1, "main view, 45 m: the game's level 1 object is hidden now");
+                setView(6);
+                CHECK(coarseShown(), "shadow casters (view 6): the game's level 1 object stays");
+                setView(18);
+                listEnds[1] = (uint64_t)list[kFine];
+                CHECK(coarseShown(), "the finer object left the frame's list: level 1 is drawn again at once");
+                listEnds[1] = (uint64_t)(list + kObjects);
+                blocks[kFine][0xc1] = 1;
+                CHECK(coarseShown(), "the finer object is retired: level 1 is drawn");
+                blocks[kFine][0xc1] = 0;
+                *(uint64_t*)(blocks[kFine] + 0x10) = 1ULL << 39;
+                CHECK(coarseShown(), "the finer object is switched off: level 1 is drawn");
+                *(uint64_t*)(blocks[kFine] + 0x10) = 0;
+                *(uint64_t*)(list[kFine] + 0xb0) = 0;
+                CHECK(coarseShown(), "the finer object has no block: level 1 is drawn");
+                *(uint64_t*)(list[kFine] + 0xb0) = (uint64_t)blocks[kFine];
+                list[kFine][0xc4] = 0x1e;
+                CHECK(coarseShown(), "the finer object fails the render loop's own test: level 1 is drawn");
+                list[kFine][0xc4] = 0x7f;
+                CHECK(call(kCoarse) == 1, "the finer object differs only in bits the main view does not test: level 1 stays hidden");
+                list[kFine][0xc4] = 0x1f;
+                const float moved = 101.0f;
+                memcpy(list[kFine] + 0x24, &moved, 4);
+                CHECK(coarseShown(), "another placement sits at the finer object's place in the list: level 1 is drawn");
+                memcpy(list[kFine] + 0x24, place, 4);
+                *(uint64_t*)(list[kFine] + 0xb8) = fineFlags | 2;
+                CHECK(coarseShown(), "an object with other flags sits there: level 1 is drawn");
+                *(uint64_t*)(list[kFine] + 0xb8) = fineFlags;
+                *(uint64_t*)(blocks[kFine] + 8) = (uint64_t)otherHop;
+                CHECK(coarseShown(), "a model with other level resources sits there: level 1 is drawn");
+                *(uint64_t*)(blocks[kFine] + 8) = (uint64_t)hopB;
+                CHECK(call(kCoarse) == 1, "with the finer object back as it was, level 1 is hidden again");
+                levels("0sss");
+                culled = call(kFine);
+                CHECK(culled, "level 0 unloads: the finer object is not drawn (level %d, culled %d)", level, (int)culled);
+                CHECK(coarseShown(), "level 0 unloads: level 1 is drawn");
+                levels("ssss");
+                call(kFine);
+                CHECK(call(kCoarse) == 1, "level 0 is back and drew: level 1 is hidden");
+                call(kPart);
+                CHECK(coarseShown(), "two objects hold level 0 (a level drawn in parts): the game's level 1 is never hidden");
+                call(kFine);
+                CHECK(coarseShown(), "and it stays so after either part draws");
+                setView(0);
+                *(uint64_t*)(render + 0x35a8) = 0;
+            }
         }
     }
 

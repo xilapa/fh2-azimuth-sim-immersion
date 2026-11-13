@@ -3,7 +3,8 @@
 //  A. track settings: how far trees, scenery and props are drawn, the grass end and its detail level, all grown with their
 //     multipliers, and the scenery multiplier applied per track;
 //  C. scenery level of detail (buildings, props and everything else drawn per model): the render loop's calls of the level selection
-//     also draw a finer level farther away when its resource is ready; the level the game draws itself is never hidden;
+//     also draw a finer level farther away when its resource is ready; in the main view the game's own coarser level is
+//     hidden, but only while the finer one is seen to be drawn;
 //  E. placed trees, fences and grass: their detail switches move out as their template library loads;
 //  F. grass patches the game has loaded but does not list for its current zone are drawn as well.
 #include "drawdist_hook.h"
@@ -37,11 +38,20 @@ constexpr int kOffGrassLod = 0x358, kOffGrassLodFade = 0x35c;
 // holds) and, for most models, a separately streamed resource. The game compares the squared distance to the camera
 // with the model's four distances, draws the item of that level, and past the last one nothing.
 constexpr uintptr_t kLevelSelectRva = 0x1139200, kLevelSelectSize = 0x98;
-// The render loop's calls (shadow casters, and the main view's two paths); there r15 holds the model, rbx the renderer.
+// The render loop's calls (shadow casters, and the two paths of the other views); there r15 holds the model, rbx the
+// renderer and rsi the view type (6 at the first call).
 constexpr uintptr_t kLevelSelectCalls[3] = {0x1353e2e, 0x13545b3, 0x135464a};
 constexpr uint64_t  kLevelBits = 0x3cULL << 48;
 constexpr uintptr_t kNoResourceRva = 0x2ebd1cc;       // the id that means "no streamed resource for this level"
 constexpr uintptr_t kLevelResourceVtable = 0x2ec20b8;  // a level's streamed resource
+// The models of a frame are one list (the renderer points at its begin and end, 0x100 bytes per model). A placed model
+// has an object in it for each of its levels, and only while the game wants that level near its own distance.
+constexpr int       kOffModelList = 0x35a8;
+constexpr uint32_t  kMainView = 18;                     // the view type of the main scene
+constexpr size_t    kFamilies = 1 << 14, kFamilyProbes = 8;
+// Family::at: the index in the list, whether the object drew that level at its last main view call, and whether two
+// objects hold the level (then it is drawn in parts and one of them says nothing about the others).
+constexpr uint32_t  kDrew = 0x80000000u, kShared = 0x40000000u, kIndex = kShared - 1;
 
 // ---- E. placed objects come from template libraries (instancetemplates\*.plib). Each object has 16 lists (8 views, 2
 // each) of detail ranges, 0x30 bytes each: start, start minus fade-in, end, end plus fade-out (both filled in at load),
@@ -73,7 +83,12 @@ std::atomic<bool> g_firstLoad{false};
 std::atomic<float> g_lodMeasure{1.0f};       // multiplies the squared distance in the level selection: 1 / scale^2
 float*         g_azimuthScale = nullptr;     // Azimuth's Scenery detail factor on the squared distance, when found
 float          g_azimuthScale0 = 1.0f;       // its value as Azimuth set it
-DWORD          g_tlsModel = TLS_OUT_OF_INDEXES, g_tlsRender = TLS_OUT_OF_INDEXES;   // set by the call stubs
+DWORD          g_tlsModel = TLS_OUT_OF_INDEXES, g_tlsRender = TLS_OUT_OF_INDEXES, g_tlsView = TLS_OUT_OF_INDEXES;   // set by the call stubs
+// The level objects of one placed model (same placement, level resources and other flags): where the object holding
+// each level was in the frame's list at its last main view call. Written by the render threads without a lock: a
+// wrong value only costs a frame, because nothing is hidden before the object it points at is checked in the list.
+struct Family { std::atomic<uint64_t> key; std::atomic<uint32_t> at[4]; };
+Family         g_families[kFamilies];
 // A track file without a key keeps the value of the last load, which may be ours: then the game's value is the one we replaced.
 struct LastWrite {
     float gameValue = 0, wrote = -1.0f;
@@ -185,8 +200,7 @@ uintptr_t follow(uintptr_t p, uint32_t off) { return p ? *reinterpret_cast<const
 
 // Whether the model's level j can be drawn: 1 its streamed resource is loaded and settled (or it has none), 0 not,
 // -1 unknown (the model is not laid out as expected).
-int levelReady(uintptr_t model, uintptr_t render, int j) {
-    const uintptr_t desc = follow(follow(follow(model, 0xb0), 8), 8);
+int levelReady(uintptr_t desc, uintptr_t render, int j) {
     if (!desc || !render) return -1;
     const uint32_t id = *reinterpret_cast<const uint32_t*>(desc + 0x6c + 4 * j);
     if (id == *reinterpret_cast<const uint32_t*>(g_base + kNoResourceRva)) return 1;
@@ -202,12 +216,58 @@ int levelReady(uintptr_t model, uintptr_t render, int j) {
     return loaded && !changing ? 1 : 0;
 }
 
+uint64_t mix(uint64_t h, uint64_t v) {
+    h = (h ^ v) * 0x9E3779B97F4A7C15ULL;
+    return h ^ (h >> 32);
+}
+
+// The family of this model's level objects; a new one takes a free slot. Null when there is no room.
+Family* family(uintptr_t model, uintptr_t desc, uint64_t flags) {
+    uint64_t place, ids[2];
+    uint32_t placeZ;
+    std::memcpy(&place, reinterpret_cast<const void*>(model + 0x24), 8);
+    std::memcpy(&placeZ, reinterpret_cast<const void*>(model + 0x2c), 4);
+    std::memcpy(ids, reinterpret_cast<const void*>(desc + 0x6c), 16);
+    const uint64_t key = mix(mix(mix(mix(mix(0, place), placeZ), ids[0]), ids[1]), flags & ~kLevelBits) | 1;
+    size_t i = (key >> 40) & (kFamilies - 1);
+    for (size_t n = 0; n < kFamilyProbes; ++n, i = (i + 1) & (kFamilies - 1)) {
+        uint64_t k = g_families[i].key.load(std::memory_order_relaxed);
+        if (k == key) return &g_families[i];
+        if (k) continue;
+        if (g_families[i].key.compare_exchange_strong(k, key) || k == key) return &g_families[i];
+    }
+    // shortcut: no free slot near this key empties the whole table, and for a frame nothing is hidden; give the slots
+    // an age if that ever shows.
+    for (Family& fam : g_families) {
+        for (auto& a : fam.at) a.store(0, std::memory_order_relaxed);
+        fam.key.store(0, std::memory_order_relaxed);
+    }
+    return nullptr;
+}
+
+// Whether the list's entry at index is another object of this model's family that holds the level and gets through
+// the render loop's checks as this one did: same other flags and the bits of +0xc4 it tests for the main view (0x40
+// is for the mirror and differs within a family), and its own block (+0xb0) neither gone, retired (+0xc1) nor
+// switched off (bit 39 at +0x10).
+bool sibling(uintptr_t model, uintptr_t desc, uint64_t f, uint32_t index, int level, uintptr_t begin, uintptr_t end) {
+    const uintptr_t s = begin + (uintptr_t(index) << 8);
+    if (s >= end || s == model) return false;
+    const uint8_t* a = reinterpret_cast<const uint8_t*>(s);
+    const uint8_t* b = reinterpret_cast<const uint8_t*>(model);
+    const uint64_t sf = *reinterpret_cast<const uint64_t*>(s + 0xb8);
+    if (((sf ^ f) & ~kLevelBits) || !((sf >> (50 + level)) & 1)) return false;
+    if (std::memcmp(a + 0x24, b + 0x24, 12) != 0 || std::memcmp(a + 0xf0, b + 0xf0, 8) != 0 || ((a[0xc4] ^ b[0xc4]) & 0x1d)) return false;
+    const uintptr_t block = follow(s, 0xb0);
+    if (!block || *reinterpret_cast<const uint8_t*>(block + 0xc1) || ((*reinterpret_cast<const uint64_t*>(block + 0x10) >> 39) & 1)) return false;
+    const uintptr_t sdesc = follow(follow(block, 8), 8);
+    return sdesc && std::memcmp(reinterpret_cast<const void*>(sdesc + 0x6c), reinterpret_cast<const void*>(desc + 0x6c), 16) == 0;
+}
 
 // Distances scaled by SceneryDetail pick a finer level farther away: the finest at or past that pick whose resource is
-// ready is drawn as well. The level the game picks itself is never hidden: the game hands an item to these calls only
-// near its own distances, so a finer level may never arrive, and some models are far stand-ins for others.
-// Drawing both is safe: all items of a model hold the same levels (527 of 527 models at the festival), so a model is
-// never drawn twice; only far stand-ins overlap their near models, as the game itself draws them.
+// ready is drawn. Each level of a placed model is its own object, and the game lists an object only near its own
+// distances, so the object of a ready level may not be there: the object of the game's own level is drawn too.
+// Two levels on the same spot flicker and lose their shadows, so in the main view the game's own is hidden while the
+// finer one is in the frame's list and drew at its last call. The other views (shadow casters, reflections) keep both.
 char selectLevel(float distSq, const uint64_t* flags, int* level, float, uint8_t noFinest, float t0, float t1, float t2, float t3) {
     const uint64_t f = *flags;
     const float m = g_lodMeasure.load(std::memory_order_relaxed);
@@ -217,15 +277,34 @@ char selectLevel(float distSq, const uint64_t* flags, int* level, float, uint8_t
     gameSelect(distSq * m, f, level, noFinest, t0, t1, t2, t3);
     const int pick = *level;                                        // 4 or more: past the last (scaled) distance
     const uintptr_t model = __readgsqword(0x1480 + 8 * g_tlsModel), render = __readgsqword(0x1480 + 8 * g_tlsRender);
+    const uintptr_t desc = follow(follow(follow(model, 0xb0), 8), 8);
     int target = -1;
     for (int j = pick; j <= std::min(3, gameLevel) && target < 0; ++j) {    // never coarser than the game's own level
-        const int r = levelReady(model, render, j);
+        const int r = levelReady(desc, render, j);
         if (r < 0) break;
         if (r) target = j;
     }
-    if (target >= 0 && ((f >> (50 + target)) & 1)) { *level = target; return 0; }
-    *level = gameLevel;                                             // otherwise the game's own choice: never hide what it draws
-    return gameCulled;
+    const bool finer = target >= 0 && ((f >> (50 + target)) & 1);  // this item holds the level to draw
+    char culled = finer ? 0 : gameCulled;                           // otherwise the game's own choice
+    *level = finer ? target : gameLevel;
+    if (!desc || !render || uint32_t(__readgsqword(0x1480 + 8 * g_tlsView)) != kMainView) return culled;
+    const uintptr_t list = follow(render, kOffModelList), begin = follow(list, 0), end = follow(list, 8);
+    if (model < begin || model >= end || ((model - begin) & 0xff) || ((model - begin) >> 8) >= kShared) return culled;
+    const uint32_t me = uint32_t((model - begin) >> 8);
+    Family* fam = family(model, desc, f);
+    if (!fam) return culled;
+    if (!culled && !finer && target >= 0) {                         // the game's level, with a finer one ready: who draws it?
+        const uint32_t a = fam->at[target].load(std::memory_order_relaxed);
+        if ((a & (kDrew | kShared)) == kDrew && sibling(model, desc, f, a & kIndex, target, begin, end)) culled = 1;
+    }
+    for (int b = 0; b < 4; ++b) {                                   // what this object did, for the others of its family
+        if (!((f >> (50 + b)) & 1)) continue;
+        const uint32_t old = fam->at[b].load(std::memory_order_relaxed);
+        uint32_t v = me | (old & kShared) | (!culled && *level == b ? kDrew : 0);
+        if (!(old & kShared) && (old & kIndex) != me && sibling(model, desc, f, old & kIndex, b, begin, end)) v |= kShared;
+        if (v != old) fam->at[b].store(v, std::memory_order_relaxed);
+    }
+    return culled;
 }
 
 void installLodHook() {
@@ -235,16 +314,20 @@ void installLodHook() {
             return;
         }
     }
-    // The stubs keep the caller's r15 (model) and rbx (renderer) in two TLS slots, read back with gs:[0x1480 + 8 * index].
+    // The stubs keep the caller's r15 (model), rbx (renderer) and rsi (view type) in three TLS slots, read back with
+    // gs:[0x1480 + 8 * index].
     g_tlsModel = TlsAlloc();
     g_tlsRender = TlsAlloc();
-    if (g_tlsModel >= 64 || g_tlsRender >= 64) { LOG("drawdist: no TLS slots for the level selection; unchanged"); return; }
-    const uint32_t slotModel = 0x1480 + 8 * g_tlsModel, slotRender = 0x1480 + 8 * g_tlsRender;
-    uint8_t prefix[18] = {0x65, 0x4C, 0x89, 0x3C, 0x25, 0, 0, 0, 0,     // mov gs:[slotModel], r15
-                          0x65, 0x48, 0x89, 0x1C, 0x25, 0, 0, 0, 0};    // mov gs:[slotRender], rbx
+    g_tlsView = TlsAlloc();
+    if (g_tlsModel >= 64 || g_tlsRender >= 64 || g_tlsView >= 64) { LOG("drawdist: no TLS slots for the level selection; unchanged"); return; }
+    const uint32_t slotModel = 0x1480 + 8 * g_tlsModel, slotRender = 0x1480 + 8 * g_tlsRender, slotView = 0x1480 + 8 * g_tlsView;
+    uint8_t prefix[27] = {0x65, 0x4C, 0x89, 0x3C, 0x25, 0, 0, 0, 0,     // mov gs:[slotModel], r15
+                          0x65, 0x48, 0x89, 0x1C, 0x25, 0, 0, 0, 0,     // mov gs:[slotRender], rbx
+                          0x65, 0x48, 0x89, 0x34, 0x25, 0, 0, 0, 0};    // mov gs:[slotView], rsi
     std::memcpy(prefix + 5, &slotModel, 4);
     std::memcpy(prefix + 14, &slotRender, 4);
-    constexpr size_t kPerCall = 32;      // 18 bytes of prefix and patchCallRel32's 12
+    std::memcpy(prefix + 23, &slotView, 4);
+    constexpr size_t kPerCall = 40;      // 27 bytes of prefix and patchCallRel32's 12
     uint8_t* block = static_cast<uint8_t*>(allocNear(g_base + kLevelSelectCalls[0], kPerCall * 3));
     if (!block) { LOG("drawdist: could not allocate level selection memory; unchanged"); return; }
     int patched = 0, azimuth = 0;
@@ -252,7 +335,7 @@ void installLodHook() {
         if (levelSelectTarget(kLevelSelectCalls[i]) != kLevelSelectRva) ++azimuth;   // taken from Azimuth's Scenery detail
         if (patchCallRel32(g_base + kLevelSelectCalls[i], reinterpret_cast<void*>(&selectLevel), block + kPerCall * i, false, prefix, sizeof prefix)) ++patched;
     }
-    LOG("drawdist: level selection hooked at %d of 3 render calls (%d taken over from Azimuth's Scenery detail); finer levels farther away once loaded, never hiding the game's own", patched, azimuth);
+    LOG("drawdist: level selection hooked at %d of 3 render calls (%d taken over from Azimuth's Scenery detail); finer levels farther away once loaded; in the main view the game's coarser one hides while the finer one is drawn", patched, azimuth);
     g_azimuthScale = findAzimuthScale();
     if (g_azimuthScale) {
         g_azimuthScale0 = *g_azimuthScale;
@@ -540,15 +623,18 @@ extern "C" __declspec(dllexport) void FH2SI_TestTrackLines(uint8_t* ts, float gr
     fh2::g_cfg = keep;
 }
 
-// Test hook: runs the hooked level selection with this model and renderer (what the call stubs pass in TLS) and the
-// measure m, then puts the plugin's state back as it was.
+// Test hook: runs the hooked level selection with this model and renderer and the view type set with
+// FH2SI_TestSetView (what the call stubs pass in TLS) and the measure m, then puts the plugin's state back as it was.
+static uint32_t g_testView = 0;
+extern "C" __declspec(dllexport) void FH2SI_TestSetView(uint32_t view) { g_testView = view; }
 extern "C" __declspec(dllexport) char FH2SI_TestSelect(void* model, void* render, float m, float distSq, uint64_t flags,
                                                      int* level, uint8_t noFinest, float t0, float t1, float t2, float t3) {
-    if (fh2::g_tlsModel >= 64 || fh2::g_tlsRender >= 64) return -1;
+    if (fh2::g_tlsModel >= 64 || fh2::g_tlsRender >= 64 || fh2::g_tlsView >= 64) return -1;
     const float keep = fh2::g_lodMeasure.load();
     fh2::g_lodMeasure.store(m);
     TlsSetValue(fh2::g_tlsModel, model);
     TlsSetValue(fh2::g_tlsRender, render);
+    TlsSetValue(fh2::g_tlsView, reinterpret_cast<void*>(uintptr_t(g_testView)));
     const char culled = fh2::selectLevel(distSq, &flags, level, 0.0f, noFinest, t0, t1, t2, t3);
     fh2::g_lodMeasure.store(keep);
     return culled;
