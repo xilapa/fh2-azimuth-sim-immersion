@@ -194,6 +194,7 @@ inline constexpr char kDefaultIni[] =
 "\n"
 "[DrawDistance]\n"
 "; 1 = use this plugin's pop-in killer, on top of Azimuth's settings; 0 = all off, left to the game and Azimuth.\n"
+"; While it is on, the game's shadow layers also keep their size: the game resizes them metre by metre as the camera moves, which shows as a slow flicker of the shadows on trees with Azimuth's long Shadow distance.\n"
 "Enabled=1\n"
 "; Pop-in killer: each value moves where the game switches things to a coarser model farther out, 1 to 8 times. 0 = game default. Far trees and billboards keep the game's own distances. Higher values cost frame rate.\n"
 "; Buildings, props, terrain and other scenery. Azimuth's Scenery detail Ultra is 4; the stronger of the two applies. How far trees and scenery are drawn grows by the larger of this and TreeDetail.\n"

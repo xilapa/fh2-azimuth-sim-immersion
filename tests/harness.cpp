@@ -946,6 +946,45 @@ static void drawDistTests(uint8_t* base, HMODULE plugin) {
             CHECK(nearFence[0][2] == 500.0f, "another library is not scaled: %.0f (500)", nearFence[0][2]);
         }
     }
+    // G. the shadow layers keep their size: the hook runs right after the game rounds a layer's radius up
+    CHECK(base[0x1155995] == 0xE8 && memcmp(base + 0x115599a, "\x0F\x1F\x44\x00\x00", 5) == 0 && base[0x115599f] == 0x48,
+          "the shadow layer sizing calls the plugin after its rounding");
+    {
+        typedef void (MSABI *FnSteadyShadow)(uint8_t*);
+        auto steady = (FnSteadyShadow)GetProcAddress(plugin, "FH2SI_TestSteadyShadow");
+        CHECK(steady != nullptr, "FH2SI_TestSteadyShadow exported");
+        if (steady) {
+            alignas(16) static uint8_t layers[6][0x1c0];
+            const auto size = [&](int i, float want) {
+                *(float*)(layers[i] + 0x1bc) = want;
+                steady(layers[i]);
+                return *(float*)(layers[i] + 0x1bc);
+            };
+            float r = size(0, 154.0f);
+            CHECK(r == 159.0f, "shadow layer: the first radius gets some room (154 -> %.0f, want 159)", r);
+            r = size(0, 153.0f);
+            CHECK(r == 159.0f, "shadow layer: a slightly smaller radius changes nothing (153 -> %.0f, want 159)", r);
+            r = size(0, 159.0f);
+            CHECK(r == 159.0f, "shadow layer: a radius that just fits changes nothing (159 -> %.0f, want 159)", r);
+            r = size(0, 160.0f);
+            CHECK(r == 165.0f, "shadow layer: a larger radius grows it, with room again (160 -> %.0f, want 165)", r);
+            r = size(0, 150.0f);
+            CHECK(r == 165.0f, "shadow layer: 150 still fits 165 well enough (-> %.0f, want 165)", r);
+            r = size(0, 140.0f);
+            CHECK(r == 145.0f, "shadow layer: a much smaller radius shrinks it (140 -> %.0f, want 145)", r);
+            r = size(1, 420.0f);
+            CHECK(r == 433.0f, "shadow layer: another layer has its own radius (420 -> %.0f, want 433)", r);
+            r = size(0, 141.0f);
+            CHECK(r == 145.0f, "shadow layer: the first layer kept its own (141 -> %.0f, want 145)", r);
+            r = size(0, 0.0f);
+            CHECK(r == 0.0f, "shadow layer: no radius is left alone (%.0f)", r);
+            for (int i = 2; i < 6; ++i) size(i, 50.0f);        // more layers than slots: the oldest gives way
+            r = size(5, 51.0f);
+            CHECK(r == 52.0f, "shadow layer: the newest layer keeps its radius (51 -> %.0f, want 52)", r);
+            r = size(0, 107.0f);
+            CHECK(r == 111.0f, "shadow layer: a layer that lost its slot starts again (107 -> %.0f, want 111)", r);
+        }
+    }
     // F. loaded grass patches are added to the frame's item list
     CHECK(base[0x1336445] == 0xE8 && memcmp(base + 0x133644a, "\x0F\x1F\x44\x00\x00\x0F\x1F\x44\x00\x00", 10) == 0 && base[0x1336454] == 0x48,
           "the view's item list set-up calls the plugin first");
@@ -1155,8 +1194,34 @@ static void drawDistTests(uint8_t* base, HMODULE plugin) {
                 culled = call(kFine);
                 CHECK(!culled && level == 0, "main view, 45 m: the finer object draws level 0 (level %d, culled %d)", level, (int)culled);
                 CHECK(call(kCoarse) == 1, "main view, 45 m: the game's level 1 object is hidden now");
+                // shadow casters (view 6): the same rule with its own record, and only while the finer object casts too
                 setView(6);
-                CHECK(coarseShown(), "shadow casters (view 6): the game's level 1 object stays");
+                const float eye[3] = {100.0f, 5.0f, -150.0f};      // 50 m from the objects' spheres
+                const float ball[4] = {4.0f, 100.0f, 5.0f, -200.0f}, smallBall[4] = {2.0f, 100.0f, 5.0f, -200.0f};
+                const auto f32 = [&](int off) -> float& { return *(float*)(render + off); };
+                memcpy(render + 0x1880, eye, 12);
+                f32(0x1890) = 1.0f; f32(0x1894) = 1.0f; f32(0x1898) = 1000.0f;   // no shadow when 2500 > 1000 x radius term
+                f32(0x29e8) = 400.0f;                                            // the shadow reach
+                for (int i = 0; i < kObjects; ++i) memcpy(list[i] + 0xc8, ball, 16);
+                CHECK(coarseShown(), "shadow casters: the finer object has not cast yet, so the game's level 1 casts");
+                culled = call(kFine);
+                CHECK(!culled && level == 0, "shadow casters: the finer object casts level 0 (level %d, culled %d)", level, (int)culled);
+                CHECK(call(kCoarse) == 1, "shadow casters: the game's level 1 object casts no more");
+                memcpy(list[kFine] + 0xc8, smallBall, 16);
+                CHECK(coarseShown(), "shadow casters: the finer object is too small for a shadow, so level 1 casts");
+                f32(0x1894) = -1.0f;
+                CHECK(call(kCoarse) == 1, "shadow casters: with the game's size test off, level 1 casts no more");
+                f32(0x1894) = 1.0f;
+                memcpy(list[kFine] + 0xc8, ball, 16);
+                f32(0x29e8) = 46.0f;
+                CHECK(coarseShown(), "shadow casters: near the end of the shadow reach both cast");
+                f32(0x29e8) = 400.0f;
+                CHECK(call(kCoarse) == 1, "shadow casters: well inside the reach, level 1 casts no more");
+                setView(18);
+                CHECK(call(kCoarse) == 1, "main view: level 1 is still hidden after the shadow caster calls");
+                call(kFine);
+                setView(6);
+                CHECK(call(kCoarse) == 1, "shadow casters: level 1 still casts no shadow after the main view calls");
                 setView(18);
                 listEnds[1] = (uint64_t)list[kFine];
                 CHECK(coarseShown(), "the finer object left the frame's list: level 1 is drawn again at once");

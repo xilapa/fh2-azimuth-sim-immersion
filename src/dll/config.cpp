@@ -368,6 +368,7 @@ Config loadConfig(const std::wstring& iniPath) {
         d.trees   = times("TreeDetail");
         d.fences  = times("FenceDetail");
         d.grass   = times("GrassDetail");
+        d.steadyShadows = true;
         LOG("config: pop-in killer scenery x%.1f trees x%.1f fences x%.1f grass x%.1f", d.scenery, d.trees, d.fences, d.grass);
     }
     {

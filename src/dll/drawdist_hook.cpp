@@ -3,10 +3,11 @@
 //  A. track settings: how far trees, scenery and props are drawn, the grass end and its detail level, all grown with their
 //     multipliers, and the scenery multiplier applied per track;
 //  C. scenery level of detail (buildings, props and everything else drawn per model): the render loop's calls of the level selection
-//     also draw a finer level farther away when its resource is ready; in the main view the game's own coarser level is
-//     hidden, but only while the finer one is seen to be drawn;
+//     also draw a finer level farther away when its resource is ready; in the main view and as a shadow caster the
+//     game's own coarser level is hidden, but only while the finer one is seen to be drawn there;
 //  E. placed trees, fences and grass: their detail switches move out as their template library loads;
-//  F. grass patches the game has loaded but does not list for its current zone are drawn as well.
+//  F. grass patches the game has loaded but does not list for its current zone are drawn as well;
+//  G. the shadow layers keep their size instead of being resized metre by metre as the camera moves.
 #include "drawdist_hook.h"
 #include <windows.h>
 #include <algorithm>
@@ -47,11 +48,16 @@ constexpr uintptr_t kLevelResourceVtable = 0x2ec20b8;  // a level's streamed res
 // The models of a frame are one list (the renderer points at its begin and end, 0x100 bytes per model). A placed model
 // has an object in it for each of its levels, and only while the game wants that level near its own distance.
 constexpr int       kOffModelList = 0x35a8;
-constexpr uint32_t  kMainView = 18;                     // the view type of the main scene
+constexpr uint32_t  kMainView = 18, kCasterView = 6;    // the view types of the main scene and of the shadow casters
 constexpr size_t    kFamilies = 1 << 14, kFamilyProbes = 8;
-// Family::at: the index in the list, whether the object drew that level at its last main view call, and whether two
-// objects hold the level (then it is drawn in parts and one of them says nothing about the others).
-constexpr uint32_t  kDrew = 0x80000000u, kShared = 0x40000000u, kIndex = kShared - 1;
+// Family::at: the index in the list, whether the object drew that level at its last main view call, whether it cast
+// it at its last shadow caster call, and whether two objects hold the level (then it is drawn in parts and one of
+// them says nothing about the others).
+constexpr uint32_t  kDrew = 0x80000000u, kShared = 0x40000000u, kCast = 0x20000000u, kIndex = kCast - 1;
+// The renderer's values for the shadow casters: no caster past the reach (0x141353d8a, by the distance to the object's
+// own box), and none that is too small seen from the eye (0x141353eb2: eye x y z, then at +0x10 a scale, at +0x14 a
+// switch that is negative when the test is off, at +0x18 the size).
+constexpr int       kOffCasterEye = 0x1880, kOffCasterReach = 0x29e8;
 
 // ---- E. placed objects come from template libraries (instancetemplates\*.plib). Each object has 16 lists (8 views, 2
 // each) of detail ranges, 0x30 bytes each: start, start minus fade-in, end, end plus fade-out (both filled in at load),
@@ -76,6 +82,17 @@ constexpr uintptr_t kStreamedItemVtable = 0x2f5a830, kGrassPatchVtable = 0x2f5a4
 constexpr int       kOffHandleResource = 0x28, kOffResourceState = 0x34, kOffResourceItem = 0x118;
 constexpr uint8_t   kResourceLoaded = 4;              // both state bytes hold it once the item can be used
 constexpr size_t    kItemsPerFrame = 4096;            // streamed items looked at per frame for newly loaded grass
+
+// ---- G. shadows are drawn in three layers by distance. Each frame the game fits a sphere around a layer's part of the
+// view and rounds its radius up to a whole metre (0x141155953..0x14115598d); the layer's shadow map is stretched over
+// that sphere. The radius follows the camera (the view widens with speed), so the map is resized metre by metre and
+// every shadow in it jumps. With Azimuth's Shadow distance the middle layer reaches 130 m instead of 15 and that shows
+// as a slow flicker on the trees. The hook runs right after the rounding (rsi: the layer's view data).
+constexpr uintptr_t kShadowSphereRva = 0x1155995;     // vmovaps xmm4,xmm12 ; mov ecx,8
+constexpr uint8_t   kShadowSphereBytes[10] = {0xC4, 0xC1, 0x78, 0x28, 0xE4, 0xB9, 0x08, 0x00, 0x00, 0x00};
+constexpr int       kOffSphereRadius = 0x1bc;
+constexpr float     kRadiusRoom = 1.03f;              // a new radius is this much larger than asked, so the next change is far off
+constexpr float     kRadiusShrink = 0.88f;            // the radius in use is given up when the game asks for less than this part of it
 
 uintptr_t      g_base = 0;
 DrawDistConfig g_cfg;
@@ -266,8 +283,23 @@ bool sibling(uintptr_t model, uintptr_t desc, uint64_t f, uint32_t index, int le
 // Distances scaled by SceneryDetail pick a finer level farther away: the finest at or past that pick whose resource is
 // ready is drawn. Each level of a placed model is its own object, and the game lists an object only near its own
 // distances, so the object of a ready level may not be there: the object of the game's own level is drawn too.
-// Two levels on the same spot flicker and lose their shadows, so in the main view the game's own is hidden while the
-// finer one is in the frame's list and drew at its last call. The other views (shadow casters, reflections) keep both.
+// Whether the finer object s casts a shadow when the game's own, at distSq, got as far as the level selection. The
+// game drops a caster past the reach before it selects a level, by the distance to the object's own box, and the boxes
+// of a family differ by up to a metre or two: near the reach both cast. After the selection it drops objects that are
+// too small; this is that test, with the game's own arithmetic (0x141353ebc).
+bool castsToo(uintptr_t render, uintptr_t s, float distSq) {
+    const float reach = *reinterpret_cast<const float*>(render + kOffCasterReach);
+    if (!(distSq < 0.9f * reach * reach)) return false;
+    const float* eye = reinterpret_cast<const float*>(render + kOffCasterEye);
+    if (0.0f > eye[5]) return true;
+    const float* ball = reinterpret_cast<const float*>(s + 0xc8);          // radius term, centre x y z
+    const float dx = ball[1] - eye[0], dy = ball[2] - eye[1], dz = ball[3] - eye[2];
+    return !((dx * dx + dy * dy + dz * dz) * eye[4] > eye[6] * ball[0]);
+}
+
+// Two levels on the same spot flicker, and the coarser one's shadow falls on the finer one, so in the main view and as
+// a shadow caster the game's own is hidden while the finer one is in the frame's list and drew (or cast) at its last
+// call there. The other views (reflections) keep both.
 char selectLevel(float distSq, const uint64_t* flags, int* level, float, uint8_t noFinest, float t0, float t1, float t2, float t3) {
     const uint64_t f = *flags;
     const float m = g_lodMeasure.load(std::memory_order_relaxed);
@@ -287,20 +319,23 @@ char selectLevel(float distSq, const uint64_t* flags, int* level, float, uint8_t
     const bool finer = target >= 0 && ((f >> (50 + target)) & 1);  // this item holds the level to draw
     char culled = finer ? 0 : gameCulled;                           // otherwise the game's own choice
     *level = finer ? target : gameLevel;
-    if (!desc || !render || uint32_t(__readgsqword(0x1480 + 8 * g_tlsView)) != kMainView) return culled;
+    const uint32_t view = uint32_t(__readgsqword(0x1480 + 8 * g_tlsView));
+    if (!desc || !render || (view != kMainView && view != kCasterView)) return culled;
+    const uint32_t did = view == kMainView ? kDrew : kCast;         // each of the two views has its own record
     const uintptr_t list = follow(render, kOffModelList), begin = follow(list, 0), end = follow(list, 8);
-    if (model < begin || model >= end || ((model - begin) & 0xff) || ((model - begin) >> 8) >= kShared) return culled;
+    if (model < begin || model >= end || ((model - begin) & 0xff) || ((model - begin) >> 8) > kIndex) return culled;
     const uint32_t me = uint32_t((model - begin) >> 8);
     Family* fam = family(model, desc, f);
     if (!fam) return culled;
     if (!culled && !finer && target >= 0) {                         // the game's level, with a finer one ready: who draws it?
         const uint32_t a = fam->at[target].load(std::memory_order_relaxed);
-        if ((a & (kDrew | kShared)) == kDrew && sibling(model, desc, f, a & kIndex, target, begin, end)) culled = 1;
+        if ((a & (did | kShared)) == did && sibling(model, desc, f, a & kIndex, target, begin, end)
+            && (view == kMainView || castsToo(render, begin + (uintptr_t(a & kIndex) << 8), distSq))) culled = 1;
     }
     for (int b = 0; b < 4; ++b) {                                   // what this object did, for the others of its family
         if (!((f >> (50 + b)) & 1)) continue;
         const uint32_t old = fam->at[b].load(std::memory_order_relaxed);
-        uint32_t v = me | (old & kShared) | (!culled && *level == b ? kDrew : 0);
+        uint32_t v = me | (old & ~(kIndex | did)) | (!culled && *level == b ? did : 0);
         if (!(old & kShared) && (old & kIndex) != me && sibling(model, desc, f, old & kIndex, b, begin, end)) v |= kShared;
         if (v != old) fam->at[b].store(v, std::memory_order_relaxed);
     }
@@ -335,7 +370,7 @@ void installLodHook() {
         if (levelSelectTarget(kLevelSelectCalls[i]) != kLevelSelectRva) ++azimuth;   // taken from Azimuth's Scenery detail
         if (patchCallRel32(g_base + kLevelSelectCalls[i], reinterpret_cast<void*>(&selectLevel), block + kPerCall * i, false, prefix, sizeof prefix)) ++patched;
     }
-    LOG("drawdist: level selection hooked at %d of 3 render calls (%d taken over from Azimuth's Scenery detail); finer levels farther away once loaded; in the main view the game's coarser one hides while the finer one is drawn", patched, azimuth);
+    LOG("drawdist: level selection hooked at %d of 3 render calls (%d taken over from Azimuth's Scenery detail); finer levels farther away once loaded; in the main view and as a shadow caster the game's coarser one hides while the finer one is drawn", patched, azimuth);
     g_azimuthScale = findAzimuthScale();
     if (g_azimuthScale) {
         g_azimuthScale0 = *g_azimuthScale;
@@ -420,6 +455,39 @@ void scaleLibrary(uint8_t* lib) {
         moved += static_cast<int>(moves.size());
     }
     LOG("drawdist: %.*s: %d detail switches moved x%.1f", (int)len, name, moved, k);
+}
+
+// ---------------------------------------------------------------------------
+// G
+// ---------------------------------------------------------------------------
+// The radius to use when the game asks for `want` and `held` is in use: the same while the asked one fits in it and is
+// not much smaller (a smaller sphere would only sharpen the shadows a little); otherwise the asked one with some room.
+float steadyRadius(float held, float want) {
+    if (want <= held && want >= held * kRadiusShrink) return held;
+    return std::ceil(want * kRadiusRoom);
+}
+
+struct HeldRadius { std::atomic<uintptr_t> layer; std::atomic<float> radius; };
+HeldRadius g_heldRadius[4];                  // the layers, by the address of their view data
+std::atomic<unsigned> g_heldNext{0};
+
+void steadyShadowSphere(uint8_t* layer) {
+    float& radius = at<float>(layer, kOffSphereRadius);
+    if (!(radius > 0.0f)) return;
+    const uintptr_t me = reinterpret_cast<uintptr_t>(layer);
+    HeldRadius* mine = nullptr;
+    for (HeldRadius& h : g_heldRadius) {
+        uintptr_t owner = h.layer.load(std::memory_order_relaxed);
+        if (!owner) h.layer.compare_exchange_strong(owner, me);      // when another thread won, owner is that layer
+        if (!owner || owner == me) { mine = &h; break; }
+    }
+    if (!mine) {                             // other layers hold every slot (a new session's): take the oldest
+        mine = &g_heldRadius[g_heldNext.fetch_add(1, std::memory_order_relaxed) % std::size(g_heldRadius)];
+        mine->radius.store(0.0f, std::memory_order_relaxed);
+        mine->layer.store(me, std::memory_order_relaxed);
+    }
+    radius = steadyRadius(mine->radius.load(std::memory_order_relaxed), radius);
+    mine->radius.store(radius, std::memory_order_relaxed);
 }
 
 // Replaces the n bytes at rva (whole instructions that use neither rip nor rsp; n is 5 plus a multiple of 5) by a call
@@ -543,6 +611,12 @@ extern "C" void showLoadedGrass(uint8_t* zone, uint8_t* view) {
     }
 }
 
+void installShadowHook() {
+    static const uint8_t args[] = {0x48, 0x89, 0xF1};                            // mov rcx, rsi
+    if (installStubCall(kShadowSphereRva, kShadowSphereBytes, sizeof kShadowSphereBytes, args, sizeof args, reinterpret_cast<void*>(&steadyShadowSphere), "shadow layer size"))
+        LOG("drawdist: the shadow layers keep their size (the game resizes them metre by metre as the camera moves)");
+}
+
 void installGrassHook() {
     static const uint8_t args[] = {0x48, 0x89, 0xD1, 0x48, 0x89, 0xF2};          // mov rcx, rdx ; mov rdx, rsi
     if (installStubCall(kViewListRva, kViewListBytes, sizeof kViewListBytes, args, sizeof args, reinterpret_cast<void*>(&showLoadedGrass), "view item list"))
@@ -590,6 +664,7 @@ void DrawDist_Install(uintptr_t base, const Config& cfg) {
     if (d.scenery > 1 || findAzimuthScale()) installLodHook();
     if (d.trees > 1 || d.fences > 1 || d.grass > 1) installPlacementHook();   // Azimuth's Scenery detail does not reach them
     if (d.grass > 1) installGrassHook();
+    if (d.steadyShadows) installShadowHook();
 }
 
 } // namespace fh2
@@ -649,6 +724,9 @@ extern "C" __declspec(dllexport) void FH2SI_TestScaleLibrary(uint8_t* lib, float
     fh2::scaleLibrary(lib);
     fh2::g_cfg = keep;
 }
+
+// Test hook: steadies the radius of a shadow layer's sphere, as the hook after the game's rounding does.
+extern "C" __declspec(dllexport) void FH2SI_TestSteadyShadow(uint8_t* layer) { fh2::steadyShadowSphere(layer); }
 
 // Test hook: adds the loaded grass patches to the zone state's current item list, as the frame hook does.
 extern "C" __declspec(dllexport) void FH2SI_TestShowGrass(uint8_t* zone, uint8_t* view) { fh2::showLoadedGrass(zone, view); }
