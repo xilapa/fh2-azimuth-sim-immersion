@@ -369,14 +369,14 @@ Config loadConfig(const std::wstring& iniPath) {
         d.fences  = times("FenceDetail");
         d.grass   = times("GrassDetail");
         d.steadyShadows = true;
-        int farMap = readI(ini, "DrawDistance", "FarShadowMapSize", 1024);
-        if (farMap != 0 && (farMap < 256 || farMap > 16384)) {
-            LOG("config: FarShadowMapSize=%d outside 256..16384; clamping", farMap);
-            farMap = farMap < 256 ? 256 : 16384;
+        int map = readI(ini, "DrawDistance", "ShadowMapSize", 1024);
+        if (map != 0 && (map < 256 || map > 16384)) {
+            LOG("config: ShadowMapSize=%d outside 256..16384; clamping", map);
+            map = map < 256 ? 256 : 16384;
         }
-        d.farShadowMap = farMap;
-        LOG("config: pop-in killer scenery x%.1f trees x%.1f fences x%.1f grass x%.1f, far shadow maps at most %d wide (0 = left alone)",
-            d.scenery, d.trees, d.fences, d.grass, d.farShadowMap);
+        d.shadowMap = map;
+        LOG("config: pop-in killer scenery x%.1f trees x%.1f fences x%.1f grass x%.1f, world shadow maps at most %d wide (0 = left alone)",
+            d.scenery, d.trees, d.fences, d.grass, d.shadowMap);
     }
     {
         std::wstring cars = iniPath;

@@ -8,7 +8,7 @@
 //  E. placed trees, fences and grass: their detail switches move out as their template library loads;
 //  F. grass patches the game has loaded but does not list for its current zone are drawn as well;
 //  G. the shadow layers keep their size instead of being resized metre by metre as the camera moves;
-//  H. the shadow maps of the two farther shadow layers get a largest width, so the shadows of leaves are soft there.
+//  H. the shadow maps that hold the world's shadows get a largest width, so the shadows of leaves are soft.
 #include "drawdist_hook.h"
 #include <windows.h>
 #include <algorithm>
@@ -95,13 +95,17 @@ constexpr int       kOffSphereRadius = 0x1bc;
 constexpr float     kRadiusRoom = 1.03f;              // a new radius is this much larger than asked, so the next change is far off
 constexpr float     kRadiusShrink = 0.88f;            // the radius in use is given up when the game asks for less than this part of it
 
-// ---- H. each shadow layer is drawn into a square shadow map. The game creates the three once (0x141137470), with the
-// widths of a table that Azimuth's Shadow detail rewrites (game: 1536, 1024, 1024), and blends every shadow over 4 x 4
-// pixels of its map whatever their size. With large maps the shadows that swaying leaves cast on their own tree are
-// sharp, and flash. The call that creates a layer's map goes through the plugin, which caps the width.
-constexpr uintptr_t kShadowMapArgsRva = 0x11375c1;    // mov r8d,[rsi] ; mov edx,edi ; mov rcx,r15 ; call 0x14114fdf0
-constexpr uintptr_t kShadowMapCallRva = 0x11375c9;
-constexpr uint8_t   kShadowMapArgsBytes[9] = {0x44, 0x8B, 0x06, 0x8B, 0xD7, 0x49, 0x8B, 0xCF, 0xE8};
+// ---- H. the shadows of the world (trees, buildings, terrain) are drawn into four square shadow maps, from the area
+// nearest to the camera to the farthest. The game creates them once (0x141137470), with the widths of a table that
+// Azimuth's Shadow detail rewrites (game: 2048, 1536, 1536, 1024; Ultra: four times that), and blends every shadow
+// over 4 x 4 pixels of its map whatever their size. With large maps the shadows of swaying leaves are sharp, and
+// flash: in a test at one spot 0.6 to 0.9 % of the screen's pixels flickered with Ultra's maps and 0.02 to 0.1 % with
+// maps 1024 wide. The four calls that create the maps go through the plugin, which caps the width. (A second set of
+// three maps, in layers by distance, does not draw these shadows: capping it changed nothing on trees.)
+constexpr uintptr_t kShadowMapCalls[4] = {0x1137512, 0x1137547, 0x113757c, 0x11375b1};   // call 0x14114e100
+// the two bytes before each call, and the call: xor edx,edx (map 0) or the end of mov rcx,r15
+constexpr uint8_t   kShadowMapCallBytes[4][3] = {{0x33, 0xD2, 0xE8}, {0x8B, 0xCF, 0xE8}, {0x8B, 0xCF, 0xE8}, {0x8B, 0xCF, 0xE8}};
+constexpr uintptr_t kShadowMapWidthsRva = 0x2e81fb8;  // the table of the four widths; the game reads a map's width from it again
 
 uintptr_t      g_base = 0;
 DrawDistConfig g_cfg;
@@ -626,35 +630,50 @@ void installShadowHook() {
         LOG("drawdist: the shadow layers keep their size (the game resizes them metre by metre as the camera moves)");
 }
 
-// The width to create the shadow map of `layer` with: the nearest layer (0) keeps its own, so shadows next to the
-// camera stay sharp; the farther ones get at most `cap` (0 = no cap).
-uint32_t shadowMapWidth(uint32_t layer, uint32_t width, uint32_t cap) {
-    return layer == 0 || cap == 0 || width <= cap ? width : cap;
+// The width to create a shadow map with: at most `cap` (0 = no cap); a smaller map is never enlarged.
+uint32_t shadowMapWidth(uint32_t width, uint32_t cap) {
+    return cap == 0 || width <= cap ? width : cap;
 }
 
-using ShadowMapFn = void (*)(void* renderer, uint32_t layer, uint32_t width, void* r9);
-ShadowMapFn g_shadowMapOrig = nullptr;       // what the call went to: the game's function, or another patch's around it
+// The game's function: the renderer, which of the four maps, three values of that map the plugin passes on, the width.
+using ShadowMapFn = void (*)(void* renderer, uint32_t index, float a, double b, float c, uint32_t width);
+ShadowMapFn g_shadowMapOrig = nullptr;       // what the calls went to: the game's function, or another patch's around it
 
-extern "C" void createShadowMap(void* renderer, uint32_t layer, uint32_t width, void* r9) {
-    const uint32_t use = shadowMapWidth(layer, width, static_cast<uint32_t>(g_cfg.farShadowMap));
-    LOG("drawdist: shadow map of layer %u: %u pixels wide (asked: %u)", layer, use, width);
-    g_shadowMapOrig(renderer, layer, use, r9);
+extern "C" void createShadowMap(void* renderer, uint32_t index, float a, double b, float c, uint32_t width) {
+    const uint32_t use = shadowMapWidth(width, static_cast<uint32_t>(g_cfg.shadowMap));
+    // The game's function takes one more value of the map from the table's width, so the table follows.
+    if (use != width && index < std::size(kShadowMapCalls)) reinterpret_cast<uint32_t*>(g_base + kShadowMapWidthsRva)[index] = use;
+    LOG("drawdist: world shadow map %u: %u pixels wide (asked: %u)", index, use, width);
+    g_shadowMapOrig(renderer, index, a, b, c, use);
 }
 
 void installShadowMapHook() {
-    const uint8_t* args = reinterpret_cast<const uint8_t*>(g_base + kShadowMapArgsRva);
-    if (!readable(args, sizeof kShadowMapArgsBytes + 4) || std::memcmp(args, kShadowMapArgsBytes, sizeof kShadowMapArgsBytes) != 0) {
-        LOG("drawdist: shadow map creation mismatch; unchanged");
+    uintptr_t target = 0;
+    for (size_t i = 0; i < std::size(kShadowMapCalls); ++i) {       // all four must be the known calls, to one function
+        const uint8_t* call = reinterpret_cast<const uint8_t*>(g_base + kShadowMapCalls[i]);
+        const bool known = readable(call - 2, 7) && std::memcmp(call - 2, kShadowMapCallBytes[i], sizeof kShadowMapCallBytes[i]) == 0;
+        int32_t rel = 0;
+        if (known) std::memcpy(&rel, call + 1, sizeof rel);
+        const uintptr_t to = g_base + kShadowMapCalls[i] + 5 + rel;
+        if (!known || (i && to != target)) {
+            LOG("drawdist: shadow map creation mismatch; unchanged");
+            return;
+        }
+        target = to;
+    }
+    if (!readable(reinterpret_cast<const void*>(g_base + kShadowMapWidthsRva), 4 * std::size(kShadowMapCalls))) {
+        LOG("drawdist: shadow map width table not readable; unchanged");
         return;
     }
-    int32_t rel;
-    std::memcpy(&rel, args + sizeof kShadowMapArgsBytes, sizeof rel);
-    g_shadowMapOrig = reinterpret_cast<ShadowMapFn>(g_base + kShadowMapCallRva + 5 + rel);
-    void* mem = allocNear(g_base + kShadowMapCallRva, 64);
+    constexpr size_t kPerCall = 16;      // patchCallRel32's 12 bytes
+    uint8_t* mem = static_cast<uint8_t*>(allocNear(g_base + kShadowMapCalls[0], kPerCall * std::size(kShadowMapCalls)));
     if (!mem) { LOG("drawdist: could not allocate memory for the shadow map creation; unchanged"); return; }
-    if (patchCallRel32(g_base + kShadowMapCallRva, reinterpret_cast<void*>(&createShadowMap), mem))
-        LOG("drawdist: the shadow maps of the two farther shadow layers are at most %d pixels wide; a line per layer follows when the game creates them",
-            g_cfg.farShadowMap);
+    g_shadowMapOrig = reinterpret_cast<ShadowMapFn>(target);
+    int patched = 0;
+    for (size_t i = 0; i < std::size(kShadowMapCalls); ++i)
+        if (patchCallRel32(g_base + kShadowMapCalls[i], reinterpret_cast<void*>(&createShadowMap), mem + kPerCall * i)) ++patched;
+    LOG("drawdist: the world's shadow maps are at most %d pixels wide (%d of 4 calls hooked); a line per map follows when the game creates them",
+        g_cfg.shadowMap, patched);
 }
 
 void installGrassHook() {
@@ -705,7 +724,7 @@ void DrawDist_Install(uintptr_t base, const Config& cfg) {
     if (d.trees > 1 || d.fences > 1 || d.grass > 1) installPlacementHook();   // Azimuth's Scenery detail does not reach them
     if (d.grass > 1) installGrassHook();
     if (d.steadyShadows) installShadowHook();
-    if (d.farShadowMap > 0) installShadowMapHook();
+    if (d.shadowMap > 0) installShadowMapHook();
 }
 
 } // namespace fh2
@@ -766,9 +785,9 @@ extern "C" __declspec(dllexport) void FH2SI_TestScaleLibrary(uint8_t* lib, float
     fh2::g_cfg = keep;
 }
 
-// Test hook: the width a shadow layer's map is created with under a cap.
-extern "C" __declspec(dllexport) uint32_t FH2SI_TestShadowMapWidth(uint32_t layer, uint32_t width, uint32_t cap) {
-    return fh2::shadowMapWidth(layer, width, cap);
+// Test hook: the width a world shadow map is created with under a cap.
+extern "C" __declspec(dllexport) uint32_t FH2SI_TestShadowMapWidth(uint32_t width, uint32_t cap) {
+    return fh2::shadowMapWidth(width, cap);
 }
 
 // Test hook: steadies the radius of a shadow layer's sphere, as the hook after the game's rounding does.

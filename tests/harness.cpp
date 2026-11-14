@@ -946,21 +946,28 @@ static void drawDistTests(uint8_t* base, HMODULE plugin) {
             CHECK(nearFence[0][2] == 500.0f, "another library is not scaled: %.0f (500)", nearFence[0][2]);
         }
     }
-    // H. the shadow maps: the game's call that creates a layer's map goes through the plugin (game: call +0x18822)
+    // H. the world's shadow maps: the game's four calls that create them go through the plugin
     {
-        int32_t rel;
-        memcpy(&rel, base + 0x11375ca, 4);
-        CHECK(memcmp(base + 0x11375c1, "\x44\x8B\x06\x8B\xD7\x49\x8B\xCF\xE8", 9) == 0 && rel != 0x18822,
-              "the shadow map creation calls the plugin (rel32 %x)", (unsigned)rel);
-        typedef uint32_t (MSABI *FnMapWidth)(uint32_t, uint32_t, uint32_t);
+        static const struct { uint32_t rva; int32_t rel; } kCalls[4] = {     // the call and where the game's own goes
+            {0x1137512, 0x16be9}, {0x1137547, 0x16bb4}, {0x113757c, 0x16b7f}, {0x11375b1, 0x16b4a}};
+        int hooked = 0;
+        for (const auto& c : kCalls) {
+            int32_t rel;
+            memcpy(&rel, base + c.rva + 1, 4);
+            if (base[c.rva] == 0xE8 && rel != c.rel) ++hooked;
+        }
+        CHECK(hooked == 4, "the creation of the world's shadow maps calls the plugin (%d of 4 calls)", hooked);
+        CHECK(*(uint32_t*)(base + 0x2e81fb8) == 2048 && *(uint32_t*)(base + 0x2e81fc4) == 1024,
+              "the game's table of shadow map widths is where the plugin expects it (%u .. %u, want 2048 .. 1024)",
+              *(uint32_t*)(base + 0x2e81fb8), *(uint32_t*)(base + 0x2e81fc4));
+        typedef uint32_t (MSABI *FnMapWidth)(uint32_t, uint32_t);
         auto width = (FnMapWidth)GetProcAddress(plugin, "FH2SI_TestShadowMapWidth");
         CHECK(width != nullptr, "FH2SI_TestShadowMapWidth exported");
         if (width) {
-            CHECK(width(0, 3200, 1024) == 3200, "shadow maps: the nearest layer keeps its width (%u, want 3200)", width(0, 3200, 1024));
-            CHECK(width(1, 3840, 1024) == 1024 && width(2, 7168, 1024) == 1024,
-                  "shadow maps: the two farther layers are capped (%u %u, want 1024 1024)", width(1, 3840, 1024), width(2, 7168, 1024));
-            CHECK(width(1, 1024, 2048) == 1024, "shadow maps: a map under the cap is not enlarged (%u, want 1024)", width(1, 1024, 2048));
-            CHECK(width(2, 7168, 0) == 7168, "shadow maps: no cap leaves the width alone (%u, want 7168)", width(2, 7168, 0));
+            CHECK(width(8192, 1024) == 1024 && width(4096, 1024) == 1024,
+                  "shadow maps: a wider map is capped (%u %u, want 1024 1024)", width(8192, 1024), width(4096, 1024));
+            CHECK(width(1024, 2048) == 1024, "shadow maps: a map under the cap is not enlarged (%u, want 1024)", width(1024, 2048));
+            CHECK(width(8192, 0) == 8192, "shadow maps: no cap leaves the width alone (%u, want 8192)", width(8192, 0));
         }
     }
     // G. the shadow layers keep their size: the hook runs right after the game rounds a layer's radius up

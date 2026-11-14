@@ -77,7 +77,7 @@ struct SimConfig {
 struct DrawDistConfig {                      // multipliers of the game's detail distances, 1 to 8; 0 or 1 = the game's
     float scenery = 0, trees = 0, fences = 0, grass = 0;
     bool steadyShadows = false;                // the section is on: the shadow layers keep their size
-    int  farShadowMap = 0;                     // largest width of the two farther layers' shadow maps, pixels; 0 = left alone
+    int  shadowMap = 0;                        // largest width of the world's shadow maps, pixels; 0 = left alone
 };
 
 struct Config {
