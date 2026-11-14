@@ -151,6 +151,8 @@ inline constexpr Setting kDrawDistSettings[] = {
     ST_SLIDER("DrawDistance", "TreeDetail",    "Trees and bushes, times farther (game: x1)",      "Detail switch", "trees", 0, 8, 1),
     ST_SLIDER("DrawDistance", "FenceDetail",   "Fences and barriers, times farther (game: x1)",   "Detail switch", "fences", 0, 8, 1),
     ST_SLIDER("DrawDistance", "GrassDetail",   "Grass and crops, times farther (game: x1)",       "Detail switch", "grass", 0, 8, 1),
+    ST_ENUM  ("DrawDistance", "FarShadowMapSize", "Shadow maps past the nearest layer: largest width (0 = as in Azimuth)", "Shadows", nullptr,
+              "0|256|512|1024|2048|4096|8192|16384"),
 };
 
 inline constexpr Setting kMainSettings[] = {

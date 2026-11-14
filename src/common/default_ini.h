@@ -205,6 +205,8 @@ inline constexpr char kDefaultIni[] =
 "FenceDetail=0\n"
 "; Grass and crops (game: grass to about 100 m). Grass is drawn at most 500 m away, and only where the game has it loaded.\n"
 "GrassDetail=0\n"
+"; Shadows of leaves flash when the shadow maps are very sharp (Azimuth's Shadow detail High or Ultra): the game blends every shadow over 4 x 4 pixels of its map, whatever their size, and leaves sway. This is the largest width, in pixels, of the shadow maps of the two farther shadow layers (game: 1024). The nearest layer (to about 5 m; 17 m with Azimuth's Shadow distance Ultra) keeps the size set in Azimuth. Smaller = softer shadows that flash less. 0 = leave the sizes to the game and Azimuth. 256 to 16384.\n"
+"FarShadowMapSize=1024\n"
 "\n"
 "[Logging]\n"
 "; 1 = write FH2SimImmersion.log next to the plugin. 0 = no log, and the log of the last run is removed.\n"

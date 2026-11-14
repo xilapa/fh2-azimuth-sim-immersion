@@ -946,6 +946,23 @@ static void drawDistTests(uint8_t* base, HMODULE plugin) {
             CHECK(nearFence[0][2] == 500.0f, "another library is not scaled: %.0f (500)", nearFence[0][2]);
         }
     }
+    // H. the shadow maps: the game's call that creates a layer's map goes through the plugin (game: call +0x18822)
+    {
+        int32_t rel;
+        memcpy(&rel, base + 0x11375ca, 4);
+        CHECK(memcmp(base + 0x11375c1, "\x44\x8B\x06\x8B\xD7\x49\x8B\xCF\xE8", 9) == 0 && rel != 0x18822,
+              "the shadow map creation calls the plugin (rel32 %x)", (unsigned)rel);
+        typedef uint32_t (MSABI *FnMapWidth)(uint32_t, uint32_t, uint32_t);
+        auto width = (FnMapWidth)GetProcAddress(plugin, "FH2SI_TestShadowMapWidth");
+        CHECK(width != nullptr, "FH2SI_TestShadowMapWidth exported");
+        if (width) {
+            CHECK(width(0, 3200, 1024) == 3200, "shadow maps: the nearest layer keeps its width (%u, want 3200)", width(0, 3200, 1024));
+            CHECK(width(1, 3840, 1024) == 1024 && width(2, 7168, 1024) == 1024,
+                  "shadow maps: the two farther layers are capped (%u %u, want 1024 1024)", width(1, 3840, 1024), width(2, 7168, 1024));
+            CHECK(width(1, 1024, 2048) == 1024, "shadow maps: a map under the cap is not enlarged (%u, want 1024)", width(1, 1024, 2048));
+            CHECK(width(2, 7168, 0) == 7168, "shadow maps: no cap leaves the width alone (%u, want 7168)", width(2, 7168, 0));
+        }
+    }
     // G. the shadow layers keep their size: the hook runs right after the game rounds a layer's radius up
     CHECK(base[0x1155995] == 0xE8 && memcmp(base + 0x115599a, "\x0F\x1F\x44\x00\x00", 5) == 0 && base[0x115599f] == 0x48,
           "the shadow layer sizing calls the plugin after its rounding");
