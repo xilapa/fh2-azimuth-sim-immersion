@@ -1,6 +1,6 @@
 # FH2 Sim Immersion for Azimuth
 
-**Status: 0.9.7.** Head tracking was tested with Beam Eye Tracker. The wheel, assists, steering lock, in-game wheel and draw distance are experimental.
+**Status: 0.9.8.** Head tracking was tested with Beam Eye Tracker. The wheel, assists, steering lock, in-game wheel and draw distance are experimental.
 
 Realism and immersion features for Forza Horizon 2 running in Azimuth:
 
@@ -195,7 +195,6 @@ The log shows `steering lock: car <id> <name> real <deg> deg -> wheel <deg> deg 
 | `FenceDetail` | fences, barriers and things that can be knocked over (signs, bollards): where they switch to a simpler model. How far they are drawn (game: 450 m) grows with it, up to 3000 m | about 100 m | up to 8 |
 | `GrassDetail` | grass and crops: how far their detail reaches. Grass is drawn at most 500 m away, and only where the game has it loaded | about 100 m | up to 8 |
 | `ShadowMapSize` | the largest width, in pixels, of the four shadow maps that hold the shadows of trees, buildings and terrain (default `1024`). The game blends every shadow over 4 x 4 pixels of its map, whatever their size, so with Azimuth's **Shadow detail** on High or Ultra the shadows of swaying leaves are sharp, and flash. In a test at one spot, 0.6 to 0.9 % of the screen's pixels flickered with Ultra's maps and 0.02 to 0.1 % with maps 1024 wide. Smaller = softer shadows that flash less; `0` leaves the sizes to the game and Azimuth | 2048, 1536, 1536, 1024 from near to far | 256 to 16384 |
-| `SteadyIdleCamera` | `1` (default): the chase camera holds still while the car stands. The game sways it slowly then (up to 0.3 degrees in yaw and pitch, a few seconds per swing), which slides the whole picture by a few pixels, so the fine far trees shimmer. In a test at one spot, the camera's swing fell from about 7 to under 1 milliradian over 10 seconds, and the change between frames on a far hill by a third. Bumps, landings, speed and every other camera movement are not touched. `0` keeps the game's sway | sway on | `0` or `1` |
 
 How it works: trees, fences and grass are placed from the game's template libraries. As each library loads, the plugin multiplies the end of every near detail range that ends by 500 m, and where a coarser object takes over there (a fence's simpler model), moves its start along; the coarser object's own end caps the move. A tree's billboard is not moved: it stays under the full tree. Grass has a second limit: each frame the game draws only the grass patches on its current zone's list, which reaches about 200 m, so farther grass shows up in whole blocks. With `GrassDetail` above 1 the plugin adds every grass patch the game has loaded to that list, and the grass fades in instead. Ranges that end farther out are left alone.
 
@@ -207,7 +206,7 @@ Higher values cost frame rate; raise one at a time. The log shows `drawdist: ...
 A good run logs something like this (`layer` lines only appear in cockpit view):
 
 ```
-FH2 Sim Immersion 0.9.7 loaded into pid ... (...\azimuth.exe)
+FH2 Sim Immersion 0.9.8 loaded into pid ... (...\azimuth.exe)
 waiting for the Forza Horizon 2 image to be mapped...
 game image found at 0000...
 patch: 5 head-tracking inputs redirected (thunks at ...)
@@ -245,7 +244,7 @@ docs/           reverse-engineering notes
 ```
 
 * **Windows (Visual Studio 2022 or MSYS2 MinGW64):** `cmake -S . -B build -A x64`, then `cmake --build build --config Release`.
-* **`./build.sh`** on Linux, WSL or MSYS2 cross-builds. It needs `x86_64-w64-mingw32-g++` and `windres` (mingw-w64), a native `g++`, `python3` and `zip`. It packages `dist/FH2SimImmersion-0.9.7.zip`: one `FH2SimImmersion` folder with `dinput8.dll` and `mods\Sim Immersion\` (plugin, app, `mod.json`, README, `LICENSE.txt`).
+* **`./build.sh`** on Linux, WSL or MSYS2 cross-builds. It needs `x86_64-w64-mingw32-g++` and `windres` (mingw-w64), a native `g++`, `python3` and `zip`. It packages `dist/FH2SimImmersion-0.9.8.zip`: one `FH2SimImmersion` folder with `dinput8.dll` and `mods\Sim Immersion\` (plugin, app, `mod.json`, README, `LICENSE.txt`).
 
 The harness needs your own copy of the game executable; none is included. It maps the game into memory, loads the DLL, sends OpenTrack packets and runs the game's `CameraLayer::EvaluateInput`. Add `--deep` for the fallback memory scan. It runs on Windows or Wine:
 

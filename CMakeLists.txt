@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(fh2_azimuth_sim_immersion VERSION 0.9.7 LANGUAGES CXX RC)
+project(fh2_azimuth_sim_immersion VERSION 0.9.8 LANGUAGES CXX RC)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

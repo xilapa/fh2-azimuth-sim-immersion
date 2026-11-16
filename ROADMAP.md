@@ -1,6 +1,6 @@
 # FH2 Sim Immersion for Azimuth — Roadmap
 
-## Status: 0.9.7 — Core features complete, in-game verification pending
+## Status: 0.9.8 — Core features complete, in-game verification pending
 
 All major features are implemented and built. This document tracks what remains to complete the project.
 

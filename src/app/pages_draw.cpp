@@ -34,7 +34,7 @@ protected:
         sliderEditW_ = 84;
         BuildRows(kDrawDistSettings, sizeof(kDrawDistSettings) / sizeof(Setting));
         for (auto& c : ctls_) {         // the slider starts at the game's own value
-            if (!c.slider) continue;              // a check box
+            if (!c.slider) continue;              // the Enabled check
             int def = gameDefault(c.s->key);
             SendMessageW(c.slider, TBM_SETRANGE, TRUE, MAKELONG(def, (int)c.s->max));
             SendMessageW(c.slider, TBM_SETPAGESIZE, 0, (LPARAM)std::max(1, ((int)c.s->max - def) / 10));
@@ -48,22 +48,21 @@ protected:
             L"billboards stay. How far things are drawn grows with the sliders (at most 3000 m; grass 500 m, where the game has it loaded). "
             L"While the pop-in killer is on, the game's shadow layers also keep their size, so shadows on trees stop flickering as you drive. "
             L"Shadows of leaves flash when Azimuth's Shadow detail makes them very sharp: the shadow maps of trees and scenery "
-            L"are no wider than the value above (game: 2048 near to 1024 far; smaller = softer). "
-            L"While the car stands, the chase camera holds still: the game's slow idle sway makes far trees shimmer.\r\n\r\n"
+            L"are no wider than the value above (game: 2048 near to 1024 far; smaller = softer).\r\n\r\n"
             L"Each slider starts at the game's own value; far left = \"game default\". Higher values cost frame rate. "
             L"Hover over a setting for details. Values are applied the next time the game starts.",
             WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX, 0, 0, 10, 10, host_, nullptr, G.inst, nullptr);
     }
 
     void Layout(int w, int h) override {
-        int gap = S(6), hintH = S(214);
+        int gap = S(6), hintH = S(198);
         SetWindowPos(scroller_, nullptr, 0, 0, w, h - hintH - gap, SWP_NOZORDER);
         SetWindowPos(hint_, nullptr, S(6), h - hintH, w - S(12), hintH, SWP_NOZORDER);
         LayoutRows();
     }
 
     std::string GetValue(Ctl& c) override {
-        if (!c.slider) return Page::GetValue(c);     // a check box
+        if (!c.slider) return Page::GetValue(c);     // the Enabled check
         wchar_t buf[128];
         GetWindowTextW(c.main, buf, 128);
         std::string t = trimStr(Narrow(buf));

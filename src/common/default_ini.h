@@ -207,8 +207,6 @@ inline constexpr char kDefaultIni[] =
 "GrassDetail=0\n"
 "; Shadows of leaves flash when the shadow maps are very sharp (Azimuth's Shadow detail High or Ultra): the game blends every shadow over 4 x 4 pixels of its map, whatever their size, and leaves sway. This is the largest width, in pixels, of the four shadow maps that hold the shadows of trees, buildings and terrain (game: 2048, 1536, 1536 and 1024 from near to far; Azimuth's Ultra: four times that). Smaller = softer shadows that flash less; 1024 gives soft leaf shadows. 0 = leave the sizes to the game and Azimuth. 256 to 16384.\n"
 "ShadowMapSize=1024\n"
-"; 1 = the chase camera holds still while the car stands. The game sways it slowly then (0.3 degrees, every few seconds), which slides the whole picture by a few pixels and makes far trees shimmer. Other camera movement is not touched. 0 = the game's sway.\n"
-"SteadyIdleCamera=1\n"
 "\n"
 "[Logging]\n"
 "; 1 = write FH2SimImmersion.log next to the plugin. 0 = no log, and the log of the last run is removed.\n"
