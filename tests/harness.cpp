@@ -835,6 +835,18 @@ static void cameraTests(uint8_t* base) {
 
 static void drawDistTests(uint8_t* base, HMODULE plugin) {
     printf("draw distance:\n");
+    // I. the chase camera's idle sway: input 33 (OneWhenStationary) takes the path of the unused inputs 23 to 27, which stores 0
+    {
+        uint32_t e33; memcpy(&e33, base + 0x1038558 + 33 * 4, 4);
+        CHECK(e33 == 0x103808B, "OneWhenStationary jump-table entry points at the zero path (%08x)", e33);
+        if (e33 == 0x103808B) {
+            FakeCar car; car.vtbl = g_carVtbl;
+            Layer idle = makeLayer(33, 4, 0.3f);
+            *(float*)idle.b = 1.0f;
+            ((EvalFn)(base + 0x1037DF0))(&idle, &car, nullptr, 0.016f);
+            CHECK(f(idle, 0) == 0.0f && f(idle, 0xE0) == 0.3f, "OneWhenStationary layer gets 0, Param untouched (%f %f)", f(idle, 0), f(idle, 0xE0));
+        }
+    }
     // A. the tail-jump thunk in front of the track settings deserializer points at our hook
     uint8_t* jmp = base + 0x134af97;
     int32_t rel; memcpy(&rel, jmp + 1, 4);

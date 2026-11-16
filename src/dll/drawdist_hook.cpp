@@ -676,6 +676,48 @@ void installShadowMapHook() {
         g_cfg.shadowMap, patched);
 }
 
+// ---------------------------------------------------------------------------
+// I
+// ---------------------------------------------------------------------------
+// While the car stands still, the chase cameras (FollowCam and FollowCam2 in CameraPhysics.xml) add a slow Perlin sway
+// of 0.3 degrees in yaw and pitch (two layers with InputType OneWhenStationary, 0.15 Hz, the same noise seed). At 1080
+// lines it slides the whole picture by a few pixels, and the fine far trees shimmer. The camera layers' input function
+// (rva 0x1037DF0) switches on the input type through a jump table of rvas; input 33 (OneWhenStationary) computes
+// max(0, (2 - speed) * 0.5). Its entry is pointed at the path the unused inputs 23 to 27 take, which stores 0: those
+// layers add nothing, and every other camera effect stays.
+constexpr uint32_t kCamInputTableRva = 0x1038558;     // int32 rvas, one per input type 0..44
+constexpr uint32_t kCamDispatchRva   = 0x1037E52;
+constexpr uint8_t  kCamDispatchBytes[] = {0x48, 0x63, 0x46, 0x48, 0x83, 0xF8, 0x2C, 0x0F, 0x87};   // movsxd rax,[rsi+0x48] ; cmp eax,0x2c ; ja
+constexpr uint32_t kStationaryCaseRva = 0x1038059;    // case 33: mov rax,[rdi] ; mov rcx,rdi ; call [rax+0x2a0] (the speed)
+constexpr uint8_t  kStationaryCaseBytes[] = {0x48, 0x8B, 0x07, 0x48, 0x8B, 0xCF, 0xFF, 0x90, 0xA0, 0x02, 0x00, 0x00};
+constexpr uint32_t kZeroInputRva     = 0x103808B;     // cases 23 to 27: xor ebx,ebx ; mov [rsi],ebx ; jmp out
+constexpr uint8_t  kZeroInputBytes[] = {0x33, 0xDB, 0x89, 0x1E, 0xE9};
+
+bool sameBytes(uintptr_t rva, const uint8_t* bytes, size_t n) {
+    const void* p = reinterpret_cast<const void*>(g_base + rva);
+    return readable(p, n) && std::memcmp(p, bytes, n) == 0;
+}
+
+void installIdleCameraPatch() {
+    int32_t* const entry = reinterpret_cast<int32_t*>(g_base + kCamInputTableRva + 4 * 33);
+    const int32_t* const unused = reinterpret_cast<const int32_t*>(g_base + kCamInputTableRva + 4 * 23);
+    if (!readable(entry, 4) || !readable(unused, 4) || *entry != int32_t(kStationaryCaseRva) || *unused != int32_t(kZeroInputRva) ||
+        !sameBytes(kCamDispatchRva, kCamDispatchBytes, sizeof kCamDispatchBytes) ||
+        !sameBytes(kStationaryCaseRva, kStationaryCaseBytes, sizeof kStationaryCaseBytes) ||
+        !sameBytes(kZeroInputRva, kZeroInputBytes, sizeof kZeroInputBytes)) {
+        LOG("drawdist: camera input table mismatch; the idle camera sway is left as it is");
+        return;
+    }
+    DWORD prot;
+    if (!VirtualProtect(entry, 4, PAGE_EXECUTE_READWRITE, &prot)) {
+        LOG("drawdist: camera input table VirtualProtect failed %lu; unchanged", GetLastError());
+        return;
+    }
+    *entry = int32_t(kZeroInputRva);   // one aligned 4-byte store: the game reads either the old entry or the new one
+    VirtualProtect(entry, 4, prot, &prot);
+    LOG("drawdist: the chase camera holds still while the car stands (its idle sway is off)");
+}
+
 void installGrassHook() {
     static const uint8_t args[] = {0x48, 0x89, 0xD1, 0x48, 0x89, 0xF2};          // mov rcx, rdx ; mov rdx, rsi
     if (installStubCall(kViewListRva, kViewListBytes, sizeof kViewListBytes, args, sizeof args, reinterpret_cast<void*>(&showLoadedGrass), "view item list"))
@@ -725,6 +767,7 @@ void DrawDist_Install(uintptr_t base, const Config& cfg) {
     if (d.grass > 1) installGrassHook();
     if (d.steadyShadows) installShadowHook();
     if (d.shadowMap > 0) installShadowMapHook();
+    if (d.steadyIdleCamera) installIdleCameraPatch();
 }
 
 } // namespace fh2

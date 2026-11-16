@@ -153,6 +153,7 @@ inline constexpr Setting kDrawDistSettings[] = {
     ST_SLIDER("DrawDistance", "GrassDetail",   "Grass and crops, times farther (game: x1)",       "Detail switch", "grass", 0, 8, 1),
     ST_ENUM  ("DrawDistance", "ShadowMapSize", "Shadow maps of trees and scenery: largest width (0 = as in Azimuth)", "Shadows", nullptr,
               "0|256|512|1024|2048|4096|8192|16384"),
+    ST_BOOL ("DrawDistance", "SteadyIdleCamera", "Hold the chase camera still while the car stands (far trees shimmer less)", "Camera", nullptr),
 };
 
 inline constexpr Setting kMainSettings[] = {

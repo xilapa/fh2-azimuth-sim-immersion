@@ -78,6 +78,7 @@ struct DrawDistConfig {                      // multipliers of the game's detail
     float scenery = 0, trees = 0, fences = 0, grass = 0;
     bool steadyShadows = false;                // the section is on: the shadow layers keep their size
     int  shadowMap = 0;                        // largest width of the world's shadow maps, pixels; 0 = left alone
+    bool steadyIdleCamera = false;             // the chase camera holds still while the car stands (no idle sway)
 };
 
 struct Config {

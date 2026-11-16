@@ -375,8 +375,9 @@ Config loadConfig(const std::wstring& iniPath) {
             map = map < 256 ? 256 : 16384;
         }
         d.shadowMap = map;
-        LOG("config: pop-in killer scenery x%.1f trees x%.1f fences x%.1f grass x%.1f, world shadow maps at most %d wide (0 = left alone)",
-            d.scenery, d.trees, d.fences, d.grass, d.shadowMap);
+        d.steadyIdleCamera = readI(ini, "DrawDistance", "SteadyIdleCamera", 1) != 0;
+        LOG("config: pop-in killer scenery x%.1f trees x%.1f fences x%.1f grass x%.1f, world shadow maps at most %d wide (0 = left alone), steady idle camera %d",
+            d.scenery, d.trees, d.fences, d.grass, d.shadowMap, d.steadyIdleCamera);
     }
     {
         std::wstring cars = iniPath;
